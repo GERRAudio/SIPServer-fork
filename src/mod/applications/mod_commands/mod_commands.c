@@ -2361,7 +2361,7 @@ SWITCH_STANDARD_API(status_function)
 						duration.sec, duration.sec == 1 ? "" : "s", duration.ms , duration.ms  == 1 ? "" : "s", duration.mms,
 						duration.mms == 1 ? "" : "s", nl);
 
-	stream->write_function(stream, "FreeSWITCH (Version %s) is %s%s", switch_version_full_human(),
+	stream->write_function(stream, "SIP Server (Version %s) is %s%s", switch_version_full_human(),
 						   switch_core_ready() ? "ready" : "not ready", nl);
 
 	stream->write_function(stream, "%" SWITCH_SIZE_T_FMT " session(s) since startup%s", switch_core_session_id() - 1, nl);

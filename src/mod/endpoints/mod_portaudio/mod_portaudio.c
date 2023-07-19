@@ -40,10 +40,20 @@
 #include <string.h>
 #include "pablio.h"
 
+#ifdef _WIN32
+// FIXME: Shall we make this configurable or detect when the underlying driver requires it?
+#define PA_COM_INIT
+#include "C:\Development\sipserver\libs\portaudio\src\os\win\pa_win_coinitialize.h"
+// we can remove this after is all debugged, they must match internal values in pa_win_coinitialize.c
+#define PAWINUTIL_COM_INITIALIZED       (0xb38f)
+#define PAWINUTIL_COM_NOT_INITIALIZED   (0xf1cd)
+#endif
+
 #define MY_EVENT_RINGING "portaudio::ringing"
 #define MY_EVENT_MAKE_CALL "portaudio::makecall"
 #define MY_EVENT_CALL_HELD "portaudio::callheld"
 #define MY_EVENT_CALL_RESUMED "portaudio::callresumed"
+#define MY_EVENT_CALL_AUDIO_LEVEL "portaudio::call_audio_level"
 #define MY_EVENT_ERROR_AUDIO_DEV "portaudio::audio_dev_error"
 #define SWITCH_PA_CALL_ID_VARIABLE "pa_call_id"
 
@@ -169,6 +179,15 @@ struct private_object {
 	unsigned char holdbuf[SWITCH_RECOMMENDED_BUFFER_SIZE];
 	audio_endpoint_t *audio_endpoint;
 	struct private_object *next;
+#ifdef PA_COM_INIT
+	PaWinUtilComInitializationResult comres;
+#endif
+	float average_level_rx;
+	float average_level_tx;
+	float new_value_weight;
+	float old_value_weight;
+	uint32_t scount_rx;
+	uint32_t scount_tx;
 };
 
 
@@ -222,6 +241,7 @@ static struct {
 	int codecs_inited;
 	int stream_in_use; //only really used by playdev
 	int destroying_streams;
+	int level_report;
 } globals;
 
 
@@ -275,6 +295,35 @@ static int get_dev_by_name(char *name, int in);
 static int get_dev_by_number(char *numstr, int in);
 SWITCH_STANDARD_API(pa_cmd);
 
+
+#ifdef PA_COM_INIT
+static void pa_com_init(switch_core_session_t *session, PaWinUtilComInitializationResult *res)
+{
+	PaError err;
+	err = PaWinUtil_CoInitialize(paASIO, res);
+	if (err != paNoError) {
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "ASIO init failed: %d\n", err);
+		return;
+	}
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "ASIO init done\n");
+}
+
+static void pa_com_uninit(switch_core_session_t *session, PaWinUtilComInitializationResult *res)
+{
+	DWORD currentThreadId = GetCurrentThreadId();
+	if (res->state != PAWINUTIL_COM_INITIALIZED) {
+		return;
+	}
+	// This is throwing a warning now due to sign mismatch, did this change recently in portaudio?
+	if (res->initializingThreadId != currentThreadId) {
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "ASIO uninit thread does not match!\n");
+		return;
+	}
+	PaWinUtil_CoUninitialize(paASIO, res);
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "ASIO uninit done\n");
+}
+#endif
+
 /*
    State methods they get called when the state changes to the specific state
    returning SWITCH_STATUS_SUCCESS tells the core to execute the standard state method next
@@ -289,6 +338,13 @@ static switch_status_t channel_on_init(switch_core_session_t *session)
 			switch_channel_set_flag(channel, CF_AUDIO);
 		}
 	}
+
+#ifdef PA_COM_INIT
+	{
+		private_t *tech_pvt = switch_core_session_get_private(session);
+		pa_com_init(session, &tech_pvt->comres);
+	}
+#endif
 
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -750,6 +806,12 @@ static switch_status_t channel_on_destroy(switch_core_session_t *session)
 {
 	//private_t *tech_pvt = switch_core_session_get_private(session);
 	//switch_assert(tech_pvt != NULL);
+#ifdef PA_COM_INIT
+	{
+		private_t *tech_pvt = switch_core_session_get_private(session);
+		pa_com_uninit(session, &tech_pvt->comres);
+	}
+#endif
 	return SWITCH_STATUS_SUCCESS;
 }
 
@@ -866,6 +928,67 @@ static switch_status_t channel_endpoint_read(audio_endpoint_t *endpoint, switch_
 	return SWITCH_STATUS_SUCCESS;
 }
 
+static void update_level(private_t *tech_pvt, switch_frame_t *frame, uint8_t rx)
+{
+	uint32_t i, samples;
+	int16_t *pcm = frame->data;
+	float level = rx ? tech_pvt->average_level_rx : tech_pvt->average_level_tx;
+	uint32_t scount = rx ? tech_pvt->scount_rx : tech_pvt->scount_tx;
+	if (globals.level_report == SWITCH_FALSE) {
+		return;
+	}
+	// calculate signal level
+	for (i = 0; i < frame->samples; i++, scount++) {
+		level = (abs(pcm[i]) * tech_pvt->new_value_weight) + (level * tech_pvt->old_value_weight);
+	}
+	if (rx) {
+		tech_pvt->average_level_rx = level;
+	} else {
+		tech_pvt->average_level_tx = level;
+	}
+	// Fire an event when hitting the per-second rate
+	// we only fire a single event for both rx/tx and do it on the rx cycle for simplicity
+	samples = tech_pvt->audio_endpoint ?
+		tech_pvt->audio_endpoint->read_codec.implementation->actual_samples_per_second :
+		globals.read_codec.implementation->actual_samples_per_second;
+	if (scount >= samples) {
+		if (rx) {
+			switch_event_t *event;
+			if (switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, MY_EVENT_CALL_AUDIO_LEVEL) == SWITCH_STATUS_SUCCESS) {
+				double rxdb;
+				double txdb;
+				float avg_rx;
+				float avg_tx;
+
+				switch_mutex_t *mutex = tech_pvt->audio_endpoint ? tech_pvt->audio_endpoint->mutex : globals.pvt_lock;
+
+				switch_mutex_lock(mutex);
+				avg_rx = tech_pvt->average_level_rx;
+				avg_tx = tech_pvt->average_level_tx;
+				switch_mutex_unlock(mutex);
+
+				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(tech_pvt->session),
+						SWITCH_LOG_DEBUG, "firing level event at scount=%u with rate %u rx=%f tx=%f\n", scount, samples,
+						avg_rx,
+						avg_tx);
+
+				rxdb = avg_rx > 0.0 ? 20 * log10(tech_pvt->average_level_rx / (float)SWITCH_SMAX) : -90;
+				txdb = avg_tx > 0.0 ? 20 * log10(tech_pvt->average_level_tx / (float)SWITCH_SMAX) : -90;
+				switch_event_add_header(event, SWITCH_STACK_BOTTOM, "rx-level", "%.2f", rxdb);
+				switch_event_add_header(event, SWITCH_STACK_BOTTOM, "tx-level", "%.2f", txdb);
+				switch_channel_event_set_data(switch_core_session_get_channel(tech_pvt->session), event);
+				switch_event_fire(&event);
+			}
+		}
+		scount = 0;
+	}
+	if (rx) {
+		tech_pvt->scount_rx = scount;
+	} else {
+		tech_pvt->scount_tx = scount;
+	}
+}
+
 static switch_status_t channel_read_frame(switch_core_session_t *session, switch_frame_t **frame, switch_io_flag_t flags, int stream_id)
 {
 	private_t *tech_pvt = switch_core_session_get_private(session);
@@ -873,8 +996,11 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 	switch_status_t status = SWITCH_STATUS_FALSE;
 	switch_assert(tech_pvt != NULL);
 
+	*frame = NULL;
+
 	if (tech_pvt->audio_endpoint) {
-		return channel_endpoint_read(tech_pvt->audio_endpoint, frame);
+		status = channel_endpoint_read(tech_pvt->audio_endpoint, frame);
+		goto normal_return;
 	}
 
 	if (!globals.main_stream) {
@@ -957,6 +1083,9 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 	}
 
 normal_return:
+	if (*frame) {
+		update_level(tech_pvt, *frame, 1);
+	}
 	return status;
 
   cng_nowait:
@@ -996,6 +1125,8 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 	switch_status_t status = SWITCH_STATUS_FALSE;
 	private_t *tech_pvt = switch_core_session_get_private(session);
 	switch_assert(tech_pvt != NULL);
+
+	update_level(tech_pvt, frame, 0);
 
 	if (tech_pvt->audio_endpoint) {
 		return channel_endpoint_write(tech_pvt->audio_endpoint, frame);
@@ -1138,6 +1269,18 @@ static int release_stream_channel(shared_audio_stream_t *stream, int index, int 
 	return rc;
 }
 
+static void init_pvt_level(private_t *tech_pvt)
+{
+	// Init audio level weight factors
+	// FIXME: Have to adjust this if we decide on a different avg window
+	float window = 1000.0f; // window in ms
+	uint32_t samples = tech_pvt->audio_endpoint ?
+		tech_pvt->audio_endpoint->read_codec.implementation->actual_samples_per_second :
+		globals.read_codec.implementation->actual_samples_per_second;
+	tech_pvt->new_value_weight = 1.0f / ((float)samples * (window / 1000.0f));
+	tech_pvt->old_value_weight = 1.0f - tech_pvt->new_value_weight;
+}
+
 /* Make sure when you have 2 sessions in the same scope that you pass the appropriate one to the routines
    that allocate memory or you will have 1 channel with memory allocated from another channel's pool!
 */
@@ -1158,6 +1301,9 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 	audio_endpoint_t *endpoint = NULL;
 	char *endpoint_name = NULL;
 	const char *endpoint_answer = NULL;
+#ifdef PA_COM_INIT
+	PaWinUtilComInitializationResult comres = { 0 };
+#endif
 
 	if (!outbound_profile) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Missing caller profile\n");
@@ -1180,6 +1326,10 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 		switch_core_session_destroy(new_session);
 		return retcause;
 	}
+
+#ifdef PA_COM_INIT
+	pa_com_init(*new_session, &comres);
+#endif
 
 	if (outbound_profile->destination_number && !strncasecmp(outbound_profile->destination_number, "endpoint", sizeof("endpoint")-1)) {
 		endpoint = NULL;
@@ -1276,6 +1426,9 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 	switch_set_flag_locked(tech_pvt, TFLAG_OUTBOUND);
 	switch_channel_set_state(channel, CS_INIT);
 	switch_channel_set_flag(channel, CF_AUDIO);
+
+	init_pvt_level(tech_pvt);
+
 	return SWITCH_CAUSE_SUCCESS;
 
 error:
@@ -1296,9 +1449,12 @@ error:
 		}
 		switch_mutex_unlock(endpoint->mutex);
 	}
-
-	switch_core_session_destroy(new_session);
-
+	if (new_session && *new_session) {
+#ifdef PA_COM_INIT
+		pa_com_uninit(*new_session, &comres);
+#endif
+		switch_core_session_destroy(new_session);
+	}
 	return retcause;
 }
 
@@ -1738,6 +1894,8 @@ static switch_status_t load_config(void)
 				}
 			} else if (!strcasecmp(var, "unload-on-device-fail")) {
 				globals.unload_device_fail = switch_true(val);
+			} else if (!strcmp(var, "level-report")) {
+				globals.level_report = switch_true(val);
 			}
 		}
 	}
@@ -2962,6 +3120,10 @@ static switch_status_t list_calls(char **argv, int argc, switch_stream_handle_t 
 static switch_status_t place_call(char **argv, int argc, switch_stream_handle_t *stream)
 {
 	switch_core_session_t *session;
+	switch_status_t status = SWITCH_STATUS_SUCCESS;
+#ifdef PA_COM_INIT
+	PaWinUtilComInitializationResult comres = { 0 };
+#endif
 	char *dest = NULL;
 
 	if (zstr(argv[0])) {
@@ -2983,6 +3145,7 @@ static switch_status_t place_call(char **argv, int argc, switch_stream_handle_t 
 		if ((tech_pvt = (private_t *) switch_core_session_alloc(session, sizeof(private_t))) != 0) {
 			memset(tech_pvt, 0, sizeof(*tech_pvt));
 			switch_mutex_init(&tech_pvt->flag_mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
+			init_pvt_level(tech_pvt);
 			channel = switch_core_session_get_channel(session);
 			switch_core_session_set_private(session, tech_pvt);
 			tech_pvt->session = session;
@@ -3024,6 +3187,9 @@ static switch_status_t place_call(char **argv, int argc, switch_stream_handle_t 
 			switch_channel_set_caller_profile(channel, tech_pvt->caller_profile);
 		}
 		tech_pvt->session = session;
+#ifdef PA_COM_INIT
+		pa_com_init(session, &comres);
+#endif
 		if (validate_main_audio_stream() == SWITCH_STATUS_SUCCESS) {
 			switch_set_flag_locked(tech_pvt, TFLAG_ANSWER);
 			switch_channel_mark_answered(channel);
@@ -3064,6 +3230,9 @@ static switch_status_t place_call(char **argv, int argc, switch_stream_handle_t 
 				switch_event_fire(&event);
 			}
 		}
+#ifdef PA_COM_INIT
+		pa_com_init(session, &comres);
+#endif
 	}
 
 	return SWITCH_STATUS_SUCCESS;

@@ -245,6 +245,7 @@ void *SWITCH_THREAD_FUNC conference_thread_run(switch_thread_t *thread, void *ob
 		switch_size_t file_data_len = samples * 2 * conference->channels;
 		int has_file_data = 0, members_with_video = 0, members_with_avatar = 0, members_seeing_video = 0;
 		int nomoh = 0;
+		int noperpetual = 0;
 		uint32_t floor_holder;
 		switch_status_t moh_status = SWITCH_STATUS_SUCCESS;
 
@@ -367,6 +368,11 @@ void *SWITCH_THREAD_FUNC conference_thread_run(switch_thread_t *thread, void *ob
 				if (conference_utils_member_test_flag(imember, MFLAG_NOMOH)) {
 					nomoh++;
 				}
+				if (conference_utils_member_test_flag(imember, MFLAG_NOPERPETUAL)) 
+				{ 
+					// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ALERT, "Adding a member with perpetual MFLAG sound in conference.\n");
+					noperpetual++;
+				}
 			}
 
 			conference_utils_member_clear_flag_locked(imember, MFLAG_HAS_AUDIO);
@@ -392,6 +398,12 @@ void *SWITCH_THREAD_FUNC conference_thread_run(switch_thread_t *thread, void *ob
 		if (conference_utils_test_flag(conference, CFLAG_NO_MOH)) {
 			nomoh++;
 		}
+
+		if (conference_utils_test_flag(conference, CFLAG_NO_PERPETUAL)) 
+		{ 
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Adding a no-perpetual member to conference  %s.\n", conference->name);
+			noperpetual++; 
+		}
 		
 		if (conference->moh_wait > 0) {
 			conference->moh_wait--;
@@ -403,11 +415,24 @@ void *SWITCH_THREAD_FUNC conference_thread_run(switch_thread_t *thread, void *ob
 			}
 			
 			if (conference->perpetual_sound && !conference->async_fnode) {
-				moh_status = conference_file_play(conference, conference->perpetual_sound, CONF_DEFAULT_LEADIN, NULL, 1);
+				if (noperpetual < 1) { // any one member of the conference has no perpetual and no-one needs perpetual
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Playing perpetual sound in conference %s.\n", conference->name);
+					moh_status = conference_file_play(conference, conference->perpetual_sound, CONF_DEFAULT_LEADIN, NULL, 1);
+				} else {
+
+				}
 			} else if (moh_sound && ((nomoh == 0 && conference->count == 1)
 												 || conference_utils_test_flag(conference, CFLAG_WAIT_MOD)) &&
 					   !conference->async_fnode && !conference->fnode) {
 				moh_status = conference_file_play(conference, moh_sound, CONF_DEFAULT_LEADIN, NULL, 1);
+			} else if (conference->perpetual_sound && conference->async_fnode) 
+			{
+				if (noperpetual > 0) 
+				{
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Stopping perpetual sound in conference %s.\n", conference->name);
+					conference_file_stop(conference, FILE_STOP_ASYNC);
+					conference_file_stop(conference, FILE_STOP_ALL);
+				}
 			}
 		}
 
@@ -1352,6 +1377,12 @@ void conference_xlist(conference_obj_t *conference, switch_xml_t x_conference, i
 
 		x_tag = switch_xml_add_child_d(x_flags, "is_ghost", count++);
 		switch_xml_set_txt_d(x_tag, conference_utils_member_test_flag(member, MFLAG_GHOST) ? "true" : "false");
+
+		x_tag = switch_xml_add_child_d(x_flags, "no_perpetual", count++);
+		switch_xml_set_txt_d(x_tag, conference_utils_member_test_flag(member, MFLAG_NOPERPETUAL) ? "true" : "false");
+
+		x_tag = switch_xml_add_child_d(x_flags, "no_moh", count++);
+		switch_xml_set_txt_d(x_tag, conference_utils_member_test_flag(member, MFLAG_NOMOH) ? "true" : "false");
 
 		switch_snprintf(tmp, sizeof(tmp), "%d", member->volume_out_level);
 		add_x_tag(x_member, "output-volume", tmp, toff++);

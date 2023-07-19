@@ -52,8 +52,12 @@
 #include "private/switch_apr_pvt.h"
 #include "private/switch_core_pvt.h"
 
+#define SENTRY_BUILD_STATIC 1
+#include "C:\Development\sentry-native\include\sentry.h"
+
+
 /* pid filename: Stores the process id of the freeswitch process */
-#define PIDFILE "freeswitch.pid"
+#define PIDFILE "SIP_SERVER_IS_RUNNING.PID"
 static char *pfile = PIDFILE;
 static int system_ready = 0;
 
@@ -64,7 +68,7 @@ static int system_ready = 0;
 
 #ifdef WIN32
 /* If we are a windows service, what should we be called */
-#define SERVICENAME_DEFAULT "FreeSWITCH"
+#define SERVICENAME_DEFAULT "SIPServer"
 #define SERVICENAME_MAXLEN 256
 static char service_name[SERVICENAME_MAXLEN];
 static switch_core_flag_t service_flags = SCF_NONE;
@@ -132,7 +136,7 @@ static int freeswitch_kill_background(void)
 		fprintf(stderr, "Killing: %d\n", (int) pid);
 #ifdef WIN32
 		/* for windows we need the event to signal for shutting down a background FreeSWITCH */
-		snprintf(path, sizeof(path), "Global\\Freeswitch.%d", pid);
+		snprintf(path, sizeof(path), "Global\\SIPServer.%d", pid);
 
 		/* open the event so we can signal it */
 		shutdown_event = OpenEvent(EVENT_MODIFY_STATE, FALSE, path);
@@ -530,6 +534,11 @@ int main(int argc, char *argv[])
 #endif
 #endif
 
+	sentry_options_t *options = sentry_options_new();
+	sentry_options_set_dsn(options, "https://6410b90a49e54446bde93a548ad5a4db@o412129.ingest.sentry.io/5711293");
+	sentry_init(options);
+
+
 	for (x = 0; x < argc; x++) {
 		local_argv[x] = argv[x];
 	}
@@ -553,6 +562,7 @@ int main(int argc, char *argv[])
 
 		if (!strcmp(local_argv[x], "-help") || !strcmp(local_argv[x], "-h") || !strcmp(local_argv[x], "-?")) {
 			printf("%s\n", usage);
+			sentry_shutdown();
 			exit(EXIT_SUCCESS);
 		}
 #ifdef WIN32
@@ -592,24 +602,27 @@ int main(int argc, char *argv[])
 			hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 			if (!hSCManager) {
 				fprintf(stderr, "Could not open service manager (%u).\n", GetLastError());
+				sentry_shutdown();
 				exit(EXIT_FAILURE);
 			}
 
 			hService = CreateService(hSCManager, service_name, service_name, GENERIC_READ | GENERIC_EXECUTE | SERVICE_CHANGE_CONFIG, SERVICE_WIN32_OWN_PROCESS, SERVICE_AUTO_START, SERVICE_ERROR_IGNORE,
 						 servicePath, NULL, NULL, NULL, NULL, /* Service start name */ NULL);
 			if (!hService) {
-				fprintf(stderr, "Error creating freeswitch service (%u).\n", GetLastError());
+				fprintf(stderr, "Error creating SIPServer service (%u).\n", GetLastError());
 				CloseServiceHandle(hSCManager);
+				sentry_shutdown();
 				exit(EXIT_FAILURE);
 			}
 
 			/* Set desc, and don't care if it succeeds */
 			if (!ChangeServiceConfig2(hService, SERVICE_CONFIG_DESCRIPTION, &desc)) {
-				fprintf(stderr, "FreeSWITCH installed, but could not set the service description (%u).\n", GetLastError());
+				fprintf(stderr, "SIPServer installed, but could not set the service description (%u).\n", GetLastError());
 			}
 
 			CloseServiceHandle(hService);
 			CloseServiceHandle(hSCManager);
+			sentry_shutdown();
 			exit(EXIT_SUCCESS);
 		}
 
@@ -629,6 +642,7 @@ int main(int argc, char *argv[])
 			hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 			if (!hSCManager) {
 				fprintf(stderr, "Could not open service manager (%u).\n", GetLastError());
+				sentry_shutdown();
 				exit(EXIT_FAILURE);
 			}
 
@@ -636,6 +650,7 @@ int main(int argc, char *argv[])
 			if (!hService) {
 				fprintf(stderr, "Error opening service (%u).\n", GetLastError());
 				CloseServiceHandle(hSCManager);
+				sentry_shutdown();
 				exit(EXIT_FAILURE);
 			}
 
@@ -647,6 +662,7 @@ int main(int argc, char *argv[])
 
 			CloseServiceHandle(hService);
 			CloseServiceHandle(hSCManager);
+			sentry_shutdown();
 			exit(deleted ? EXIT_SUCCESS : EXIT_FAILURE);
 		}
 
@@ -658,6 +674,7 @@ int main(int argc, char *argv[])
 			x++;
 			if (switch_strlen_zero(local_argv[x]) || is_option(local_argv[x])) {
 				fprintf(stderr, "Option '%s' requires an argument!\n", local_argv[x - 1]);
+				sentry_shutdown();
 				exit(EXIT_FAILURE);
 			}
 			runas_user = local_argv[x];
@@ -667,6 +684,7 @@ int main(int argc, char *argv[])
 			x++;
 			if (switch_strlen_zero(local_argv[x]) || is_option(local_argv[x])) {
 				fprintf(stderr, "Option '%s' requires an argument!\n", local_argv[x - 1]);
+				sentry_shutdown();
 				exit(EXIT_FAILURE);
 			}
 			runas_group = local_argv[x];
@@ -713,6 +731,7 @@ int main(int argc, char *argv[])
 #endif
 		else if (!strcmp(local_argv[x], "-version")) {
 			fprintf(stdout, "FreeSWITCH version: %s (%s)\n", switch_version_full(), switch_version_revision_human());
+			sentry_shutdown();
 			exit(EXIT_SUCCESS);
 		}
 
