@@ -19,10 +19,11 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mod_PortAudio</ProjectName>
-    <ProjectGuid>{5FD31A25-5D83-4794-8BEE-904DAD84CE71}</ProjectGuid>
-    <RootNamespace>mod_PortAudio</RootNamespace>
+    <ProjectName>mod_gstreamer</ProjectName>
+    <ProjectGuid>{5AC15CAA-B153-4B45-804A-0CFDF6FA3422}</ProjectGuid>
+    <RootNamespace>mod_Streamer</RootNamespace>
     <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
@@ -51,18 +52,34 @@
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\..\..\..\w32\module_release.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-1.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\glib-2.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-app-1.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-net-1.0.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\..\..\..\w32\module_debug.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-1.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\glib-2.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-app-1.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-net-1.0.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\..\..\..\w32\module_release.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-1.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\glib-2.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-app-1.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-net-1.0.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\..\..\..\w32\module_debug.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-1.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\glib-2.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-app-1.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-net-1.0.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
@@ -79,10 +96,14 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <CodeAnalysisRuleSet>NativeMinimumRules.ruleset</CodeAnalysisRuleSet>
     <RunCodeAnalysis>false</RunCodeAnalysis>
+    <IncludePath>C:\gstreamer\1.0\msvc_x86_64\lib\glib-2.0\include\;C:\gstreamer\1.0\msvc_x86_64\include\glib-2.0\;C:\gstreamer\1.0\msvc_x86_64\include\;C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0;C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0\gst\app;C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0\gst\net;C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0\gst;C:\freeswitch\libs\portaudio\src\os\win;$(IncludePath)</IncludePath>
+    <ReferencePath>C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0\gst;C:\freeswitch\libs\portaudio\src\os\win;C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0\gst\app;C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0\gst\net;$(ReferencePath)</ReferencePath>
+    <SourcePath>C:\freeswitch\libs\portaudio\src\os\win;$(SourcePath)</SourcePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <CodeAnalysisRuleSet>NativeMinimumRules.ruleset</CodeAnalysisRuleSet>
     <RunCodeAnalysis>false</RunCodeAnalysis>
+    <IncludePath>C:\freeswitch\libs\portaudio\src\os\win;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -107,7 +128,7 @@
       <TargetEnvironment>X64</TargetEnvironment>
     </Midl>
     <ClCompile>
-      <AdditionalIncludeDirectories>%(RootDir)%(Directory)..\..\..\..\libs\portaudio\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>%(RootDir)%(Directory)..\..\..\..\libs\portaudio\include;%(RootDir)%(Directory)..\..\..\..\libs\portaudio\src\os\win;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;MOD_EXPORTS;ALLOW_SMP_DANGERS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>
       </PrecompiledHeader>
@@ -160,30 +181,20 @@
       <DataExecutionPrevention>
       </DataExecutionPrevention>
       <TargetMachine>MachineX64</TargetMachine>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="mod_PortAudio.c">
-      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">6011;4100;4101;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">6011;4100;4101;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6011;4100;4101;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-      <DisableSpecificWarnings Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6011;4100;4101;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-    </ClCompile>
-    <ClCompile Include="pa_ringbuffer.c" />
-    <ClCompile Include="pablio.c" />
-    <ClCompile Include="pa_win_coinitialize.c" />
+    <ClCompile Include="gstreamer_api.c" />
+    <ClCompile Include="mod_gstreamer.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="pa_ringbuffer.h" />
-    <ClInclude Include="pablio.h" />
+    <ClInclude Include="gstreamer_api.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\libs\win32\apr\libapr.2017.vcxproj">
       <Project>{f6c55d93-b927-4483-bb69-15aef3dd2dff}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
-    </ProjectReference>
-    <ProjectReference Include="..\..\..\..\libs\win32\portaudio\portaudio.2017.vcxproj">
-      <Project>{0a18a071-125e-442f-aff7-a3f68abecf99}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\w32\Library\FreeSwitchCore.2017.vcxproj">
       <Project>{202d7a4e-760d-4d0e-afa1-d7459ced30ff}</Project>

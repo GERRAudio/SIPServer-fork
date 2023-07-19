@@ -130,6 +130,8 @@ void conference_utils_set_mflags(const char *flags, member_flag_t *f)
 				f[MFLAG_MOD] = 1;
 			} else if (!strcasecmp(argv[i], "nomoh")) {
 				f[MFLAG_NOMOH] = 1;
+			} else if (!strcasecmp(argv[i], "noperpetual")) {
+				f[MFLAG_NOPERPETUAL] = 1;
 			} else if (!strcasecmp(argv[i], "endconf")) {
 				f[MFLAG_ENDCONF] = 1;
 			} else if (!strcasecmp(argv[i], "mandatory_member_endconf")) {

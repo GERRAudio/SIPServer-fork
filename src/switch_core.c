@@ -1191,7 +1191,7 @@ SWITCH_DECLARE(void) switch_core_runtime_loop(int bg)
 #endif
 	if (bg) {
 #ifdef WIN32
-		switch_snprintf(path, sizeof(path), "Global\\Freeswitch.%d", getpid());
+		switch_snprintf(path, sizeof(path), "Global\\SIPServer.%d", getpid());
 		shutdown_event = CreateEvent(NULL, FALSE, FALSE, path);
 		if (shutdown_event) {
 			WaitForSingleObject(shutdown_event, INFINITE);
@@ -2406,22 +2406,9 @@ SWITCH_DECLARE(const char *) switch_core_banner(void)
 {
 
 	return ("\n"
-			".=============================================================.\n"
-			"|   _____              ______        _____ _____ ____ _   _   |\n"
-			"|  |  ___| __ ___  ___/ ___\\ \\      / /_ _|_   _/ ___| | | |  |\n"
-			"|  | |_ | '__/ _ \\/ _ \\___ \\\\ \\ /\\ / / | |  | || |   | |_| |  |\n"
-			"|  |  _|| | |  __/  __/___) |\\ V  V /  | |  | || |___|  _  |  |\n"
-			"|  |_|  |_|  \\___|\\___|____/  \\_/\\_/  |___| |_| \\____|_| |_|  |\n"
-			"|                                                             |\n"
-			".=============================================================."
-			"\n"
-
-			"|   Anthony Minessale II, Michael Jerris, Brian West, Others  |\n"
-			"|   FreeSWITCH (http://www.freeswitch.org)                    |\n"
-			"|   Paypal Donations Appreciated: paypal@freeswitch.org       |\n"
-			"|   Brought to you by ClueCon http://www.cluecon.com/         |\n"
-			".=============================================================.\n"
-			"\n");
+			".=====================================.\n"
+			"|    SIP Server 1.10					           |\n"
+			".=====================================\n");
 }
 
 switch_status_t switch_core_sqldb_init(const char **err)
@@ -2444,8 +2431,8 @@ SWITCH_DECLARE(switch_status_t) switch_core_init_and_modload(switch_core_flag_t 
 	switch_event_t *event;
 	char *cmd;
 	int x = 0;
-	const char *use = NULL;
-#include "cc.h"
+	//const char *use = NULL;
+//  #include "cc.h"
 
 
 	if (switch_core_init(flags, console, err) != SWITCH_STATUS_SUCCESS) {
@@ -2486,6 +2473,7 @@ SWITCH_DECLARE(switch_status_t) switch_core_init_and_modload(switch_core_flag_t 
 
 	switch_core_screen_size(&x, NULL);
 
+	/*
 	use = (x > 100) ? cc : cc_s;
 
 #ifdef WIN32
@@ -2500,8 +2488,11 @@ SWITCH_DECLARE(switch_status_t) switch_core_init_and_modload(switch_core_flag_t 
 #endif
 
 
+
+*/
+
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-					  "\nFreeSWITCH Version %s (%s)\n\nFreeSWITCH Started\nMax Sessions [%u]\nSession Rate [%d]\nSQL [%s]\n",
+					  "\nSIP Server Version %s (%s)\n\nSIP Server Started\nMax Sessions [%u]\nSession Rate [%d]\nSQL [%s]\n",
 					  switch_version_full(), switch_version_revision_human(),
 					  switch_core_session_limit(0),
 					  switch_core_sessions_per_second(0), switch_test_flag((&runtime), SCF_USE_SQL) ? "Enabled" : "Disabled");
@@ -2561,7 +2552,7 @@ static void win_shutdown(void)
 	HANDLE shutdown_event;
 	char path[512];
 	/* for windows we need the event to signal for shutting down a background FreeSWITCH */
-	snprintf(path, sizeof(path), "Global\\Freeswitch.%d", getpid());
+	snprintf(path, sizeof(path), "Global\\SIPServer.%d", getpid());
 
 	/* open the event so we can signal it */
 	shutdown_event = OpenEvent(EVENT_MODIFY_STATE, FALSE, path);

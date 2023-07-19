@@ -66,7 +66,7 @@
   </ImportGroup>
   <ImportGroup Label="PropertySheets">
     <Import Project="$(SolutionDir)\w32\tiff.props" />
-    <Import Project="$(SolutionDir)\w32\spandsp.props"/>
+    <Import Project="$(SolutionDir)\w32\spandsp.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
@@ -83,6 +83,14 @@
     <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(Platform)\$(Configuration)\</IntDir>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <TargetName>SIPServer</TargetName>
+    <LibraryPath>C:\Development\sipserver\x64\SIP Server;C:\Development\sentry-native\Release;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Development\sentry-native\include\;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <TargetName>SIPServer</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <BuildLog />
@@ -139,6 +147,7 @@
       <DataExecutionPrevention>
       </DataExecutionPrevention>
       <TargetMachine>MachineX64</TargetMachine>
+      <AdditionalDependencies>C:\Development\sentry-native\Release\sentry.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -183,7 +192,7 @@
       <DisableSpecificWarnings>28251;6031;6340;6246;6011;6387;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\Development\sipserver\x64\SIP Server;$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
       <OptimizeReferences>true</OptimizeReferences>
@@ -192,12 +201,14 @@
       <DataExecutionPrevention>
       </DataExecutionPrevention>
       <TargetMachine>MachineX64</TargetMachine>
+      <AdditionalDependencies>C:\Development\sipserver\x64\SIP Server\sentry.lib;C:\Development\sentry-native\Release\sentry.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\src\switch.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\..\sentry-native\include\sentry.h" />
     <ClInclude Include="..\..\src\include\switch.h" />
     <ClInclude Include="..\..\src\include\switch_buffer.h" />
     <ClInclude Include="..\..\src\include\switch_caller.h" />
@@ -210,6 +221,7 @@
     <ClInclude Include="..\..\src\include\switch_module_interfaces.h" />
     <ClInclude Include="..\..\src\include\switch_types.h" />
     <ClInclude Include="..\..\src\include\switch_utils.h" />
+    <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\libs\win32\apr\libapr.2017.vcxproj">
@@ -235,6 +247,9 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\..\sentry-native\Release\sentry.dll">
+      <DeploymentContent>true</DeploymentContent>
+    </None>
     <None Include="switch_version.rc2" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
