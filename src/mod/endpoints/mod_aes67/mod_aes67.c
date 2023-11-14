@@ -51,12 +51,19 @@
 #define MY_EVENT_CALL_RESUMED "gstreamer::callresumed"
 #define MY_EVENT_CALL_AUDIO_LEVEL "gstreamer::call_audio_level"
 #define MY_EVENT_ERROR_AUDIO_DEV "gstreamer::audio_dev_error"
+#define MY_EVENT_PTP_STATS "gstreamer::ptp_stats"
 #define SWITCH_PA_CALL_ID_VARIABLE "gst_call_id"
 
 #define MIN_STREAM_SAMPLE_RATE 8000
 #define STREAM_SAMPLES_PER_PACKET(stream) ((stream->codec_ms * stream->sample_rate) / 1000)
+#define NW_IFACE_LEN 1024
 
-
+#define STREAM_READER_TRYLOCK(s) (!g_atomic_int_get(&(s)->reloading) && \
+                                  g_rw_lock_reader_trylock(&(s)->rwlock))
+#define STREAM_READER_LOCK(s) (g_rw_lock_reader_lock(&(s)->rwlock))
+#define STREAM_READER_UNLOCK(s) g_rw_lock_reader_unlock(&(s)->rwlock)
+#define STREAM_WRITER_LOCK(s) (g_rw_lock_writer_lock(&(s)->rwlock))
+#define STREAM_WRITER_UNLOCK(s) g_rw_lock_writer_unlock(&(s)->rwlock)
 
 SWITCH_MODULE_LOAD_FUNCTION (mod_gstreamer_load);
 SWITCH_MODULE_SHUTDOWN_FUNCTION (mod_gstreamer_shutdown);
@@ -110,7 +117,12 @@ struct audio_stream
 };
 typedef struct audio_stream audio_stream_t;
 
-/* Audio stream that can be shared across endpoints */
+/* Audio stream that can be shared across endpoints
+ *
+ * Note: Every time we add a new member to this struct and it is used in conf
+ * we need to make sure the `stream_compare` function is updated to compare
+ * the newly added variable.
+ */
 typedef struct _shared_audio_stream_t
 {
   /*! Friendly name for this stream */
@@ -146,12 +158,16 @@ typedef struct _shared_audio_stream_t
   /*offset (in msec) to be added to rtptime*/
   double rtp_ts_offset;
   /* network interface for udp multicast */
-  char *rtp_iface;
+  char rtp_iface[NW_IFACE_LEN];
   /* RTP payload type */
   int rtp_payload_type;
   /* latency for the RTP jitterbuffer*/
   int rtp_jitbuf_latency;
-
+  /* current state of txflow of the stream*/
+  switch_bool_t txflow;
+  /* to sync the read/write during stream reload*/
+  volatile gint reloading;
+  GRWLock rwlock;
 } shared_audio_stream_t;
 
 typedef struct private_object private_t;
@@ -269,12 +285,18 @@ static struct
   void *clock;
   int synthetic_ptp;
   double rtp_ts_offset;
-  char *rtp_iface;
+  char rtp_iface[NW_IFACE_LEN];
   int rtp_payload_type;
   int rtp_jitbuf_latency;
   switch_bool_t enable_ptp_stats;
   long long int ptp_stats_cb_id;
   int level_report;
+  uint64_t ptp_gm_id;
+  uint64_t ptp_gm_mac_addr;
+  /* PTP domain using signed int to have -1 as default value */
+  int8_t ptp_domain;
+  /* Network interface to be used for PTP */
+  char ptp_iface[NW_IFACE_LEN];
 } globals;
 
 
@@ -404,6 +426,20 @@ channel_on_routing (switch_core_session_t * session)
         switch_set_flag (tech_pvt, TFLAG_ANSWER);
       }
       switch_mutex_unlock (globals.pvt_lock);
+
+	  switch_mutex_lock (tech_pvt->audio_endpoint->mutex);
+	  if (tech_pvt->audio_endpoint && tech_pvt->audio_endpoint->in_stream) {
+		  audio_endpoint_t *audio_endp = tech_pvt->audio_endpoint;
+
+		  STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
+		  //Setting the 'drop' property to TRUE will drop the buffers before reaching appsink, after hangup
+		  drop_input_buffers (FALSE, audio_endp->in_stream->stream,
+				  audio_endp->inchan);
+
+		  STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
+	  }
+	  switch_mutex_unlock (tech_pvt->audio_endpoint->mutex);
+
       switch_yield (1000000);
     } else {
       // switch_channel_mark_ring_ready(channel);
@@ -529,7 +565,7 @@ destroy_audio_streams ()
   globals.destroying_streams = 0;
 }
 
-static int destroy_shared_audio_stream (shared_audio_stream_t * stream);
+static int clear_shared_audio_stream (shared_audio_stream_t * stream);
 
 static void
 destroy_shared_audio_streams ()
@@ -541,8 +577,12 @@ destroy_shared_audio_streams ()
 
   for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
     switch_core_hash_this(hi, NULL, NULL, (void **)&stream);
-    if (stream->stream)
-      destroy_shared_audio_stream(stream);
+    if (stream->stream) {
+      clear_shared_audio_stream(stream);
+      /* Deinit here since clear_shared_audio_stream() allows the stream to be reused when reloading */
+      g_rw_lock_clear(&stream->rwlock);
+      switch_safe_free(stream);
+    }
   }
 
   globals.destroying_streams = 0;
@@ -823,9 +863,9 @@ channel_on_hangup (switch_core_session_t * session)
   if (tech_pvt->audio_endpoint) {
     audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;
 
-    tech_pvt->audio_endpoint = NULL;
-
     switch_mutex_lock (endpoint->mutex);
+
+    tech_pvt->audio_endpoint = NULL;
 
     release_stream_channel (endpoint->in_stream, endpoint->inchan, 1);
     release_stream_channel (endpoint->out_stream, endpoint->outchan, 0);
@@ -867,12 +907,22 @@ channel_kill_channel (switch_core_session_t * session, int sig)
     case SWITCH_SIG_KILL:
       switch_set_flag_locked (tech_pvt, TFLAG_HUP);
       switch_channel_hangup (channel, SWITCH_CAUSE_NORMAL_CLEARING);
+
+      switch_mutex_lock (tech_pvt->audio_endpoint->mutex);
+
       if (tech_pvt->audio_endpoint && tech_pvt->audio_endpoint->in_stream) {
         audio_endpoint_t *audio_endp = tech_pvt->audio_endpoint;
+
+        STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
         //Setting the 'drop' property to TRUE will drop the buffers before reaching appsink, after hangup
         drop_input_buffers (TRUE, audio_endp->in_stream->stream,
             audio_endp->inchan);
+
+        STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
       }
+
+      switch_mutex_unlock (tech_pvt->audio_endpoint->mutex);
+
       break;
     default:
       break;
@@ -899,9 +949,13 @@ channel_on_exchange_media (switch_core_session_t * session)
 
   if (tech_pvt->audio_endpoint && tech_pvt->audio_endpoint->in_stream) {
     audio_endpoint_t *audio_endp = tech_pvt->audio_endpoint;
+
+    STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
     //Setting the 'drop' property to FALSE will let the buffers flow to appsink
     drop_input_buffers (FALSE, audio_endp->in_stream->stream,
         audio_endp->inchan);
+
+    STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
   }
 
   switch_log_printf (SWITCH_CHANNEL_SESSION_LOG (session), SWITCH_LOG_DEBUG,
@@ -935,20 +989,27 @@ channel_endpoint_read (audio_endpoint_t * endpoint, switch_frame_t ** frame)
     return SWITCH_STATUS_SUCCESS;
   }
 
-  if (!endpoint->in_stream->stream) {
-    return SWITCH_STATUS_FALSE;
-  }
-
   endpoint->read_frame.data = endpoint->read_buf;
   endpoint->read_frame.buflen = sizeof (endpoint->read_buf);
   endpoint->read_frame.source = __FILE__;
 
-  bytes =
+  if (STREAM_READER_TRYLOCK(endpoint->in_stream)) {
+    if (!endpoint->in_stream->stream) {
+      return SWITCH_STATUS_FALSE;
+    }
+    bytes =
       pull_buffers (endpoint->in_stream->stream,
-      (unsigned char *) endpoint->read_frame.data,
-      STREAM_SAMPLES_PER_PACKET (endpoint->in_stream) *
-      2 /* FIXME: non-S16LE */ ,
-      endpoint->inchan, &endpoint->read_timer);
+          (unsigned char *) endpoint->read_frame.data,
+          STREAM_SAMPLES_PER_PACKET (endpoint->in_stream) *
+          2 /* FIXME: non-S16LE */ ,
+          endpoint->inchan, &endpoint->read_timer);
+    STREAM_READER_UNLOCK(endpoint->in_stream);
+  } else {
+    // Pipeline is being reset, feed some silence
+    bytes = STREAM_SAMPLES_PER_PACKET (endpoint->in_stream) * 2;
+    memset(endpoint->read_frame.data, 0, bytes);
+  }
+
   // FIXME: Only works for S16LE
   samples = bytes / sizeof (int16_t);
   if (!bytes) {
@@ -1162,9 +1223,7 @@ channel_endpoint_write (audio_endpoint_t * endpoint, switch_frame_t * frame)
     switch_core_timer_next (&endpoint->write_timer);
     return SWITCH_STATUS_SUCCESS;
   }
-  if (!endpoint->out_stream->stream) {
-    return SWITCH_STATUS_FALSE;
-  }
+
   if (!endpoint->master) {
     return SWITCH_STATUS_SUCCESS;
   }
@@ -1174,9 +1233,19 @@ channel_endpoint_write (audio_endpoint_t * endpoint, switch_frame_t * frame)
   if (!switch_test_flag (endpoint->master, TFLAG_IO)) {
     return SWITCH_STATUS_SUCCESS;
   }
-  push_buffer (endpoint->out_stream->stream,
-      (unsigned char *) frame->data, frame->datalen, endpoint->outchan,
-      &(endpoint->write_timer));
+
+  if (STREAM_READER_TRYLOCK(endpoint->out_stream)) {
+    if (!endpoint->out_stream->stream) {
+      return SWITCH_STATUS_FALSE;
+    }
+
+    // Pipeline is not being reset, we can push data
+    push_buffer (endpoint->out_stream->stream,
+            (unsigned char *) frame->data, frame->datalen, endpoint->outchan,
+            &(endpoint->write_timer));
+    STREAM_READER_UNLOCK(endpoint->out_stream);
+  }
+
   return SWITCH_STATUS_SUCCESS;
 }
 
@@ -1646,6 +1715,7 @@ SWITCH_MODULE_LOAD_FUNCTION (mod_gstreamer_load)
   switch_console_set_complete("add gs ptpstats");
   switch_console_set_complete("add gs rtpstats");
   switch_console_set_complete("add gs txflow");
+  switch_console_set_complete("add gs reloadconf");
 
   /* indicate that the module should continue to be loaded */
   return SWITCH_STATUS_SUCCESS;
@@ -1655,16 +1725,168 @@ static gboolean
 ptp_stats_cb (guint8 d, const GstStructure * stats, gpointer user_data)
 {
   if (globals.enable_ptp_stats) {
+    switch_event_t *event;
     gchar *stats_str = gst_structure_to_string (stats);
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "PTP Stats: %s \n", stats_str);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+        "PTP Stats: %s "
+        "grandmaster-clock-id=0x%016" G_GINT64_MODIFIER "x, "
+        "grandmaster-mac-addr=0x%012" G_GINT64_MODIFIER "x \n",
+        stats_str, globals.ptp_gm_id, globals.ptp_gm_mac_addr);
+
+    if (switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, MY_EVENT_PTP_STATS) == SWITCH_STATUS_SUCCESS) {
+        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "PTP-STATS", stats_str);
+        switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-ID", "%016" G_GINT64_MODIFIER "X", globals.ptp_gm_id);
+        switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-MAC", "%012" G_GINT64_MODIFIER "X", globals.ptp_gm_mac_addr);
+
+        switch_event_fire(&event);
+    }
     g_free (stats_str);
   }
 
   return TRUE;
 }
 
+static void
+link_rx_stream (shared_audio_stream_t *stream)
+{
+  switch_hash_index_t *hi;
+  for (hi = switch_core_hash_first(globals.call_hash); hi; hi = switch_core_hash_next(&hi)) {
+    const void *var;
+    void *val;
+    private_t *tech_pvt;
+
+    switch_core_hash_this(hi, &var, NULL, &val);
+    tech_pvt = val;
+
+    if (tech_pvt->audio_endpoint->in_stream == stream) {
+
+        switch_channel_t *ch = switch_core_session_get_channel(tech_pvt->session);
+        switch_channel_callstate_t state = switch_channel_get_callstate(ch);
+
+        if (state == CCS_ACTIVE)
+          drop_input_buffers(FALSE, tech_pvt->audio_endpoint->in_stream->stream,
+              tech_pvt->audio_endpoint->inchan);
+    }
+  }
+}
+
+static switch_bool_t
+stream_compare (shared_audio_stream_t *current, shared_audio_stream_t *new)
+{
+  switch_bool_t stream_changed = FALSE;
+
+  if (current->sample_rate != new->sample_rate) {
+    current->sample_rate = new->sample_rate;
+    stream_changed = TRUE;
+  }
+
+  if (current->codec_ms != new->codec_ms) {
+    current->codec_ms = new->codec_ms;
+    stream_changed = TRUE;
+  }
+
+  if (strcasecmp(current->indev->ip_addr, new->indev->ip_addr)) {
+    strcpy(current->indev->ip_addr, new->indev->ip_addr);
+    stream_changed = TRUE;
+  }
+
+  if (current->indev->port != new->indev->port) {
+    current->indev->port = new->indev->port;
+    stream_changed = TRUE;
+  }
+
+  if (strcasecmp(current->outdev->ip_addr, new->outdev->ip_addr)) {
+    strcpy(current->outdev->ip_addr, new->outdev->ip_addr);
+    stream_changed = TRUE;
+  }
+
+  if (current->outdev->port != new->outdev->port) {
+    current->outdev->port = new->outdev->port;
+    stream_changed = TRUE;
+  }
+
+  if (current->channels != new->channels) {
+    current->channels = new->channels;
+    stream_changed = TRUE;
+  }
+
+  if (current->tx_codec != new->tx_codec) {
+    current->tx_codec = new->tx_codec;
+    stream_changed = TRUE;
+  }
+
+  if (current->rx_codec != new->rx_codec) {
+    current->rx_codec = new->rx_codec;
+    stream_changed = TRUE;
+  }
+
+  if (current->ptime_ms != new->ptime_ms) {
+    current->ptime_ms = new->ptime_ms;
+    stream_changed = TRUE;
+  }
+
+  if (current->synthetic_ptp != new->synthetic_ptp) {
+    current->synthetic_ptp = new->synthetic_ptp;
+    stream_changed = TRUE;
+  }
+
+  if (current->rtp_ts_offset != new->rtp_ts_offset) {
+    current->rtp_ts_offset = new->rtp_ts_offset;
+    stream_changed = TRUE;
+  }
+
+  if (current->rtp_payload_type != new->rtp_payload_type) {
+    current->rtp_payload_type = new->rtp_payload_type;
+    stream_changed = TRUE;
+  }
+
+  if (current->rtp_jitbuf_latency != new->rtp_jitbuf_latency) {
+    current->rtp_jitbuf_latency = new->rtp_jitbuf_latency;
+    stream_changed = TRUE;
+  }
+
+  if (strcasecmp(current->rtp_iface, new->rtp_iface)) {
+    strcpy(current->rtp_iface, new->rtp_iface);
+    stream_changed = TRUE;
+  }
+
+  return stream_changed;
+}
+
+static void *
+init_ptp (int domain, char *iface)
+{
+  GstClockTime timeout = 10000000000;
+  void *clock = NULL;
+  if (!zstr(iface)) {
+    gchar *interfaces[2] = {iface, NULL};
+    if (!gst_ptp_init (GST_PTP_CLOCK_ID_NONE, interfaces))
+      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,"failed to init ptp with iface %s", interfaces[0]);
+  }
+
+  /* if id is -1, no callback hooked yet */
+  if (globals.ptp_stats_cb_id == -1) {
+    globals.ptp_stats_cb_id = gst_ptp_statistics_callback_add (ptp_stats_cb, NULL, NULL);
+  }
+
+  switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Creating ptp clock client\n");
+  clock = gst_ptp_clock_new ("ptp-clock", domain);
+  if (!gst_clock_wait_for_sync (GST_CLOCK (clock), timeout)) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Timed out waiting for the clock to sync\n");
+    return NULL;
+  }
+
+  g_object_get(clock, "grandmaster-clock-id", &globals.ptp_gm_id, NULL);
+  // Clock ID formed from the MAC address
+  // if the MAC address is A1-B2-C3-D4-E5-F6, the clock id would be A1-B2-C3-FF-FE-D4-E5-F6
+  // strip byte 4 and 5 to retrieve MAC address from the Clock ID
+  globals.ptp_gm_mac_addr = ((0xFFFFFF0000000000 & globals.ptp_gm_id) >> 16) | (0xFFFFFF & globals.ptp_gm_id);
+
+  return clock;
+}
+
 static switch_status_t
-load_streams (switch_xml_t streams)
+load_streams (switch_xml_t streams, switch_bool_t reload)
 {
   switch_status_t status = SWITCH_STATUS_SUCCESS;
   switch_xml_t param, mystream;
@@ -1673,6 +1895,8 @@ load_streams (switch_xml_t streams)
   for (mystream = switch_xml_child (streams, "stream"); mystream;
       mystream = mystream->next) {
     shared_audio_stream_t *stream = NULL;
+    shared_audio_stream_t *curr_stream = NULL;
+
     char *stream_name = (char *) switch_xml_attr_soft (mystream, "name");
 
     if (!stream_name) {
@@ -1684,16 +1908,22 @@ load_streams (switch_xml_t streams)
     /* check if that stream name is not already used */
     stream = switch_core_hash_find (globals.sh_streams, stream_name);
     if (stream) {
-      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+      if (!reload) {
+        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
           "A stream with name '%s' already exists\n", stream_name);
-      continue;
+        continue;
+      }
+      curr_stream = stream;
     }
-
-    stream = switch_core_alloc (module_pool, sizeof (*stream));
+    switch_zmalloc (stream, sizeof (*stream));
     if (!stream) {
       continue;
     }
+
     switch_mutex_init (&stream->mutex, SWITCH_MUTEX_NESTED, module_pool);
+    g_rw_lock_init (&stream->rwlock);
+    stream->reloading = 0;
+
     stream->indev = NULL;
     stream->outdev = NULL;
     stream->sample_rate = globals.sample_rate;
@@ -1705,9 +1935,10 @@ load_streams (switch_xml_t streams)
     stream->clock = globals.clock;
     stream->synthetic_ptp = globals.synthetic_ptp;
     stream->rtp_ts_offset = globals.rtp_ts_offset;
-    stream->rtp_iface = globals.rtp_iface;
+    strncpy(stream->rtp_iface, globals.rtp_iface, NW_IFACE_LEN);
     stream->rtp_payload_type = globals.rtp_payload_type;
     stream->rtp_jitbuf_latency = globals.rtp_jitbuf_latency;
+    stream->txflow = TRUE;
 
     switch_snprintf (stream->name, sizeof (stream->name), "%s", stream_name);
     for (param = switch_xml_child (mystream, "param"); param;
@@ -1717,16 +1948,20 @@ load_streams (switch_xml_t streams)
       switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
           "Parsing stream '%s' parameter %s = %s\n", stream_name, var, val);
       if (!strcmp (var, "tx-address")) {
-        if (stream->outdev == NULL)
+        if (stream->outdev == NULL) {
           switch_malloc (stream->outdev, sizeof (udp_sock_t));
+          stream->outdev->port = globals.outdev ? globals.outdev->port : 0;
+        }
         strncpy (stream->outdev->ip_addr, val, IP_ADDR_MAX_LEN - 1);
       } else if (!strcmp (var, "tx-port")) {
         if (stream->outdev == NULL)
           switch_malloc (stream->outdev, sizeof (udp_sock_t));
         stream->outdev->port = atoi (val);
       } else if (!strcmp (var, "rx-address")) {
-        if (stream->indev == NULL)
+        if (stream->indev == NULL) {
           switch_malloc (stream->indev, sizeof (udp_sock_t));
+          stream->indev->port = globals.indev->port ? globals.indev->port : 0;
+        }
         strncpy (stream->indev->ip_addr, val, IP_ADDR_MAX_LEN - 1);
       } else if (!strcmp (var, "rx-port")) {
         if (stream->indev == NULL)
@@ -1773,38 +2008,18 @@ load_streams (switch_xml_t streams)
         }
       } else if (!strcasecmp (var, "ptime-ms")) {
         stream->ptime_ms = strtod(val, NULL);
-      } else if (!strcasecmp (var, "ptp-domain")) {
-        int tmp = atoi (val);
-        GstClockTime timeout = 10000000000;
-        char *iface = (char *) switch_xml_attr_soft (param, "iface");
-        if (!zstr(iface)) {
-          gchar *interfaces[2] = {iface, NULL};
-          if (!gst_ptp_init (GST_PTP_CLOCK_ID_NONE, interfaces))
-            switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,"failed to init ptp with iface %s", interfaces[0]);
-        }
-
-        /* if id is -1, no callback hooked yet */
-        if (globals.ptp_stats_cb_id == -1) {
-          globals.ptp_stats_cb_id = gst_ptp_statistics_callback_add (ptp_stats_cb, NULL, NULL);
-        }
-
-        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Creating ptp clock client for stream: %s\n", stream_name);
-        stream->clock = gst_ptp_clock_new ("ptp-clock", tmp);
-        if (!gst_clock_wait_for_sync (GST_CLOCK (stream->clock), timeout)) {
-          switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Timed out waiting for the clock to sync");
-          return SWITCH_STATUS_TIMEOUT;
-        }
       } else if (!strcasecmp (var, "synthetic-ptp")) {
         stream->synthetic_ptp = atoi(val);
       } else if (!strcasecmp (var, "rtp-ts-offset")) {
         stream->rtp_ts_offset = strtod(val, NULL);
       } else if (!strcasecmp (var, "rtp-iface")) {
-        switch_zmalloc (stream->rtp_iface, strlen(val)+1);
-        memcpy (stream->rtp_iface, val, strlen(val));
+        strncpy (stream->rtp_iface, val, NW_IFACE_LEN - 1);
       } else if  (!strcasecmp (var, "rtp-payload-type")) {
         stream->rtp_payload_type = atoi(val);
       } else if (!strcasecmp (var, "rtp-jitbuf-latency")) {
         stream->rtp_jitbuf_latency = atoi(val);
+      } else if (!strcasecmp (var, "txflow-on-start")) {
+        stream->txflow = atoi(val);
       }
     }
     if (stream->indev == NULL && stream->outdev == NULL) {
@@ -1812,13 +2027,34 @@ load_streams (switch_xml_t streams)
           "You need at least one device for stream '%s'\n", stream_name);
       continue;
     }
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-        "Created stream '%s', sample-rate = %d, codec-ms = %d\n", stream->name,
-        stream->sample_rate, stream->codec_ms);
-    switch_core_hash_insert (globals.sh_streams, stream->name, stream);
 
-    /* Create ahead-of-time to start clock sync, etc. */
-    create_shared_audio_stream(stream);
+    if (reload) {
+      /* update current stream with the changes */
+      if (stream_compare (curr_stream, stream)) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "stream %s changed\n", curr_stream->name);
+
+        // Signal intent-to-reload to prevent writer starvation
+        g_atomic_int_set (&curr_stream->reloading, 1);
+        STREAM_WRITER_LOCK(curr_stream);
+
+        clear_shared_audio_stream(curr_stream);
+        create_shared_audio_stream(curr_stream);
+        link_rx_stream(curr_stream);
+
+        g_atomic_int_set (&curr_stream->reloading, 0);
+        STREAM_WRITER_UNLOCK(curr_stream);
+      }
+      /* dont insert the allocated stream to the sh_streams list*/
+      switch_safe_free(stream);
+    } else {
+      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+          "Created stream '%s', sample-rate = %d, codec-ms = %d\n", stream->name,
+          stream->sample_rate, stream->codec_ms);
+      switch_core_hash_insert (globals.sh_streams, stream->name, stream);
+
+      /* Create ahead-of-time to start clock sync, etc. */
+      create_shared_audio_stream(stream);
+    }
   }
   return status;
 }
@@ -1966,44 +2202,9 @@ load_endpoints (switch_xml_t endpoints)
 }
 
 static switch_status_t
-load_config (void)
+load_globals (switch_xml_t cfg)
 {
-  char *cf = "gstreamer.conf";
-  switch_xml_t cfg, xml, settings, streams, endpoints, param;
-  switch_status_t status = SWITCH_STATUS_SUCCESS;
-
-  if (!(xml = switch_xml_open_cfg (cf, &cfg, NULL))) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Open of %s failed\n", cf);
-    return SWITCH_STATUS_TERM;
-  }
-  destroy_audio_streams ();
-  destroy_shared_audio_streams ();
-  destroy_codecs ();
-  globals.dual_streams = 0;
-  globals.no_auto_resume_call = 0;
-  globals.indev = globals.outdev = NULL;
-  globals.sample_rate = 8000;
-  globals.unload_device_fail = 0;
-  //default codec to Raw 16bit.
-  globals.tx_codec = L16;
-  globals.rx_codec = L16;
-  globals.ptime_ms = -1.0;
-
-  /* Setting the clock to REALTIME as default */
-  /* Note: Although using MONOTONIC clock is better usually, we use
-  REALTIME clock in this case so that if the system clock is in sync
-  with PTP, we could use same clock on the pipeline, hence using the PTP
-  indirectly */
-
-  globals.clock = g_object_new (GST_TYPE_SYSTEM_CLOCK, "clock-type", GST_CLOCK_TYPE_REALTIME, NULL);
-  globals.synthetic_ptp = 0;
-  globals.rtp_ts_offset = 0.0;
-  globals.rtp_iface = NULL;
-  globals.rtp_payload_type = 96; /* gstreamer default value*/
-  globals.ptp_stats_cb_id = -1; /* default to -1 */
-  globals.rtp_jitbuf_latency = 10;
-
+  switch_xml_t settings, param;
   if ((settings = switch_xml_child (cfg, "settings"))) {
     for (param = switch_xml_child (settings, "param"); param;
         param = param->next) {
@@ -2042,16 +2243,20 @@ load_config (void)
       } else if (!strcmp (var, "cid-num")) {
         set_global_cid_num (val);
       } else if (!strcmp (var, "tx-address")) {
-        if (globals.outdev == NULL)
+        if (globals.outdev == NULL) {
           switch_malloc (globals.outdev, sizeof (udp_sock_t));
+          globals.outdev->port = 0;
+        }
         strncpy (globals.outdev->ip_addr, val, IP_ADDR_MAX_LEN - 1);
       } else if (!strcmp (var, "tx-port")) {
         if (globals.outdev == NULL)
           switch_malloc (globals.outdev, sizeof (udp_sock_t));
         globals.outdev->port = atoi (val);
       } else if (!strcmp (var, "rx-address")) {
-        if (globals.indev == NULL)
+        if (globals.indev == NULL) {
           switch_malloc (globals.indev, sizeof (udp_sock_t));
+          globals.indev->port = 0;
+        }
         strncpy (globals.indev->ip_addr, val, IP_ADDR_MAX_LEN - 1);
       } else if (!strcmp (var, "rx-port")) {
         if (globals.indev == NULL)
@@ -2070,36 +2275,18 @@ load_config (void)
       } else if (!strcasecmp (var, "ptime-ms")) {
         globals.ptime_ms = strtod(val, NULL);
       } else if (!strcasecmp (var, "ptp-domain")) {
-        int tmp = atoi (val);
-        GstClockTime timeout = 10000000000;
-        char *iface = (char *) switch_xml_attr_soft (param, "iface");
+        char *iface;
+        globals.ptp_domain = atoi (val);
+        iface = (char *) switch_xml_attr_soft (param, "iface");
         if (!zstr(iface)) {
-          gchar *interfaces[2] = {iface, NULL};
-          if (!gst_ptp_init (GST_PTP_CLOCK_ID_NONE, interfaces))
-            switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,"failed to init ptp with iface %s", interfaces[0]);
-        }
-        /* using PTP clock, clean up the default GST_CLOCK_TYPE_REALTIME clock */
-        gst_object_unref (globals.clock);
-        globals.clock = NULL;
-
-        /* if id is -1, no callback hooked yet */
-        if (globals.ptp_stats_cb_id == -1) {
-          globals.ptp_stats_cb_id = gst_ptp_statistics_callback_add (ptp_stats_cb, NULL, NULL);
-        }
-
-        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Creating ptp clock client for globals\n");
-        globals.clock = gst_ptp_clock_new ("ptp-clock", tmp);
-        if (!gst_clock_wait_for_sync (GST_CLOCK (globals.clock), timeout)) {
-          switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Timed out waiting for the clock to sync");
-          return SWITCH_STATUS_TIMEOUT;
+          strncpy(globals.ptp_iface, iface, NW_IFACE_LEN - 1);
         }
       } else if (!strcasecmp (var, "synthetic-ptp")) {
         globals.synthetic_ptp = atoi(val);
       } else if (!strcasecmp (var, "rtp-ts-offset")) {
         globals.rtp_ts_offset = strtod(val, NULL);
       } else if (!strcasecmp (var, "rtp-iface")) {
-        switch_zmalloc (globals.rtp_iface, strlen(val)+1);
-        memcpy (globals.rtp_iface, val, strlen(val));
+        strncpy (globals.rtp_iface, val, NW_IFACE_LEN - 1);
       } else if (!strcasecmp (var, "rtp-payload-type")) {
         globals.rtp_payload_type = atoi(val);
       } else if (!strcasecmp (var, "rtp-jitbuf-latency")) {
@@ -2108,6 +2295,61 @@ load_config (void)
         globals.level_report = switch_true(val);
       }
     }
+  }
+  return SWITCH_STATUS_SUCCESS;
+}
+
+static switch_status_t
+load_config (void)
+{
+  char *cf = "aes67.conf";
+  switch_xml_t cfg, xml, streams, endpoints;
+  switch_status_t status = SWITCH_STATUS_SUCCESS;
+
+  if (!(xml = switch_xml_open_cfg (cf, &cfg, NULL))) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+        "Open of %s failed\n", cf);
+    return SWITCH_STATUS_TERM;
+  }
+  destroy_audio_streams ();
+  destroy_shared_audio_streams ();
+  destroy_codecs ();
+  globals.dual_streams = 0;
+  globals.no_auto_resume_call = 0;
+  globals.indev = globals.outdev = NULL;
+  globals.sample_rate = 8000;
+  globals.unload_device_fail = 0;
+  //default codec to Raw 16bit.
+  globals.tx_codec = L16;
+  globals.rx_codec = L16;
+  globals.ptime_ms = -1.0;
+  globals.ptp_domain = -1;
+
+  /* Setting the clock to REALTIME as default */
+  /* Note: Although using MONOTONIC clock is better usually, we use
+  REALTIME clock in this case so that if the system clock is in sync
+  with PTP, we could use same clock on the pipeline, hence using the PTP
+  indirectly */
+
+  globals.clock = g_object_new (GST_TYPE_SYSTEM_CLOCK, "clock-type", GST_CLOCK_TYPE_REALTIME, NULL);
+  globals.synthetic_ptp = 0;
+  globals.rtp_ts_offset = 0.0;
+  memset(globals.rtp_iface, 0, NW_IFACE_LEN);
+  globals.rtp_payload_type = 96; /* gstreamer default value*/
+  globals.ptp_stats_cb_id = -1; /* default to -1 */
+  globals.rtp_jitbuf_latency = 10;
+  memset(globals.ptp_iface, 0, NW_IFACE_LEN);
+
+  if(SWITCH_STATUS_SUCCESS != (status = load_globals(cfg))) {
+    return status;
+  }
+
+  if (globals.ptp_domain >= 0) {
+    /* using PTP clock, clean up the default GST_CLOCK_TYPE_REALTIME clock */
+    gst_object_unref (globals.clock);
+    globals.clock = init_ptp (globals.ptp_domain, globals.ptp_iface);
+    if (NULL == globals.clock)
+      return SWITCH_STATUS_GENERR;
   }
 
   globals.enable_ptp_stats = FALSE;
@@ -2142,7 +2384,7 @@ load_config (void)
 
   /* streams and endpoints must be last, some initialization depend on globals defaults */
   if ((streams = switch_xml_child (cfg, "streams"))) {
-    load_streams (streams);
+    load_streams (streams, FALSE);
   }
 
   if ((endpoints = switch_xml_child (cfg, "endpoints"))) {
@@ -2374,12 +2616,13 @@ open_shared_audio_stream (shared_audio_stream_t * shstream)
   data.channels = shstream->channels;
   data.name = shstream->name;
   data.ptime_ms = shstream->ptime_ms;
-  data.clock = shstream->clock;
+  data.clock = globals.clock; // no clock setting per stream, only globals
   data.synthetic_ptp = shstream->synthetic_ptp;
   data.rtp_ts_offset = shstream->rtp_ts_offset;
   data.rtp_iface = shstream->rtp_iface;
   data.rtp_payload_type = shstream->rtp_payload_type;
   data.rtp_jitbuf_latency = shstream->rtp_jitbuf_latency;
+  data.txdrop = !shstream->txflow;
 
   shstream->stream = create_pipeline (&data, error_callback);
   return 0;
@@ -2410,12 +2653,14 @@ create_shared_audio_stream (shared_audio_stream_t * shstream)
 }
 
 static int
-destroy_shared_audio_stream (shared_audio_stream_t * shstream)
+clear_shared_audio_stream (shared_audio_stream_t * shstream)
 {
   switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
       "Destroying shared audio stream %s\n", shstream->name);
   stop_pipeline (shstream->stream);
+
   shstream->stream = NULL;
+
   return 0;
 }
 
@@ -2535,12 +2780,12 @@ static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
     s = val;
     stream->write_function(stream, "stream name: %s \t indev.ip_addr: %s, indev.port: %d, "
                     "outdev.ip_addr: %s, outdev.port: %d, sample-rate: %d, "
-                    "codec-ms: %d, channels: %d, sythentic_ptp: %d\n",
+                    "codec-ms: %d, channels: %d, sythentic_ptp: %d, txflow: %s\n",
                     s->name,
                     s->indev->ip_addr, s->indev->port,
                     s->outdev->ip_addr,s->outdev->port,
                     s->sample_rate, s->codec_ms, s->channels,
-                    s->synthetic_ptp);
+                    s->synthetic_ptp, s->txflow?"on":"off");
     cnt++;
   }
   stream->write_function(stream, "Total streams: %d\n", cnt);
@@ -2566,6 +2811,44 @@ static switch_status_t list_endpoints(switch_stream_handle_t *stream)
   return SWITCH_STATUS_SUCCESS;
 }
 
+static switch_status_t
+reload_config()
+{
+  char *cf = "gstreamer.conf";
+  switch_xml_t cfg, xml, streams;
+  switch_status_t status = SWITCH_STATUS_SUCCESS;
+  const char *reload_err;
+
+  /* dont have to allocate or free 'reload_err'
+   * it is a fixed size array defined in switch_xml_root
+   * https://docs.freeswitch.org/structswitch__xml__root.html
+   */
+
+  if (SWITCH_STATUS_SUCCESS != (status = switch_xml_reload(&reload_err))) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+        "reload conf failed: %s\n", reload_err);
+    return SWITCH_STATUS_GENERR;
+  }
+
+  if (!(xml = switch_xml_open_cfg (cf, &cfg, NULL))) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+        "Open of %s failed\n", cf);
+    return SWITCH_STATUS_GENERR;
+  }
+
+  // Not setting default values here they will be set already in load_config
+  if (SWITCH_STATUS_SUCCESS != (status = load_globals(cfg))) {
+    return status;
+  }
+
+  if ((streams = switch_xml_child (cfg, "streams"))) {
+    load_streams (streams, TRUE);
+  }
+
+  switch_xml_free (xml);
+  return status;
+}
+
 SWITCH_STANDARD_API(gs_cmd)
 {
 
@@ -2581,6 +2864,7 @@ SWITCH_STANDARD_API(gs_cmd)
   "gs ptpstats <on|off> \n"
   "gs rtpstats <stream>\n"
   "gs txflow <stream> <on|off>\n"
+  "gs reloadconf\n"
   "--------------------------------------------------------------------------------\n";
   if (zstr(cmd)) {
     stream->write_function(stream, "%s", usage_string);
@@ -2640,10 +2924,16 @@ SWITCH_STANDARD_API(gs_cmd)
       goto done;
     }
 
-    rtp_stats = get_rtp_stats(astream->stream);
-    if (rtp_stats) {
-      stream->write_function(stream, "%s\n",rtp_stats);
-      g_free(rtp_stats);
+    if (STREAM_READER_TRYLOCK(astream)) {
+      rtp_stats = get_rtp_stats(astream->stream);
+      if (rtp_stats) {
+        stream->write_function(stream, "%s\n",rtp_stats);
+        g_free(rtp_stats);
+      }
+
+      STREAM_READER_UNLOCK(astream);
+    } else {
+      stream->write_function(stream, "reloadconf in progress, please retry\n");
     }
   } else if (!strcasecmp(argv[0], "txflow")) {
     shared_audio_stream_t *astream;
@@ -2662,17 +2952,33 @@ SWITCH_STANDARD_API(gs_cmd)
     }
 
     if (!strcasecmp(argv[2], "on")){
-      drop_output_buffers(FALSE, astream->stream);
-      stream->write_function(stream, "Tx buffers flowing!\n");
+      if (STREAM_READER_TRYLOCK(astream)) {
+          drop_output_buffers(FALSE, astream->stream);
+          astream->txflow = TRUE;
+          stream->write_function(stream, "Tx buffers flowing!\n");
+
+          STREAM_READER_UNLOCK(astream);
+        } else {
+          stream->write_function(stream, "failed to start txflow: reloadconf in progress\n");
+        }
     } else if (!strcasecmp(argv[2], "off")) {
-      drop_output_buffers(TRUE, astream->stream);
-      stream->write_function(stream, "Tx buffers dropping!\n");
+      if (STREAM_READER_TRYLOCK(astream )) {
+          drop_output_buffers(TRUE, astream->stream);
+          astream->txflow = FALSE;
+          stream->write_function(stream, "Tx buffers dropping!\n");
+
+          STREAM_READER_UNLOCK(astream);
+        } else {
+          stream->write_function(stream, "failed to stop txflow: reloadconf in progress\n");
+        }
     } else {
       stream->write_function(stream, "Please mention 'on' or 'off'\n");
       stream->write_function(stream, "%s", usage_string);
       goto done;
     }
-  } 
+  } else if (!strcasecmp(argv[0], "reloadconf")) {
+    reload_config();
+  }
 
   done:
   switch_safe_free(mycmd);

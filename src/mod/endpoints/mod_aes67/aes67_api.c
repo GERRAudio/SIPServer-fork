@@ -18,6 +18,17 @@
 #define SYNTHETIC_CLOCK_INTERVAL_MS 100
 #endif
 
+static void
+dump_pipeline (GstPipeline *pipe, const char *name)
+{
+  char *tmp = g_strdup_printf("%s-%s", gst_element_get_name(pipe), name);
+
+  GST_DEBUG_BIN_TO_DOT_FILE (GST_BIN (pipe),
+      GST_DEBUG_GRAPH_SHOW_ALL, tmp);
+
+  g_free(tmp);
+}
+
 static gboolean
 bus_callback (GstBus * bus, GstMessage * msg, gpointer data)
 {
@@ -50,7 +61,7 @@ bus_callback (GstBus * bus, GstMessage * msg, gpointer data)
     }
     case GST_MESSAGE_STATE_CHANGED:{
       GstState old, new, pending;
-      GstObject *pipe = (GstObject *) stream->pipeline;
+      GstPipeline *pipe = stream->pipeline;
       gst_message_parse_state_changed (msg, &old, &new, &pending);
       if (msg->src == (GstObject *) pipe) {
         gchar *old_state, *new_state, *transition;
@@ -63,8 +74,7 @@ bus_callback (GstBus * bus, GstMessage * msg, gpointer data)
             "Pipeline %s changed state from %s to %s\n",
             GST_OBJECT_NAME (msg->src), old_state, new_state);
         g_snprintf (transition, len, "%s_to_%s", old_state, new_state);
-        GST_DEBUG_BIN_TO_DOT_FILE (GST_BIN (pipe),
-            GST_DEBUG_GRAPH_SHOW_ALL, transition);
+        dump_pipeline(pipe, transition);
         g_free (old_state);
         g_free (new_state);
         g_free (transition);
@@ -104,8 +114,7 @@ deinterleave_pad_added (GstElement * deinterleave, GstPad * pad,
         "Failed to link deinterleave %s pad in the rx pipeline", pad_name);
   }
 
-  GST_DEBUG_BIN_TO_DOT_FILE (GST_BIN (pipeline), GST_DEBUG_GRAPH_SHOW_ALL,
-      pad_name);
+  dump_pipeline(GST_PIPELINE(pipeline), pad_name);
 
   gst_object_unref (queue_sink_pad);
   gst_object_unref(queue);
@@ -278,6 +287,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
         gst_element_factory_make ("audiointerleave", "audiointerleave");
     gst_bin_add (GST_BIN (pipeline), audiointerleave);
     g_object_set(audiointerleave, "start-time-selection", GST_AGGREGATOR_START_TIME_SELECTION_FIRST, NULL);
+    g_object_set(audiointerleave, "output-buffer-duration", data->codec_ms * GST_MSECOND, NULL);
 
     if (data->tx_codec == L16) {
       rtp_pay = gst_element_factory_make ("rtpL16pay", "rtp-pay");
@@ -332,7 +342,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
     }
 
     tx_valve = gst_element_factory_make ("valve", "tx-valve");
-    g_object_set (tx_valve, "drop", TRUE, NULL);
+    g_object_set (tx_valve, "drop", data->txdrop, NULL);
 
     capsfilter = gst_element_factory_make ("capsfilter", "tx-capsf");
 
@@ -353,6 +363,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
     g_object_set (udpsink, "host", data->tx_ip_addr, "port", data->tx_port, "multicast-iface", data->rtp_iface, NULL);
     g_object_set (udpsink, "sync", TRUE, "async", FALSE, NULL);
     g_object_set (udpsink, "qos", TRUE, "qos-dscp", 34, NULL);
+    g_object_set (udpsink, "processing-deadline", 0 * GST_MSECOND, NULL);
 
     if (!audiointerleave || !tx_valve || !tx_audioconv || !rtp_pay || !udpsink) {
       switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -386,8 +397,10 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
   gst_element_set_base_time(pipeline, 0);
 
   if (rtp_pay) {
+    /* We have data->codec_ms of latency in the audiointerleave, so add that in */
+    /* FIXME: we should be cleverer and apply the pipeline latency as computed instead */
     g_object_set (rtp_pay, "timestamp-offset",
-        gst_util_uint64_scale_int (data->rtp_ts_offset * GST_MSECOND, data->sample_rate, GST_SECOND)
+        gst_util_uint64_scale_int ((data->codec_ms + data->rtp_ts_offset) * GST_MSECOND, data->sample_rate, GST_SECOND)
           % G_MAXUINT32,
         NULL);
   }
@@ -418,12 +431,10 @@ error:
 void *
 start_pipeline (void *data)
 {
-
   g_stream_t *stream = (g_stream_t *) data;
   gst_element_set_state (GST_ELEMENT (stream->pipeline), GST_STATE_PLAYING);
 
-  GST_DEBUG_BIN_TO_DOT_FILE (GST_BIN (stream->pipeline),
-      GST_DEBUG_GRAPH_SHOW_ALL, "start-pipeline");
+  dump_pipeline(stream->pipeline, "start-pipeline");
   start_mainloop (stream->mainloop);
   return NULL;
 }
@@ -432,8 +443,8 @@ void
 stop_pipeline (g_stream_t * stream)
 {
   GstBus *bus;
-  GST_DEBUG_BIN_TO_DOT_FILE (GST_BIN (stream->pipeline),
-      GST_DEBUG_GRAPH_SHOW_ALL, "pipeline-stop");
+
+  dump_pipeline(stream->pipeline, "pipeline-stop");
 
   gst_element_set_state (GST_ELEMENT (stream->pipeline), GST_STATE_NULL);
 
@@ -655,8 +666,7 @@ drop_input_buffers (gboolean drop, g_stream_t * stream, guint32 ch_idx)
   }
   g_object_set (valve, "drop", drop, NULL);
   g_snprintf (name, STR_SIZE, "drop-ch%d-%d", ch_idx, drop);
-  GST_DEBUG_BIN_TO_DOT_FILE (GST_BIN (stream->pipeline),
-      GST_DEBUG_GRAPH_SHOW_ALL, name);
+  dump_pipeline(stream->pipeline, name);
   gst_object_unref(valve);
 }
 
@@ -691,8 +701,7 @@ void drop_output_buffers (gboolean drop, g_stream_t *stream)
   g_object_set (tx_valve, "drop", drop, NULL);
 
   g_snprintf (name, ELEMENT_NAME_SIZE, "tx-drop-%d", drop);
-  GST_DEBUG_BIN_TO_DOT_FILE (GST_BIN (stream->pipeline),
-      GST_DEBUG_GRAPH_SHOW_ALL, name);
+  dump_pipeline(stream->pipeline, name);
 
   gst_object_unref(tx_valve);
 }

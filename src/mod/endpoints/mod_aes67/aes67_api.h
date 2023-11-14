@@ -39,6 +39,7 @@ typedef struct
   char *rtp_iface;
   int rtp_payload_type;
   int rtp_jitbuf_latency;
+  gboolean txdrop;
 } pipeline_data_t;
 
 struct g_stream
