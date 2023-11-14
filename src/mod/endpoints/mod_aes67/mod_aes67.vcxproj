@@ -21,7 +21,7 @@
   <PropertyGroup Label="Globals">
     <ProjectName>mod_aes67</ProjectName>
     <ProjectGuid>{5AC15CAA-B153-4B45-804A-0CFDF6FA3422}</ProjectGuid>
-    <RootNamespace>mod_Streamer</RootNamespace>
+    <RootNamespace>mod_aes67</RootNamespace>
     <Keyword>Win32Proj</Keyword>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>

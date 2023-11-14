@@ -65,6 +65,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "m4", "m4", "{CDE9B06A-3C27-
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "autoload_configs", "autoload_configs", "{3C90CCF0-2CDD-4A7A-ACFF-208C1E271692}"
 	ProjectSection(SolutionItems) = preProject
+		conf\vanilla\autoload_configs\aes67.conf.xml = conf\vanilla\autoload_configs\aes67.conf.xml
 		conf\vanilla\autoload_configs\alsa.conf.xml = conf\vanilla\autoload_configs\alsa.conf.xml
 		conf\vanilla\autoload_configs\conference.conf.xml = conf\vanilla\autoload_configs\conference.conf.xml
 		conf\vanilla\autoload_configs\console.conf.xml = conf\vanilla\autoload_configs\console.conf.xml
@@ -548,7 +549,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test_switch_core_db", "test
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test_switch_ivr_originate", "tests\unit\test_switch_ivr_originate.2017.vcxproj", "{69A7464A-9B0D-4804-A108-835229DACF58}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mod_aes67", "src\mod\endpoints\mod_gstreamer\mod_gstreamer.vcxproj", "{5AC15CAA-B153-4B45-804A-0CFDF6FA3422}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mod_aes67", "src\mod\endpoints\mod_aes67\mod_aes67.vcxproj", "{5AC15CAA-B153-4B45-804A-0CFDF6FA3422}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
