@@ -1,4 +1,4 @@
-<configuration name="gstreamer.conf" description="Gstreamer module">
+<configuration name="aes67.conf" description="AES67 module">
 	<settings>
 		<!--file to play when calls are on hold-->
 		<param name="hold-file" value="$${hold_music}"/>
