@@ -42,7 +42,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
-#include "gstreamer_api.h"
+#include "aes67_api.h"
 #include <gst/net/net.h>
 
 #define MY_EVENT_RINGING "gstreamer::ringing"

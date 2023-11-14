@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mod_gstreamer</ProjectName>
+    <ProjectName>mod_aes67</ProjectName>
     <ProjectGuid>{5AC15CAA-B153-4B45-804A-0CFDF6FA3422}</ProjectGuid>
     <RootNamespace>mod_Streamer</RootNamespace>
     <Keyword>Win32Proj</Keyword>
@@ -185,11 +185,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="gstreamer_api.c" />
-    <ClCompile Include="mod_gstreamer.c" />
+    <ClCompile Include="aes67_api.c" />
+    <ClCompile Include="mod_aes67.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="gstreamer_api.h" />
+    <ClInclude Include="aes67_api.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\libs\win32\apr\libapr.2017.vcxproj">

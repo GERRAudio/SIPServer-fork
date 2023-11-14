@@ -3,7 +3,7 @@
 #include <gst/app/gstappsink.h>
 #include <gst/audio/audio-channels.h>
 #include <gst/net/net.h>
-#include "gstreamer_api.h"
+#include "aes67_api.h"
 
 #define ELEMENT_NAME_SIZE 20
 #define STR_SIZE 15

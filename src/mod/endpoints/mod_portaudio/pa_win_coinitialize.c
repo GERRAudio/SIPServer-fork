@@ -45,12 +45,12 @@
 #include <objbase.h>''
 #include <windows.h>
 
-#include "C:\Development\sipserver\libs\portaudio\src\common\pa_debugprint.h"
-#include "C:\Development\sipserver\libs\portaudio\src\common\pa_util.h"
+#include "../../../libs/portaudio/src/common/pa_debugprint.h"
+#include "../../../libs/portaudio/src/common/pa_util.h"
 /* #include "C:\freeswitch\libs\portaudio\src\common\prefportaudio.h"
 */
 
-#include "C:\Development\sipserver\libs\portaudio\src\os\win\pa_win_coinitialize.h"
+#include "../../../libs/portaudio/src/os/win/pa_win_coinitialize.h"
 
 #if (defined(WIN32) && (defined(_MSC_VER) && (_MSC_VER >= 1200))) && !defined(_WIN32_WCE) &&                           \
 	!(defined(WINAPI_FAMILY) && (WINAPI_FAMILY == WINAPI_FAMILY_APP)) /* MSC version 6 and above */
