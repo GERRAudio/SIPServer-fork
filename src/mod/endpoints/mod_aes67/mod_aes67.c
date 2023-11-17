@@ -32,7 +32,7 @@
  */
 
 /*
- * mod_gstreamer.c -- gstreamer Endpoint Module
+ * mod_aes67.c -- gstreamer Endpoint Module
  *
  */
 
@@ -65,11 +65,11 @@
 #define STREAM_WRITER_LOCK(s) (g_rw_lock_writer_lock(&(s)->rwlock))
 #define STREAM_WRITER_UNLOCK(s) g_rw_lock_writer_unlock(&(s)->rwlock)
 
-SWITCH_MODULE_LOAD_FUNCTION (mod_gstreamer_load);
-SWITCH_MODULE_SHUTDOWN_FUNCTION (mod_gstreamer_shutdown);
-SWITCH_MODULE_RUNTIME_FUNCTION (mod_gstreamer_runtime);
-SWITCH_MODULE_DEFINITION (mod_gstreamer, mod_gstreamer_load,
-    mod_gstreamer_shutdown, mod_gstreamer_runtime);
+SWITCH_MODULE_LOAD_FUNCTION (mod_aes67_load);
+SWITCH_MODULE_SHUTDOWN_FUNCTION (mod_aes67_shutdown);
+SWITCH_MODULE_RUNTIME_FUNCTION (mod_aes67_runtime);
+SWITCH_MODULE_DEFINITION (mod_aes67, mod_aes67_load,
+    mod_aes67_shutdown, mod_aes67_runtime);
 
 static switch_memory_pool_t *module_pool = NULL;
 switch_endpoint_interface_t *gstreamer_endpoint_interface;
@@ -1618,7 +1618,7 @@ error:
 }
 
 
-SWITCH_MODULE_LOAD_FUNCTION (mod_gstreamer_load)
+SWITCH_MODULE_LOAD_FUNCTION (mod_aes67_load)
 {
   switch_status_t status;
   switch_api_interface_t *api_interface;
@@ -2400,15 +2400,15 @@ load_config (void)
 /*
   If it exists, this is called in it's own thread when the module-load completes
   If it returns anything but SWITCH_STATUS_TERM it will be called again automatically
-  Macro expands to: switch_status_t mod_gstreamer_runtime() */
-SWITCH_MODULE_RUNTIME_FUNCTION (mod_gstreamer_runtime)
+  Macro expands to: switch_status_t mod_aes67_runtime() */
+SWITCH_MODULE_RUNTIME_FUNCTION (mod_aes67_runtime)
 {
   switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
       "Returning from runtime\n");
   return SWITCH_STATUS_TERM;
 }
 
-SWITCH_MODULE_SHUTDOWN_FUNCTION (mod_gstreamer_shutdown)
+SWITCH_MODULE_SHUTDOWN_FUNCTION (mod_aes67_shutdown)
 {
 
   if (globals.ptp_stats_cb_id != -1)
