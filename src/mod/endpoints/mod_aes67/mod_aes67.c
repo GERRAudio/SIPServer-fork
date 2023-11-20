@@ -32,7 +32,7 @@
  */
 
 /*
- * mod_aes67.c -- gstreamer Endpoint Module
+ * mod_aes67.c -- AES67 Endpoint Module
  *
  */
 
@@ -72,7 +72,7 @@ SWITCH_MODULE_DEFINITION (mod_aes67, mod_aes67_load,
     mod_aes67_shutdown, mod_aes67_runtime);
 
 static switch_memory_pool_t *module_pool = NULL;
-switch_endpoint_interface_t *gstreamer_endpoint_interface;
+switch_endpoint_interface_t *aes67_endpoint_interface;
 
 #define SAMPLE_TYPE  gint16
 typedef int16_t SAMPLE;
@@ -171,7 +171,7 @@ typedef struct _shared_audio_stream_t
 } shared_audio_stream_t;
 
 typedef struct private_object private_t;
-/* Endpoint that can be called via gstreamer/endpoint/<endpoint-name> */
+/* Endpoint that can be called via aes67/endpoint/<endpoint-name> */
 typedef struct _audio_endpoint
 {
   /*! Friendly name for this endpoint */
@@ -1322,7 +1322,7 @@ channel_receive_message (switch_core_session_t * session,
   return SWITCH_STATUS_SUCCESS;
 }
 
-switch_state_handler_table_t gstreamer_event_handlers = {
+switch_state_handler_table_t aes67_event_handlers = {
   /*.on_init */ channel_on_init,
   /*.on_routing */ channel_on_routing,
   /*.on_execute */ channel_on_execute,
@@ -1337,7 +1337,7 @@ switch_state_handler_table_t gstreamer_event_handlers = {
   /*.on_destroy */ channel_on_destroy
 };
 
-switch_io_routines_t gstreamer_io_routines = {
+switch_io_routines_t aes67_io_routines = {
   /*.outgoing_channel */ channel_outgoing_channel,
   /*.read_frame */ channel_read_frame,
   /*.write_frame */ channel_write_frame,
@@ -1444,7 +1444,7 @@ channel_outgoing_channel (switch_core_session_t * session,
   }
 
   if (!(*new_session =
-          switch_core_session_request_uuid (gstreamer_endpoint_interface,
+          switch_core_session_request_uuid (aes67_endpoint_interface,
               SWITCH_CALL_DIRECTION_OUTBOUND, flags, pool,
               switch_event_get_header (var_event, "origination_uuid")))) {
     return retcause;
@@ -1477,14 +1477,14 @@ channel_outgoing_channel (switch_core_session_t * session,
     endpoint_name = strchr (endpoint_name, '/');
     if (!endpoint_name) {
       switch_log_printf (SWITCH_CHANNEL_SESSION_LOG (*new_session),
-          SWITCH_LOG_CRIT, "No gstreamer endpoint specified\n");
+          SWITCH_LOG_CRIT, "No aes67 endpoint specified\n");
       goto error;
     }
     endpoint_name++;
     endpoint = switch_core_hash_find (globals.endpoints, endpoint_name);
     if (!endpoint) {
       switch_log_printf (SWITCH_CHANNEL_SESSION_LOG (*new_session),
-          SWITCH_LOG_CRIT, "Invalid gstreamer endpoint %s\n", endpoint_name);
+          SWITCH_LOG_CRIT, "Invalid aes67 endpoint %s\n", endpoint_name);
       goto error;
     }
 
@@ -1556,7 +1556,7 @@ channel_outgoing_channel (switch_core_session_t * session,
       retcause = SWITCH_CAUSE_USER_BUSY;
       goto error;
     }
-    switch_snprintf (name, sizeof (name), "gstreamer/endpoint-%s",
+    switch_snprintf (name, sizeof (name), "aes67/endpoint-%s",
         endpoint_name);
     if (var_event
         && (endpoint_answer =
@@ -1573,7 +1573,7 @@ channel_outgoing_channel (switch_core_session_t * session,
   } else {
     id = !zstr (outbound_profile->
         caller_id_number) ? outbound_profile->caller_id_number : "na";
-    switch_snprintf (name, sizeof (name), "gstreamer/%s", id);
+    switch_snprintf (name, sizeof (name), "aes67/%s", id);
     // switch_set_flag(tech_pvt, TFLAG_AUTO_ANSWER);
     if (outbound_profile->destination_number
         && !strcasecmp (outbound_profile->destination_number, "auto_answer")) {
@@ -1701,12 +1701,12 @@ SWITCH_MODULE_LOAD_FUNCTION (mod_aes67_load)
   /* connect my internal structure to the blank pointer passed to me */
   *module_interface =
       switch_loadable_module_create_module_interface (pool, modname);
-  gstreamer_endpoint_interface =
+  aes67_endpoint_interface =
       switch_loadable_module_create_interface (*module_interface,
       SWITCH_ENDPOINT_INTERFACE);
-  gstreamer_endpoint_interface->interface_name = "gstreamer";
-  gstreamer_endpoint_interface->io_routines = &gstreamer_io_routines;
-  gstreamer_endpoint_interface->state_handler = &gstreamer_event_handlers;
+  aes67_endpoint_interface->interface_name = "aes67";
+  aes67_endpoint_interface->io_routines = &aes67_io_routines;
+  aes67_endpoint_interface->state_handler = &aes67_event_handlers;
 
   SWITCH_ADD_API(api_interface, "gs", "gstreamer cli", gs_cmd, "<command> [<args>]");
   switch_console_set_complete("add gs help");
