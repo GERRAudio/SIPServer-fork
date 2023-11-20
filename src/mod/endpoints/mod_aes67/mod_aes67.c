@@ -45,13 +45,13 @@
 #include "aes67_api.h"
 #include <gst/net/net.h>
 
-#define MY_EVENT_RINGING "gstreamer::ringing"
-#define MY_EVENT_MAKE_CALL "gstreamer::makecall"
-#define MY_EVENT_CALL_HELD "gstreamer::callheld"
-#define MY_EVENT_CALL_RESUMED "gstreamer::callresumed"
-#define MY_EVENT_CALL_AUDIO_LEVEL "gstreamer::call_audio_level"
-#define MY_EVENT_ERROR_AUDIO_DEV "gstreamer::audio_dev_error"
-#define MY_EVENT_PTP_STATS "gstreamer::ptp_stats"
+#define MY_EVENT_RINGING "aes67::ringing"
+#define MY_EVENT_MAKE_CALL "aes67::makecall"
+#define MY_EVENT_CALL_HELD "aes67::callheld"
+#define MY_EVENT_CALL_RESUMED "aes67::callresumed"
+#define MY_EVENT_CALL_AUDIO_LEVEL "aes67::call_audio_level"
+#define MY_EVENT_ERROR_AUDIO_DEV "aes67::audio_dev_error"
+#define MY_EVENT_PTP_STATS "aes67::ptp_stats"
 #define SWITCH_PA_CALL_ID_VARIABLE "gst_call_id"
 
 #define MIN_STREAM_SAMPLE_RATE 8000
