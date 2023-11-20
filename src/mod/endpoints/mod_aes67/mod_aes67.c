@@ -357,7 +357,7 @@ static switch_status_t load_config (void);
 static int is_sock_equal (udp_sock_t * a, udp_sock_t * b);
 void error_callback (char *ms, g_stream_t * stream);
 
-SWITCH_STANDARD_API(gs_cmd);
+SWITCH_STANDARD_API(aes_cmd);
 
 /*
    State methods they get called when the state changes to the specific state
@@ -1708,14 +1708,14 @@ SWITCH_MODULE_LOAD_FUNCTION (mod_aes67_load)
   aes67_endpoint_interface->io_routines = &aes67_io_routines;
   aes67_endpoint_interface->state_handler = &aes67_event_handlers;
 
-  SWITCH_ADD_API(api_interface, "gs", "gstreamer cli", gs_cmd, "<command> [<args>]");
-  switch_console_set_complete("add gs help");
-  switch_console_set_complete("add gs streams");
-  switch_console_set_complete("add gs endpoints");
-  switch_console_set_complete("add gs ptpstats");
-  switch_console_set_complete("add gs rtpstats");
-  switch_console_set_complete("add gs txflow");
-  switch_console_set_complete("add gs reloadconf");
+  SWITCH_ADD_API(api_interface, "aes", "aes67 cli", aes_cmd, "<command> [<args>]");
+  switch_console_set_complete("add aes help");
+  switch_console_set_complete("add aes streams");
+  switch_console_set_complete("add aes endpoints");
+  switch_console_set_complete("add aes ptpstats");
+  switch_console_set_complete("add aes rtpstats");
+  switch_console_set_complete("add aes txflow");
+  switch_console_set_complete("add aes reloadconf");
 
   /* indicate that the module should continue to be loaded */
   return SWITCH_STATUS_SUCCESS;
@@ -2814,7 +2814,7 @@ static switch_status_t list_endpoints(switch_stream_handle_t *stream)
 static switch_status_t
 reload_config()
 {
-  char *cf = "gstreamer.conf";
+  char *cf = "aes67.conf";
   switch_xml_t cfg, xml, streams;
   switch_status_t status = SWITCH_STATUS_SUCCESS;
   const char *reload_err;
@@ -2849,7 +2849,7 @@ reload_config()
   return status;
 }
 
-SWITCH_STANDARD_API(gs_cmd)
+SWITCH_STANDARD_API(aes_cmd)
 {
 
   char *argv[10] = { 0 };
@@ -2858,13 +2858,13 @@ SWITCH_STANDARD_API(gs_cmd)
   switch_status_t status = SWITCH_STATUS_SUCCESS;
   const char *usage_string = "USAGE:\n"
   "--------------------------------------------------------------------------------\n"
-  "gs help\n"
-  "gs streams\n"
-  "gs endpoints\n"
-  "gs ptpstats <on|off> \n"
-  "gs rtpstats <stream>\n"
-  "gs txflow <stream> <on|off>\n"
-  "gs reloadconf\n"
+  "aes help\n"
+  "aes streams\n"
+  "aes endpoints\n"
+  "aes ptpstats <on|off> \n"
+  "aes rtpstats <stream>\n"
+  "aes txflow <stream> <on|off>\n"
+  "aes reloadconf\n"
   "--------------------------------------------------------------------------------\n";
   if (zstr(cmd)) {
     stream->write_function(stream, "%s", usage_string);
