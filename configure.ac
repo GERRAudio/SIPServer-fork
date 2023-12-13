@@ -1331,6 +1331,9 @@ PKG_CHECK_MODULES([YAML], [yaml-0.1 >= 0.1.4],[
 PKG_CHECK_MODULES([PORTAUDIO], [portaudio-2.0 >= 19],[
   AM_CONDITIONAL([HAVE_PORTAUDIO],[true])],[
   AC_MSG_RESULT([no]); AM_CONDITIONAL([HAVE_PORTAUDIO],[false])])
+PKG_CHECK_MODULES([GST], [gstreamer-1.0 >= 1.18 gstreamer-base-1.0 >= 1.18 gstreamer-app-1.0 >= 1.18 gstreamer-audio-1.0 >= 1.18 gstreamer-net-1.0 >= 1.18],[
+  AM_CONDITIONAL([HAVE_GST],[true])],[
+  AC_MSG_RESULT([no]); AM_CONDITIONAL([HAVE_GST],[false])])
 PKG_CHECK_MODULES([LDNS], [libldns-fs >= 1.6.6],[
   AM_CONDITIONAL([HAVE_LDNS],[true])],[
 PKG_CHECK_MODULES([LDNS], [libldns >= 1.6.6],[
@@ -2182,6 +2185,7 @@ AC_CONFIG_FILES([Makefile
 		src/mod/dialplans/mod_dialplan_directory/Makefile
 		src/mod/dialplans/mod_dialplan_xml/Makefile
 		src/mod/directories/mod_ldap/Makefile
+		src/mod/endpoints/mod_aes67/Makefile
 		src/mod/endpoints/mod_alsa/Makefile
 		src/mod/endpoints/mod_gsmopen/Makefile
 		src/mod/endpoints/mod_h323/Makefile
