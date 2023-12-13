@@ -271,8 +271,8 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
     gst_bin_add_many (GST_BIN (pipeline), udp_source, rtpdepay, rtpjitbuf, rx_audioconv,
         capsfilter, split, deinterleave, NULL);
 
-    if (!gst_element_link_many (udp_source, rtpjitbuf, rtpdepay, rx_audioconv, capsfilter,
-            split, deinterleave, NULL)) {
+    if (!gst_element_link_many (udp_source, rtpjitbuf, rtpdepay, split, rx_audioconv, capsfilter,
+            deinterleave, NULL)) {
       switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
           "Failed to link elements in the rx pipeline");
       goto error;
