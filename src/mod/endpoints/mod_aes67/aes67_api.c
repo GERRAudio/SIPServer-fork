@@ -256,7 +256,8 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
         G_CALLBACK (deinterleave_pad_added), NULL);
 
     g_object_set (udp_source, "address", data->rx_ip_addr, "port", data->rx_port,
-        "multicast-iface", data->rtp_iface, NULL);
+        "multicast-iface", data->rtp_iface, "retrieve-sender-address", FALSE,
+        NULL);
     g_object_set (udp_source, "caps", udp_caps, NULL);
     gst_caps_unref (udp_caps);
 
