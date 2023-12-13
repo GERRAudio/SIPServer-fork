@@ -581,6 +581,8 @@ destroy_shared_audio_streams ()
       clear_shared_audio_stream(stream);
       /* Deinit here since clear_shared_audio_stream() allows the stream to be reused when reloading */
       g_rw_lock_clear(&stream->rwlock);
+      switch_safe_free(stream->indev);
+      switch_safe_free(stream->outdev);
       switch_safe_free(stream);
     }
   }
@@ -624,13 +626,15 @@ destroy_actual_stream (audio_stream_t * stream)
     globals.main_stream = NULL;
   }
 
-
   stop_pipeline (stream->stream);
   stream->stream = NULL;
 
   if (stream->write_timer.timer_interface) {
     switch_core_timer_destroy (&stream->write_timer);
   }
+
+  switch_safe_free(stream->indev);
+  switch_safe_free(stream->outdev);
 
   switch_safe_free (stream);
   return SWITCH_STATUS_SUCCESS;
