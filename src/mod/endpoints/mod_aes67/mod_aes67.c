@@ -1789,24 +1789,44 @@ stream_compare (shared_audio_stream_t *current, shared_audio_stream_t *new)
     stream_changed = TRUE;
   }
 
-  if (strcasecmp(current->indev->ip_addr, new->indev->ip_addr)) {
-    strcpy(current->indev->ip_addr, new->indev->ip_addr);
-    stream_changed = TRUE;
+  if (current->indev && new->indev) {
+      if (strcasecmp(current->indev->ip_addr, new->indev->ip_addr)) {
+          strcpy(current->indev->ip_addr, new->indev->ip_addr);
+          stream_changed = TRUE;
+      }
+
+      if (current->indev->port != new->indev->port) {
+          current->indev->port = new->indev->port;
+          stream_changed = TRUE;
+      }
+  } else if (current->indev || new->indev) {
+      // Either old or new stream does not have an indev
+      switch_safe_free(current->indev);
+
+      current->indev = new->indev;
+      new->indev = NULL;
+
+      stream_changed = TRUE;
   }
 
-  if (current->indev->port != new->indev->port) {
-    current->indev->port = new->indev->port;
-    stream_changed = TRUE;
-  }
+  if (current->outdev && new->outdev) {
+      if (strcasecmp(current->outdev->ip_addr, new->outdev->ip_addr)) {
+          strcpy(current->outdev->ip_addr, new->outdev->ip_addr);
+          stream_changed = TRUE;
+      }
 
-  if (strcasecmp(current->outdev->ip_addr, new->outdev->ip_addr)) {
-    strcpy(current->outdev->ip_addr, new->outdev->ip_addr);
-    stream_changed = TRUE;
-  }
+      if (current->outdev->port != new->outdev->port) {
+          current->outdev->port = new->outdev->port;
+          stream_changed = TRUE;
+      }
+  } else if (current->outdev || new->outdev) {
+      // Either old or new stream does not have an outdev
+      switch_safe_free(current->outdev);
 
-  if (current->outdev->port != new->outdev->port) {
-    current->outdev->port = new->outdev->port;
-    stream_changed = TRUE;
+      current->outdev = new->outdev;
+      new->outdev = NULL;
+
+      stream_changed = TRUE;
   }
 
   if (current->channels != new->channels) {
