@@ -568,6 +568,20 @@ destroy_audio_streams ()
 static int clear_shared_audio_stream (shared_audio_stream_t * stream);
 
 static void
+free_shared_audio_stream (shared_audio_stream_t *stream)
+{
+    if (!stream)
+        return;
+
+    clear_shared_audio_stream(stream);
+    /* Deinit here since clear_shared_audio_stream() allows the stream to be reused when reloading */
+    g_rw_lock_clear(&stream->rwlock);
+    switch_safe_free(stream->indev);
+    switch_safe_free(stream->outdev);
+    switch_safe_free(stream);
+}
+
+static void
 destroy_shared_audio_streams ()
 {
   switch_hash_index_t *hi;
@@ -577,12 +591,7 @@ destroy_shared_audio_streams ()
 
   for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
     switch_core_hash_this(hi, NULL, NULL, (void **)&stream);
-    if (stream->stream) {
-      clear_shared_audio_stream(stream);
-      /* Deinit here since clear_shared_audio_stream() allows the stream to be reused when reloading */
-      g_rw_lock_clear(&stream->rwlock);
-      switch_safe_free(stream);
-    }
+    free_shared_audio_stream(stream);
   }
 
   globals.destroying_streams = 0;
@@ -624,13 +633,15 @@ destroy_actual_stream (audio_stream_t * stream)
     globals.main_stream = NULL;
   }
 
-
   stop_pipeline (stream->stream);
   stream->stream = NULL;
 
   if (stream->write_timer.timer_interface) {
     switch_core_timer_destroy (&stream->write_timer);
   }
+
+  switch_safe_free(stream->indev);
+  switch_safe_free(stream->outdev);
 
   switch_safe_free (stream);
   return SWITCH_STATUS_SUCCESS;
@@ -1785,24 +1796,44 @@ stream_compare (shared_audio_stream_t *current, shared_audio_stream_t *new)
     stream_changed = TRUE;
   }
 
-  if (strcasecmp(current->indev->ip_addr, new->indev->ip_addr)) {
-    strcpy(current->indev->ip_addr, new->indev->ip_addr);
-    stream_changed = TRUE;
+  if (current->indev && new->indev) {
+      if (strcasecmp(current->indev->ip_addr, new->indev->ip_addr)) {
+          strcpy(current->indev->ip_addr, new->indev->ip_addr);
+          stream_changed = TRUE;
+      }
+
+      if (current->indev->port != new->indev->port) {
+          current->indev->port = new->indev->port;
+          stream_changed = TRUE;
+      }
+  } else if (current->indev || new->indev) {
+      // Either old or new stream does not have an indev
+      switch_safe_free(current->indev);
+
+      current->indev = new->indev;
+      new->indev = NULL;
+
+      stream_changed = TRUE;
   }
 
-  if (current->indev->port != new->indev->port) {
-    current->indev->port = new->indev->port;
-    stream_changed = TRUE;
-  }
+  if (current->outdev && new->outdev) {
+      if (strcasecmp(current->outdev->ip_addr, new->outdev->ip_addr)) {
+          strcpy(current->outdev->ip_addr, new->outdev->ip_addr);
+          stream_changed = TRUE;
+      }
 
-  if (strcasecmp(current->outdev->ip_addr, new->outdev->ip_addr)) {
-    strcpy(current->outdev->ip_addr, new->outdev->ip_addr);
-    stream_changed = TRUE;
-  }
+      if (current->outdev->port != new->outdev->port) {
+          current->outdev->port = new->outdev->port;
+          stream_changed = TRUE;
+      }
+  } else if (current->outdev || new->outdev) {
+      // Either old or new stream does not have an outdev
+      switch_safe_free(current->outdev);
 
-  if (current->outdev->port != new->outdev->port) {
-    current->outdev->port = new->outdev->port;
-    stream_changed = TRUE;
+      current->outdev = new->outdev;
+      new->outdev = NULL;
+
+      stream_changed = TRUE;
   }
 
   if (current->channels != new->channels) {
@@ -1891,7 +1922,46 @@ load_streams (switch_xml_t streams, switch_bool_t reload)
   switch_status_t status = SWITCH_STATUS_SUCCESS;
   switch_xml_t param, mystream;
   switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-      "Loading streams ...\n");
+      "%soading streams ...\n", reload ? "Rel" : "L");
+
+  if (reload) {
+      // Destroy streams that are not in config
+
+      switch_hash_index_t *hi;
+      shared_audio_stream_t *stream;
+
+      globals.destroying_streams = 1;
+
+again:
+      for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
+          int found = 0;
+
+          switch_core_hash_this(hi, NULL, NULL, (void **)&stream);
+
+          for (mystream = switch_xml_child (streams, "stream"); mystream;
+                  mystream = mystream->next) {
+              char *stream_name = (char *) switch_xml_attr_soft (mystream, "name");
+
+              if (!stream_name)
+                  continue;
+
+              if (!strcmp(stream->name, stream_name)) {
+                  found = 1;
+                  break;
+              }
+          }
+
+          if (!found) {
+              switch_core_hash_delete(globals.sh_streams, stream->name);
+              free_shared_audio_stream(stream);
+              // FIXME: this is a bit ugly, but if we delete, the iterator is invalidated, so we restart
+              goto again;
+          }
+      }
+
+      globals.destroying_streams = 0;
+  }
+
   for (mystream = switch_xml_child (streams, "stream"); mystream;
       mystream = mystream->next) {
     shared_audio_stream_t *stream = NULL;
@@ -2028,7 +2098,7 @@ load_streams (switch_xml_t streams, switch_bool_t reload)
       continue;
     }
 
-    if (reload) {
+    if (reload && curr_stream) {
       /* update current stream with the changes */
       if (stream_compare (curr_stream, stream)) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "stream %s changed\n", curr_stream->name);
@@ -2045,6 +2115,8 @@ load_streams (switch_xml_t streams, switch_bool_t reload)
         STREAM_WRITER_UNLOCK(curr_stream);
       }
       /* dont insert the allocated stream to the sh_streams list*/
+      switch_safe_free(stream->indev);
+      switch_safe_free(stream->outdev);
       switch_safe_free(stream);
     } else {
       switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
