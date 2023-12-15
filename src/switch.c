@@ -52,8 +52,15 @@
 #include "private/switch_apr_pvt.h"
 #include "private/switch_core_pvt.h"
 
+#ifdef WIN32
+// FIXME: make this optional in MSVC too
+#define ENABLE_SENTRY 1
+#endif
+
+#if ENABLE_SENTRY
 #define SENTRY_BUILD_STATIC 1
 #include "C:\Development\sentry-native\include\sentry.h"
+#endif
 
 
 /* pid filename: Stores the process id of the freeswitch process */
@@ -534,10 +541,11 @@ int main(int argc, char *argv[])
 #endif
 #endif
 
-
+#if ENABLE_SENTRY
 	sentry_options_t *options = sentry_options_new();
 	sentry_options_set_dsn(options, "https://6410b90a49e54446bde93a548ad5a4db@o412129.ingest.sentry.io/5711293");
 	sentry_init(options);
+#endif
 
 
 	for (x = 0; x < argc; x++) {
@@ -563,7 +571,9 @@ int main(int argc, char *argv[])
 
 		if (!strcmp(local_argv[x], "-help") || !strcmp(local_argv[x], "-h") || !strcmp(local_argv[x], "-?")) {
 			printf("%s\n", usage);
+#if ENABLE_SENTRY
 			sentry_shutdown();
+#endif
 			exit(EXIT_SUCCESS);
 		}
 #ifdef WIN32
@@ -603,7 +613,9 @@ int main(int argc, char *argv[])
 			hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 			if (!hSCManager) {
 				fprintf(stderr, "Could not open service manager (%u).\n", GetLastError());
+#if ENABLE_SENTRY
 				sentry_shutdown();
+#endif
 				exit(EXIT_FAILURE);
 			}
 
@@ -612,7 +624,9 @@ int main(int argc, char *argv[])
 			if (!hService) {
 				fprintf(stderr, "Error creating SIPServer service (%u).\n", GetLastError());
 				CloseServiceHandle(hSCManager);
+#if ENABLE_SENTRY
 				sentry_shutdown();
+#endif
 				exit(EXIT_FAILURE);
 			}
 
@@ -623,7 +637,9 @@ int main(int argc, char *argv[])
 
 			CloseServiceHandle(hService);
 			CloseServiceHandle(hSCManager);
+#if ENABLE_SENTRY
 			sentry_shutdown();
+#endif
 			exit(EXIT_SUCCESS);
 		}
 
@@ -643,7 +659,9 @@ int main(int argc, char *argv[])
 			hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 			if (!hSCManager) {
 				fprintf(stderr, "Could not open service manager (%u).\n", GetLastError());
+#if ENABLE_SENTRY
 				sentry_shutdown();
+#endif
 				exit(EXIT_FAILURE);
 			}
 
@@ -651,7 +669,9 @@ int main(int argc, char *argv[])
 			if (!hService) {
 				fprintf(stderr, "Error opening service (%u).\n", GetLastError());
 				CloseServiceHandle(hSCManager);
+#if ENABLE_SENTRY
 				sentry_shutdown();
+#endif
 				exit(EXIT_FAILURE);
 			}
 
@@ -663,7 +683,9 @@ int main(int argc, char *argv[])
 
 			CloseServiceHandle(hService);
 			CloseServiceHandle(hSCManager);
+#if ENABLE_SENTRY
 			sentry_shutdown();
+#endif
 			exit(deleted ? EXIT_SUCCESS : EXIT_FAILURE);
 		}
 
@@ -675,7 +697,9 @@ int main(int argc, char *argv[])
 			x++;
 			if (switch_strlen_zero(local_argv[x]) || is_option(local_argv[x])) {
 				fprintf(stderr, "Option '%s' requires an argument!\n", local_argv[x - 1]);
+#if ENABLE_SENTRY
 				sentry_shutdown();
+#endif
 				exit(EXIT_FAILURE);
 			}
 			runas_user = local_argv[x];
@@ -685,7 +709,9 @@ int main(int argc, char *argv[])
 			x++;
 			if (switch_strlen_zero(local_argv[x]) || is_option(local_argv[x])) {
 				fprintf(stderr, "Option '%s' requires an argument!\n", local_argv[x - 1]);
+#if ENABLE_SENTRY
 				sentry_shutdown();
+#endif
 				exit(EXIT_FAILURE);
 			}
 			runas_group = local_argv[x];
@@ -732,7 +758,9 @@ int main(int argc, char *argv[])
 #endif
 		else if (!strcmp(local_argv[x], "-version")) {
 			fprintf(stdout, "FreeSWITCH version: %s (%s)\n", switch_version_full(), switch_version_revision_human());
+#if ENABLE_SENTRY
 			sentry_shutdown();
+#endif
 			exit(EXIT_SUCCESS);
 		}
 
