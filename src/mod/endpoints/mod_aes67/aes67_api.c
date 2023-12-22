@@ -18,6 +18,22 @@
 #define SYNTHETIC_CLOCK_INTERVAL_MS 100
 #endif
 
+typedef struct channel_remap channel_remap_t;
+
+struct channel_remap {
+  int channels;
+  // map[input channel index] = output channel index;
+  int map[MAX_IO_CHANNELS];
+};
+
+// Based on gst_rtp_channel_orders in gstrtpchannels.c
+channel_remap_t channel_remaps[] = {
+  {
+    .channels = 5,
+    .map = { 0, 1, 4, 2, 3 },
+  },
+};
+
 static void
 dump_pipeline (GstPipeline *pipe, const char *name)
 {
@@ -189,6 +205,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
       udp_caps = gst_caps_new_simple ("application/x-rtp",
           "clock-rate", G_TYPE_INT, data->sample_rate,
           "channels", G_TYPE_INT, data->channels,
+          "channel-order", G_TYPE_STRING, "unpositioned",
           "encoding-name", G_TYPE_STRING, "L16",
           "media", G_TYPE_STRING, "audio", NULL);
     } else {
@@ -196,6 +213,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
       udp_caps = gst_caps_new_simple ("application/x-rtp",
           "clock-rate", G_TYPE_INT, data->sample_rate,
           "channels", G_TYPE_INT, data->channels,
+          "channel-order", G_TYPE_STRING, "unpositioned",
           "encoding-name", G_TYPE_STRING, "L24",
           "media", G_TYPE_STRING, "audio", NULL);
     }
@@ -323,7 +341,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
           "channels", G_TYPE_INT, 1,
           "format", G_TYPE_STRING, "S16LE",
           "layout", G_TYPE_STRING, "interleaved",
-          "channel-mask", GST_TYPE_BITMASK, (guint64) (1 << ch), NULL);
+          "channel-mask", GST_TYPE_BITMASK, (guint64) 0, NULL);
       g_object_set (appsrc, "format", GST_FORMAT_TIME, NULL);
       g_object_set (appsrc, "do-timestamp", TRUE, NULL);
       g_object_set (appsrc, "is-live", TRUE, NULL);
@@ -356,7 +374,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
         "channels", G_TYPE_INT, data->channels,
         "format", G_TYPE_STRING, "S16LE",
         "layout", G_TYPE_STRING, "interleaved",
-        "channel-mask", GST_TYPE_BITMASK, (guint64) (1 << data->channels) - 1,
+        "channel-mask", GST_TYPE_BITMASK, (guint64) 0,
         NULL);
     g_object_set (capsfilter, "caps", caps, NULL);
     gst_caps_unref (caps);
