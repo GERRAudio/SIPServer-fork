@@ -222,6 +222,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
     g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency,
         "mode", 0 /* none */, NULL);
     rx_audioconv = gst_element_factory_make ("audioconvert", "rx-aconv");
+    g_object_set(rx_audioconv, "dithering", 0 /* none */, NULL);
 
     capsfilter = gst_element_factory_make ("capsfilter", "rx-caps");
 
@@ -366,6 +367,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
     capsfilter = gst_element_factory_make ("capsfilter", "tx-capsf");
 
     tx_audioconv = gst_element_factory_make ("audioconvert", "tx-audioconv");
+    g_object_set(tx_audioconv, "dithering", 0 /* none */, NULL);
 
     udpsink = gst_element_factory_make ("udpsink", "tx-sink");
 
