@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+
+    <OutputPath>C:\Development\SIPServerFromGIT\x64\debug</OutputPath>
+    <BaseOutputPath>C:\Development\SIPServerFromGIT\x64\debug</BaseOutputPath>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\mod\languages\mod_managed\managed\FreeSWITCH.Managed.2017.csproj" />
+    <ProjectReference Include="..\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" />
+  </ItemGroup>
+
+</Project>

@@ -28,15 +28,20 @@
  * Log.cs -- Log wrappers
  *
  */
+using FreeSWITCH.Native;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
+using static FreeSWITCH.EventBinding;
 
 namespace FreeSWITCH
 {
     public static class Log
     {
+
+
         public static void Write(LogLevel level, string message)
         {
             Native.freeswitch.console_log(level.ToLogString(), message);
@@ -56,7 +61,8 @@ namespace FreeSWITCH
 
         static string ToLogString(this LogLevel level)
         {
-            switch (level) {
+            switch (level)
+            {
                 case LogLevel.Console: return "CONSOLE";
                 case LogLevel.Alert: return "ALERT";
                 case LogLevel.Critical: return "CRIT";
@@ -65,8 +71,8 @@ namespace FreeSWITCH
                 case LogLevel.Info: return "INFO";
                 case LogLevel.Notice: return "NOTICE";
                 case LogLevel.Warning: return "WARNING";
-                default: 
-                    System.Diagnostics.Debug.Fail("Invalid LogLevel: " + level.ToString() + " (" + (int)level+ ").");
+                default:
+                    System.Diagnostics.Debug.Fail("Invalid LogLevel: " + level.ToString() + " (" + (int)level + ").");
                     return "INFO";
             }
         }
@@ -94,5 +100,54 @@ namespace FreeSWITCH
         Alert,
         Warning,
         Notice,
+    }
+
+
+    public class LogBinding : IDisposable
+    {
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void switch_log_callback_delegate(IntPtr logData, switch_log_level_t level);
+     //   public delegate void switch_log_callback_delegate(switch_log_node_t node);
+        readonly switch_log_callback_delegate del; // Prevent GC
+        readonly SWIGTYPE_p_f_p_q_const__switch_log_node_t_enum_switch_log_level_t__switch_status_t function;
+
+        private LogBinding(SWIGTYPE_p_f_p_q_const__switch_log_node_t_enum_switch_log_level_t__switch_status_t function, switch_log_callback_delegate origDelegate)
+        {
+            this.function = function;
+            this.del = origDelegate;
+        }
+        bool disposed;
+        public void Dispose()
+        {
+            dispose();
+            GC.SuppressFinalize(this);
+        }
+        void dispose()
+        {
+            if (disposed) return;
+            // HACK: FS crashes if we unbind after shutdown is pretty complete. This is still a race condition.
+            if (freeswitch.switch_core_ready() == switch_bool_t.SWITCH_FALSE) return;
+            freeswitch.switch_log_unbind_logger(this.function);
+            disposed = true;
+        }
+        ~LogBinding()
+        {
+            dispose();
+        }
+
+      
+
+        public static IDisposable Bind(switch_log_level_t logLevel, switch_bool_t isConsole, switch_log_callback_delegate logging)
+        {
+
+            var fp = Marshal.GetFunctionPointerForDelegate(logging);
+            var swigFp = new SWIGTYPE_p_f_p_q_const__switch_log_node_t_enum_switch_log_level_t__switch_status_t(fp, false);
+            var res = freeswitch.switch_log_bind_logger(swigFp, logLevel, isConsole);
+            if (res != switch_status_t.SWITCH_STATUS_SUCCESS)
+            {
+                throw new InvalidOperationException("Call to switch_log_bind_logger failed, result: " + res + ".");
+            }
+            return new LogBinding(swigFp, logging);
+        }
     }
 }

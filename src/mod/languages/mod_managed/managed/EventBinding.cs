@@ -113,8 +113,10 @@ namespace FreeSWITCH
         {
             IntPtr clone_ptr_ptr = Marshal.AllocCoTaskMem(IntPtr.Size);
             freeswitch.switch_event_dup(new SWIGTYPE_p_p_switch_event(clone_ptr_ptr, false), evt);
+    
             SwitchEventWrap dupe_evt = new SwitchEventWrap(clone_ptr_ptr);
             return dupe_evt;
+
         }
         public static IDisposable Bind(string id, switch_event_types_t event_types, string subclass_name, Action<EventBindingArgs> f, bool dupe)
         {

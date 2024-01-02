@@ -310,7 +310,7 @@ static void daemonize(int *fds)
 				system_ready = check_fd(fds[0], 2000);
 
 				if (system_ready == 0) {
-					printf("FreeSWITCH[%d] Waiting for background process pid:%d to be ready.....\n", (int)getpid(), (int) pid);
+					printf("SIP Server [%d] Waiting for background process pid:%d to be ready.....\n", (int)getpid(), (int) pid);
 				}
 
 			} while (--sanity && system_ready == 0);
@@ -321,12 +321,12 @@ static void daemonize(int *fds)
 
 
 			if (system_ready < 0) {
-				printf("FreeSWITCH[%d] Error starting system! pid:%d\n", (int)getpid(), (int) pid);
+				printf("SIP Server [%d] Error starting system! pid:%d\n", (int)getpid(), (int) pid);
 				kill(pid, 9);
 				exit(EXIT_FAILURE);
 			}
 
-			printf("FreeSWITCH[%d] System Ready pid:%d\n", (int) getpid(), (int) pid);
+			printf("SIP Server [%d] System Ready pid:%d\n", (int) getpid(), (int) pid);
 		}
 
 		exit(EXIT_SUCCESS);
@@ -534,6 +534,7 @@ int main(int argc, char *argv[])
 #endif
 #endif
 
+
 	sentry_options_t *options = sentry_options_new();
 	sentry_options_set_dsn(options, "https://6410b90a49e54446bde93a548ad5a4db@o412129.ingest.sentry.io/5711293");
 	sentry_init(options);
@@ -585,7 +586,7 @@ int main(int argc, char *argv[])
 			SC_HANDLE hService;
 			SC_HANDLE hSCManager;
 			SERVICE_DESCRIPTION desc;
-			desc.lpDescription = "The FreeSWITCH service.";
+			desc.lpDescription = "The SIP Server service.";
 
 			x++;
 			if (!switch_strlen_zero(local_argv[x])) {
