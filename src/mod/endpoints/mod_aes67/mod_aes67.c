@@ -1934,24 +1934,11 @@ load_streams (switch_xml_t streams, switch_bool_t reload)
 
 again:
       for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
-          int found = 0;
 
           switch_core_hash_this(hi, NULL, NULL, (void **)&stream);
 
-          for (mystream = switch_xml_child (streams, "stream"); mystream;
-                  mystream = mystream->next) {
-              char *stream_name = (char *) switch_xml_attr_soft (mystream, "name");
-
-              if (!stream_name)
-                  continue;
-
-              if (!strcmp(stream->name, stream_name)) {
-                  found = 1;
-                  break;
-              }
-          }
-
-          if (!found) {
+          if (NULL == switch_xml_find_child(streams, "stream", "name", stream->name)) {
+              //FIXME: Prevent crash due to removal of stream currently used in active call/session
               switch_core_hash_delete(globals.sh_streams, stream->name);
               free_shared_audio_stream(stream);
               // FIXME: this is a bit ugly, but if we delete, the iterator is invalidated, so we restart
@@ -2190,16 +2177,92 @@ check_stream (char *streamstr, int check_input, int *chanindex)
   return stream;
 }
 
+static switch_bool_t
+endpoint_in_use (audio_endpoint_t *endp)
+{
+  switch_hash_index_t *hi;
+  for (hi = switch_core_hash_first(globals.call_hash); hi; hi = switch_core_hash_next(&hi)) {
+    const void *var;
+    void *val;
+    private_t *tech_pvt;
+
+    switch_core_hash_this(hi, &var, NULL, &val);
+    tech_pvt = val;
+
+    if (tech_pvt->audio_endpoint == endp) {
+
+      switch_channel_t *ch = switch_core_session_get_channel(tech_pvt->session);
+      switch_channel_callstate_t state = switch_channel_get_callstate(ch);
+
+      if (state == CCS_ACTIVE) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE," %s's session is ACTIVE", tech_pvt->audio_endpoint->name);
+        return TRUE; 
+      }
+    }
+  }
+  return FALSE;
+}
+
+static switch_bool_t
+endpoint_compare (audio_endpoint_t *curr, audio_endpoint_t *new)
+{
+  switch_bool_t endpoint_changed = FALSE;
+
+  if (curr->in_stream != new->in_stream) {
+    curr->in_stream = new->in_stream;
+    endpoint_changed = TRUE;
+  }
+
+  if (curr->out_stream != new->out_stream) {
+    curr->out_stream = new->out_stream;
+    endpoint_changed = TRUE;
+  }
+
+  if (curr->inchan != new->inchan) {
+    curr->inchan = new->inchan;
+    endpoint_changed = TRUE;
+  }
+
+  if (curr->outchan != new->outchan) {
+    curr->outchan = new->outchan;
+    endpoint_changed = TRUE;
+  }
+
+  return endpoint_changed;
+}
+
 static switch_status_t
-load_endpoints (switch_xml_t endpoints)
+load_endpoints (switch_xml_t endpoints, switch_bool_t reload)
 {
   switch_status_t status = SWITCH_STATUS_SUCCESS;
   switch_xml_t param, myendpoint;
   switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-      "Loading endpoints ...\n");
+      "%soading endpoints ...\n", reload ? "Rel" : "L");
+
+  if (reload) {
+      switch_hash_index_t *hi;
+      audio_endpoint_t *endpoint;
+
+  again:
+      for (hi = switch_core_hash_first(globals.endpoints); hi; hi = switch_core_hash_next(&hi)) {
+
+        switch_core_hash_this(hi, NULL, NULL, (void **)&endpoint);
+
+        if ((NULL == switch_xml_find_child(endpoints, "endpoint", "name", endpoint->name)) &&
+              (FALSE == endpoint_in_use(endpoint))) {
+          switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "removing endpoint %s\n", endpoint->name);
+          switch_core_hash_delete(globals.endpoints, endpoint->name);
+          switch_safe_free(endpoint);
+          // FIXME: this is a bit ugly, but if we delete, the iterator is invalidated, so we restart
+          goto again;
+        }
+      }
+  }
+
   for (myendpoint = switch_xml_child (endpoints, "endpoint"); myendpoint;
       myendpoint = myendpoint->next) {
     audio_endpoint_t *endpoint = NULL;
+    audio_endpoint_t *curr_endp = NULL;
     shared_audio_stream_t *stream = NULL;
     char *endpoint_name = (char *) switch_xml_attr_soft (myendpoint, "name");
 
@@ -2212,15 +2275,24 @@ load_endpoints (switch_xml_t endpoints)
     /* check if that endpoint name is not already used */
     endpoint = switch_core_hash_find (globals.endpoints, endpoint_name);
     if (endpoint) {
-      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-          "An endpoint with name '%s' already exists\n", endpoint_name);
-      continue;
-    }
+      if (!reload) {
+        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+            "An endpoint with name '%s' already exists\n", endpoint_name);
+        continue;
+      } else if (endpoint_in_use(endpoint)) {
+        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+            "The endpoint '%s' is in use, can't change\n", endpoint_name);
+        continue;
+      }
 
-    endpoint = switch_core_alloc (module_pool, sizeof (*endpoint));
+      /* an endpoint with same name exists */
+      curr_endp = endpoint;
+    }
+    switch_zmalloc (endpoint, sizeof (*endpoint));
     if (!endpoint) {
       continue;
     }
+
     switch_mutex_init (&endpoint->mutex, SWITCH_MUTEX_NESTED, module_pool);
     endpoint->inchan = -1;
     endpoint->outchan = -1;
@@ -2252,23 +2324,44 @@ load_endpoints (switch_xml_t endpoints)
         endpoint->out_stream = stream;
       }
     }
+
     if (!endpoint->in_stream && !endpoint->out_stream) {
+      if (reload && curr_endp) {
+        switch_core_hash_delete(globals.endpoints, curr_endp->name);
+        switch_safe_free(curr_endp);
+      }
+
       switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
           "You need at least one stream for endpoint '%s'\n", endpoint_name);
       continue;
     }
+
     if (check_stream_compat (endpoint->in_stream, endpoint->out_stream)) {
+      if (reload && curr_endp) {
+        switch_core_hash_delete(globals.endpoints, curr_endp->name);
+        switch_safe_free(curr_endp);
+      }
       switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
           "Incompatible input and output streams for endpoint '%s'\n",
           endpoint_name);
       continue;
     }
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-        "Created endpoint '%s', instream = %s, outstream = %s\n",
-        endpoint->name,
-        endpoint->in_stream ? endpoint->in_stream->name : "(none)",
-        endpoint->out_stream ? endpoint->out_stream->name : "(none)");
-    switch_core_hash_insert (globals.endpoints, endpoint->name, endpoint);
+
+    if (reload && curr_endp) {
+      /* check anything changed in the existing endpoint */
+      if (endpoint_compare(curr_endp, endpoint)) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "endpoint %s changed\n", curr_endp->name);
+      }
+      /* free the allocated endpoint */
+      switch_safe_free(endpoint);
+    } else {
+      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+          "Created endpoint '%s', instream = %s, outstream = %s\n",
+          endpoint->name,
+          endpoint->in_stream ? endpoint->in_stream->name : "(none)",
+          endpoint->out_stream ? endpoint->out_stream->name : "(none)");
+      switch_core_hash_insert (globals.endpoints, endpoint->name, endpoint);
+    }
   }
   return status;
 }
@@ -2460,7 +2553,7 @@ load_config (void)
   }
 
   if ((endpoints = switch_xml_child (cfg, "endpoints"))) {
-    load_endpoints (endpoints);
+    load_endpoints (endpoints, FALSE);
   }
 
 
@@ -2850,12 +2943,12 @@ static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
     shared_audio_stream_t *s = NULL;
     switch_core_hash_this(hi, &var, NULL, &val);
     s = val;
-    stream->write_function(stream, "stream name: %s \t indev.ip_addr: %s, indev.port: %d, "
+	stream->write_function(stream, "stream name: %s \t indev.ip_addr: %s, indev.port: %d, "
                     "outdev.ip_addr: %s, outdev.port: %d, sample-rate: %d, "
                     "codec-ms: %d, channels: %d, sythentic_ptp: %d, txflow: %s\n",
                     s->name,
-                    s->indev->ip_addr, s->indev->port,
-                    s->outdev->ip_addr,s->outdev->port,
+                    s->indev ? s->indev->ip_addr: "None", s->indev? s->indev->port : 0,
+                    s->outdev ? s->outdev->ip_addr: "None", s->outdev? s->outdev->port : 0,
                     s->sample_rate, s->codec_ms, s->channels,
                     s->synthetic_ptp, s->txflow?"on":"off");
     cnt++;
@@ -2887,7 +2980,7 @@ static switch_status_t
 reload_config()
 {
   char *cf = "aes67.conf";
-  switch_xml_t cfg, xml, streams;
+  switch_xml_t cfg, xml, streams, endpoints;
   switch_status_t status = SWITCH_STATUS_SUCCESS;
   const char *reload_err;
 
@@ -2915,6 +3008,10 @@ reload_config()
 
   if ((streams = switch_xml_child (cfg, "streams"))) {
     load_streams (streams, TRUE);
+  }
+
+  if ((endpoints = switch_xml_child (cfg, "endpoints"))) {
+    load_endpoints (endpoints, TRUE);
   }
 
   switch_xml_free (xml);
