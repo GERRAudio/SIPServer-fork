@@ -243,6 +243,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
 #else
     MAKE_TS_ELEMENT(udp_source, "ts-udpsrc", "rx-src", pipeline_name);
 #endif
+    g_object_set(udp_source, "buffer-size", 1048576, NULL);
 
     if (data->rx_codec == L16) {
       rtpdepay = gst_element_factory_make ("rtpL16depay", RTP_DEPAY);
