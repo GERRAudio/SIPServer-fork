@@ -2298,6 +2298,10 @@ AM_CONDITIONAL(IS64BITLINUX, [test `uname -m` = x86_64])
 AM_CONDITIONAL(HAVE_G723_1, [ test -d ${switch_srcdir}/libs/libg723_1 ])
 AM_CONDITIONAL(HAVE_G729, [ test -d ${switch_srcdir}/libs/libg729 ])
 
+AC_ARG_ENABLE(sentry,
+[AC_HELP_STRING([--disable-sentry],[build without sentry code])],[enable_sentry="$enableval"],[enable_sentry="yes"])
+AM_CONDITIONAL([ENABLE_SENTRY],[test "${enable_sentry}" = "yes"])
+
 #some vars to sub into the Makefile.am's
 #LIBS+=> core.log || error="yes";if test -n "$(VERBOSE)" -o "$$error" = "yes";then cat core.log;fi;if test "$$error" = "yes";then exit 1;fi
 LIBTOOL='$(SHELL) $(switch_builddir)/libtool'

@@ -18,6 +18,43 @@
 #define SYNTHETIC_CLOCK_INTERVAL_MS 100
 #endif
 
+#define ENABLE_THREADSHARE
+#define DEFAULT_CONTEXT_SHARED 1 // 1 context per stream, or just one overall
+#define DEFAULT_CONTEXT_NAME "ts"
+#define DEFAULT_CONTEXT_WAIT 10 // ms
+
+#if DEFAULT_CONTEXT_SHARED
+#define MAKE_TS_ELEMENT(var, factory, name, context) \
+  do { \
+    var = gst_element_factory_make (factory, name); \
+    g_object_set(var, "context-wait", DEFAULT_CONTEXT_WAIT, \
+        "context", DEFAULT_CONTEXT_NAME, NULL); \
+  } while (0)
+#else
+#define MAKE_TS_ELEMENT(var, factory, name, context) \
+  do { \
+    var = gst_element_factory_make (factory, name); \
+    g_object_set(var, "context-wait", DEFAULT_CONTEXT_WAIT, \
+        "context", context, NULL); \
+  } while (0)
+#endif
+
+typedef struct channel_remap channel_remap_t;
+
+struct channel_remap {
+  int channels;
+  // map[input channel index] = output channel index;
+  int map[MAX_IO_CHANNELS];
+};
+
+// Based on gst_rtp_channel_orders in gstrtpchannels.c
+channel_remap_t channel_remaps[] = {
+  {
+    .channels = 5,
+    .map = { 0, 1, 4, 2, 3 },
+  },
+};
+
 static void
 dump_pipeline (GstPipeline *pipe, const char *name)
 {
@@ -88,6 +125,25 @@ bus_callback (GstBus * bus, GstMessage * msg, gpointer data)
   return TRUE;
 
 }
+
+#ifdef ENABLE_THREADSHARE
+static GstCaps *
+request_pt_map(GstElement *jitterbuffer, guint pt, gpointer user_data)
+{
+  GstCaps *caps = GST_CAPS(user_data), *ret;
+
+  ret = gst_caps_copy(caps);
+  gst_caps_set_simple(ret, "payload", G_TYPE_INT, pt, NULL);
+
+  return ret;
+}
+
+static void
+destroy_caps(void *data, GClosure G_GNUC_UNUSED *closure)
+{
+  gst_caps_unref(data);
+}
+#endif
 
 static void
 deinterleave_pad_added (GstElement * deinterleave, GstPad * pad,
@@ -182,13 +238,19 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
         *capsfilter, *queue, *valve, *split;
     GstCaps *udp_caps = NULL, *rx_caps = NULL;
 
+#ifndef ENABLE_THREADSHARE
     udp_source = gst_element_factory_make ("udpsrc", "rx-src");
+#else
+    MAKE_TS_ELEMENT(udp_source, "ts-udpsrc", "rx-src", pipeline_name);
+#endif
+    g_object_set(udp_source, "buffer-size", 1048576, NULL);
 
     if (data->rx_codec == L16) {
       rtpdepay = gst_element_factory_make ("rtpL16depay", RTP_DEPAY);
       udp_caps = gst_caps_new_simple ("application/x-rtp",
           "clock-rate", G_TYPE_INT, data->sample_rate,
           "channels", G_TYPE_INT, data->channels,
+          "channel-order", G_TYPE_STRING, "unpositioned",
           "encoding-name", G_TYPE_STRING, "L16",
           "media", G_TYPE_STRING, "audio", NULL);
     } else {
@@ -196,14 +258,25 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
       udp_caps = gst_caps_new_simple ("application/x-rtp",
           "clock-rate", G_TYPE_INT, data->sample_rate,
           "channels", G_TYPE_INT, data->channels,
+          "channel-order", G_TYPE_STRING, "unpositioned",
           "encoding-name", G_TYPE_STRING, "L24",
           "media", G_TYPE_STRING, "audio", NULL);
     }
 
+#ifndef ENABLE_THREADSHARE
     rtpjitbuf = gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
+#else
+    MAKE_TS_ELEMENT(rtpjitbuf, "ts-jitterbuffer", "rx-jitbuf", pipeline_name);
+    g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map),
+        gst_caps_ref(udp_caps), destroy_caps, 0);
+#endif
     g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency,
-        "mode", 0 /* none */, NULL);
+#ifndef ENABLE_THREADSHARE
+        "mode", 0 /* none */,
+#endif
+        NULL);
     rx_audioconv = gst_element_factory_make ("audioconvert", "rx-aconv");
+    g_object_set(rx_audioconv, "dithering", 0 /* none */, NULL);
 
     capsfilter = gst_element_factory_make ("capsfilter", "rx-caps");
 
@@ -225,7 +298,11 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
       gchar name[ELEMENT_NAME_SIZE];
 
       NAME_ELEMENT (name, "rx-queue", ch);
+#ifndef ENABLE_THREADSHARE
       queue = gst_element_factory_make ("queue", name);
+#else
+      MAKE_TS_ELEMENT(queue, "ts-queue", name, pipeline_name);
+#endif
       NAME_ELEMENT (name, "appsink", ch);
       appsink = gst_element_factory_make ("appsink", name);
       NAME_ELEMENT (name, "valve", ch);
@@ -239,8 +316,11 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
 
       g_object_set (appsink, "emit-signals", FALSE, "sync", FALSE, "async", FALSE,
           "drop", TRUE, "max-buffers", 1, "enable-last-sample", FALSE, NULL);
-      g_object_set (queue, "max-size-time", 100000000 /* 100 ms */ , "leaky",
-          2 /* downstream */ , NULL);
+      g_object_set (queue, "max-size-time", 100000000 /* 100 ms */ ,
+#ifndef ENABLE_THREADSHARE
+          "leaky", 2 /* downstream */,
+#endif
+          NULL);
       g_object_set (valve, "drop", TRUE, NULL);
 
       gst_bin_add (GST_BIN (pipeline), queue);
@@ -256,7 +336,8 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
         G_CALLBACK (deinterleave_pad_added), NULL);
 
     g_object_set (udp_source, "address", data->rx_ip_addr, "port", data->rx_port,
-        "multicast-iface", data->rtp_iface, "retrieve-sender-address", FALSE,
+        "multicast-iface", data->rtp_iface,
+        "retrieve-sender-address", FALSE,
         NULL);
     g_object_set (udp_source, "caps", udp_caps, NULL);
     gst_caps_unref (udp_caps);
@@ -323,7 +404,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
           "channels", G_TYPE_INT, 1,
           "format", G_TYPE_STRING, "S16LE",
           "layout", G_TYPE_STRING, "interleaved",
-          "channel-mask", GST_TYPE_BITMASK, (guint64) (1 << ch), NULL);
+          "channel-mask", GST_TYPE_BITMASK, (guint64) 0, NULL);
       g_object_set (appsrc, "format", GST_FORMAT_TIME, NULL);
       g_object_set (appsrc, "do-timestamp", TRUE, NULL);
       g_object_set (appsrc, "is-live", TRUE, NULL);
@@ -348,6 +429,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
     capsfilter = gst_element_factory_make ("capsfilter", "tx-capsf");
 
     tx_audioconv = gst_element_factory_make ("audioconvert", "tx-audioconv");
+    g_object_set(tx_audioconv, "dithering", 0 /* none */, NULL);
 
     udpsink = gst_element_factory_make ("udpsink", "tx-sink");
 
@@ -356,7 +438,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
         "channels", G_TYPE_INT, data->channels,
         "format", G_TYPE_STRING, "S16LE",
         "layout", G_TYPE_STRING, "interleaved",
-        "channel-mask", GST_TYPE_BITMASK, (guint64) (1 << data->channels) - 1,
+        "channel-mask", GST_TYPE_BITMASK, (guint64) 0,
         NULL);
     g_object_set (capsfilter, "caps", caps, NULL);
     gst_caps_unref (caps);
