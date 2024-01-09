@@ -980,7 +980,7 @@ SWITCH_DECLARE(int32_t) set_low_priority(void)
 SWITCH_DECLARE(int32_t) set_realtime_priority(void)
 {
 #ifdef WIN32
-	return SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+	return SetPriorityClass(GetCurrentProcess(), REALTIME_PRIORITY_CLASS);
 #else
 #ifdef USE_SCHED_SETSCHEDULER
 	/*
@@ -1058,8 +1058,23 @@ SWITCH_DECLARE(uint32_t) switch_core_cpu_count(void)
 
 SWITCH_DECLARE(int32_t) set_normal_priority(void)
 {
+#ifdef WIN32
+	return SetPriorityClass(GetCurrentProcess(),NORMAL_PRIORITY_CLASS);
+#else
 	return 0;
+#endif
+
 }
+
+SWITCH_DECLARE(int32_t) set_high_priority(void)
+{
+#ifdef WIN32
+	return SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+#else
+	return 0;
+#endif
+}
+
 
 SWITCH_DECLARE(int32_t) set_auto_priority(void)
 {
@@ -1073,7 +1088,8 @@ SWITCH_DECLARE(int32_t) set_auto_priority(void)
 
 	if (!runtime.cpu_count) runtime.cpu_count = 1;
 
-	return set_realtime_priority();
+	// changed from set high priority
+	return set_high_priority();
 
 
 	// ERROR: code not reachable on Windows Visual Studio Express 2008 return 0;

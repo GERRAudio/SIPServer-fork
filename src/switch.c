@@ -731,7 +731,7 @@ int main(int argc, char *argv[])
 		}
 #endif
 		else if (!strcmp(local_argv[x], "-version")) {
-			fprintf(stdout, "FreeSWITCH version: %s (%s)\n", switch_version_full(), switch_version_revision_human());
+			fprintf(stdout, "SIP Server version: %s (%s)\n", switch_version_full(), switch_version_revision_human());
 			sentry_shutdown();
 			exit(EXIT_SUCCESS);
 		}

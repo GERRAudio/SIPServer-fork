@@ -11458,6 +11458,12 @@ namespace FreeSWITCH.Native
             return ret;
         }
 
+        public static int set_high_priority()
+        {
+            int ret = freeswitchPINVOKE.set_high_priority();
+            return ret;
+        }
+
         public static int set_auto_priority()
         {
             int ret = freeswitchPINVOKE.set_auto_priority();
@@ -22447,6 +22453,9 @@ namespace FreeSWITCH.Native
 
         [global::System.Runtime.InteropServices.DllImport("mod_managed", EntryPoint = "CSharp_FreeSWITCHfNative_set_normal_priority___")]
         public static extern int set_normal_priority();
+
+        [global::System.Runtime.InteropServices.DllImport("mod_managed", EntryPoint = "CSharp_FreeSWITCHfNative_set_high_priority___")]
+        public static extern int set_high_priority();
 
         [global::System.Runtime.InteropServices.DllImport("mod_managed", EntryPoint = "CSharp_FreeSWITCHfNative_set_auto_priority___")]
         public static extern int set_auto_priority();

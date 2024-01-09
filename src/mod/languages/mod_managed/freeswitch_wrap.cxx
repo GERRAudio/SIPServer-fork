@@ -16535,6 +16535,16 @@ SWIGEXPORT int SWIGSTDCALL CSharp_FreeSWITCHfNative_set_normal_priority___() {
   return jresult;
 }
 
+SWIGEXPORT int SWIGSTDCALL CSharp_FreeSWITCHfNative_set_high_priority___()
+{
+  int jresult;
+  int32_t result;
+
+  result = (int32_t)set_high_priority();
+  jresult = result;
+  return jresult;
+}
+
 
 SWIGEXPORT int SWIGSTDCALL CSharp_FreeSWITCHfNative_set_auto_priority___() {
   int jresult ;

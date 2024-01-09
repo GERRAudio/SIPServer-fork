@@ -146,9 +146,9 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Development\\SIPServerFromGIT\\SIPServer\\SIPServer.csproj",
-      "projectName": "SIPServer",
-      "projectPath": "C:\\Development\\SIPServerFromGIT\\SIPServer\\SIPServer.csproj",
+      "projectUniqueName": "C:\\Development\\SIPServerFromGIT\\SIPServer\\SIPServerEmbedded.csproj",
+      "projectName": "SIPServerEmbedded",
+      "projectPath": "C:\\Development\\SIPServerFromGIT\\SIPServer\\SIPServerEmbedded.csproj",
       "packagesPath": "C:\\Users\\suppo\\.nuget\\packages\\",
       "outputPath": "C:\\Development\\SIPServerFromGIT\\SIPServer\\obj\\",
       "projectStyle": "PackageReference",

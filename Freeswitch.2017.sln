@@ -553,7 +553,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mod_aes67", "src\mod\endpoi
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mod_grpc", "src\mod\applications\mod_grpc\mod_grpc.vcxproj", "{B3339929-F91E-4D77-92C1-A3176C87FA4E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SIPServer", "SIPServer\SIPServer.csproj", "{2E5326FB-A5F1-404B-9E95-47FE7D9AE348}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SIPServerEmbedded", "SIPServer\SIPServerEmbedded.csproj", "{2E5326FB-A5F1-404B-9E95-47FE7D9AE348}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

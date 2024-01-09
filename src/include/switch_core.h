@@ -2395,6 +2395,7 @@ SWITCH_DECLARE(int32_t) switch_core_set_process_privileges(void);
 */
 
 SWITCH_DECLARE(int32_t) set_normal_priority(void);
+SWITCH_DECLARE(int32_t) set_high_priority(void);
 SWITCH_DECLARE(int32_t) set_auto_priority(void);
 SWITCH_DECLARE(int32_t) set_realtime_priority(void);
 SWITCH_DECLARE(int32_t) set_low_priority(void);
