@@ -168,6 +168,8 @@ typedef struct _shared_audio_stream_t
   /* to sync the read/write during stream reload*/
   volatile gint reloading;
   GRWLock rwlock;
+  /* context name for threadshare elements*/
+  char ts_context_name[TS_CONTEXT_NAME_LEN];
 } shared_audio_stream_t;
 
 typedef struct private_object private_t;
@@ -1996,7 +1998,7 @@ again:
     stream->rtp_payload_type = globals.rtp_payload_type;
     stream->rtp_jitbuf_latency = globals.rtp_jitbuf_latency;
     stream->txflow = TRUE;
-
+    memset(stream->ts_context_name, 0, TS_CONTEXT_NAME_LEN);
     switch_snprintf (stream->name, sizeof (stream->name), "%s", stream_name);
     for (param = switch_xml_child (mystream, "param"); param;
         param = param->next) {
@@ -2077,6 +2079,8 @@ again:
         stream->rtp_jitbuf_latency = atoi(val);
       } else if (!strcasecmp (var, "txflow-on-start")) {
         stream->txflow = atoi(val);
+      } else if (!strcasecmp (var, "ts-context-name")) {
+        strncpy(stream->ts_context_name, val, TS_CONTEXT_NAME_LEN-1);
       }
     }
     if (stream->indev == NULL && stream->outdev == NULL) {
@@ -2788,6 +2792,7 @@ open_shared_audio_stream (shared_audio_stream_t * shstream)
   data.rtp_payload_type = shstream->rtp_payload_type;
   data.rtp_jitbuf_latency = shstream->rtp_jitbuf_latency;
   data.txdrop = !shstream->txflow;
+  data.ts_context_name = shstream->ts_context_name;
 
   shstream->stream = create_pipeline (&data, error_callback);
   return 0;

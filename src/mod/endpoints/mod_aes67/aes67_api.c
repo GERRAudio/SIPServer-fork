@@ -19,25 +19,15 @@
 #endif
 
 #define ENABLE_THREADSHARE
-#define DEFAULT_CONTEXT_SHARED 1 // 1 context per stream, or just one overall
 #define DEFAULT_CONTEXT_NAME "ts"
 #define DEFAULT_CONTEXT_WAIT 10 // ms
 
-#if DEFAULT_CONTEXT_SHARED
-#define MAKE_TS_ELEMENT(var, factory, name, context) \
-  do { \
-    var = gst_element_factory_make (factory, name); \
-    g_object_set(var, "context-wait", DEFAULT_CONTEXT_WAIT, \
-        "context", DEFAULT_CONTEXT_NAME, NULL); \
-  } while (0)
-#else
 #define MAKE_TS_ELEMENT(var, factory, name, context) \
   do { \
     var = gst_element_factory_make (factory, name); \
     g_object_set(var, "context-wait", DEFAULT_CONTEXT_WAIT, \
         "context", context, NULL); \
   } while (0)
-#endif
 
 typedef struct channel_remap channel_remap_t;
 
@@ -220,11 +210,15 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
   GstElement *pipeline, *rtp_pay = NULL, *rtpdepay = NULL, *rtpjitbuf = NULL;
   g_stream_t *stream = g_new (g_stream_t, 1);
   char fixed_name[25] = { "pipeline" };
+  char *ts_ctx = DEFAULT_CONTEXT_NAME;
   char *pipeline_name;
   if (data->name)
     pipeline_name = data->name;
   else
     pipeline_name = fixed_name;
+
+  if (0 != strlen(data->ts_context_name))
+    ts_ctx = data->ts_context_name;
 
   pipeline = gst_pipeline_new (pipeline_name);
   if (!pipeline) {
@@ -241,7 +235,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
 #ifndef ENABLE_THREADSHARE
     udp_source = gst_element_factory_make ("udpsrc", "rx-src");
 #else
-    MAKE_TS_ELEMENT(udp_source, "ts-udpsrc", "rx-src", pipeline_name);
+    MAKE_TS_ELEMENT(udp_source, "ts-udpsrc", "rx-src", ts_ctx);
 #endif
     g_object_set(udp_source, "buffer-size", 1048576, NULL);
 
@@ -266,7 +260,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
 #ifndef ENABLE_THREADSHARE
     rtpjitbuf = gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
 #else
-    MAKE_TS_ELEMENT(rtpjitbuf, "ts-jitterbuffer", "rx-jitbuf", pipeline_name);
+    MAKE_TS_ELEMENT(rtpjitbuf, "ts-jitterbuffer", "rx-jitbuf", ts_ctx);
     g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map),
         gst_caps_ref(udp_caps), destroy_caps, 0);
 #endif
@@ -301,7 +295,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
 #ifndef ENABLE_THREADSHARE
       queue = gst_element_factory_make ("queue", name);
 #else
-      MAKE_TS_ELEMENT(queue, "ts-queue", name, pipeline_name);
+      MAKE_TS_ELEMENT(queue, "ts-queue", name, ts_ctx);
 #endif
       NAME_ELEMENT (name, "appsink", ch);
       appsink = gst_element_factory_make ("appsink", name);

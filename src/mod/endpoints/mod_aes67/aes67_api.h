@@ -12,6 +12,8 @@
 
 #define MAX_IO_CHANNELS 256
 
+#define TS_CONTEXT_NAME_LEN 100
+
 typedef enum
 { L16, L24 } aes67_codec_t;
 
@@ -40,6 +42,7 @@ typedef struct
   int rtp_payload_type;
   int rtp_jitbuf_latency;
   gboolean txdrop;
+  char *ts_context_name;
 } pipeline_data_t;
 
 struct g_stream
