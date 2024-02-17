@@ -1721,14 +1721,14 @@ SWITCH_MODULE_LOAD_FUNCTION (mod_aes67_load)
   aes67_endpoint_interface->io_routines = &aes67_io_routines;
   aes67_endpoint_interface->state_handler = &aes67_event_handlers;
 
-  SWITCH_ADD_API(api_interface, "aes", "aes67 cli", aes_cmd, "<command> [<args>]");
-  switch_console_set_complete("add aes help");
-  switch_console_set_complete("add aes streams");
-  switch_console_set_complete("add aes endpoints");
-  switch_console_set_complete("add aes ptpstats");
-  switch_console_set_complete("add aes rtpstats");
-  switch_console_set_complete("add aes txflow");
-  switch_console_set_complete("add aes reloadconf");
+  SWITCH_ADD_API(api_interface, "aes67", "aes67 cli", aes_cmd, "<command> [<args>]");
+  switch_console_set_complete("add aes67 help");
+  switch_console_set_complete("add aes67 streams");
+  switch_console_set_complete("add aes67 endpoints");
+  switch_console_set_complete("add aes67 ptpstats");
+  switch_console_set_complete("add aes67 rtpstats");
+  switch_console_set_complete("add aes67 txflow");
+  switch_console_set_complete("add aes67 reloadconf");
 
   /* indicate that the module should continue to be loaded */
   return SWITCH_STATUS_SUCCESS;
@@ -2073,7 +2073,9 @@ again:
         stream->rtp_ts_offset = strtod(val, NULL);
       } else if (!strcasecmp (var, "rtp-iface")) {
         strncpy (stream->rtp_iface, val, NW_IFACE_LEN - 1);
-      } else if  (!strcasecmp (var, "rtp-payload-type")) {
+	  } else if (!strcasecmp(var, "rtp-interface")) {
+		strncpy(stream->rtp_iface, val, NW_IFACE_LEN - 1);
+	  } else if (!strcasecmp(var, "rtp-payload-type")) {
         stream->rtp_payload_type = atoi(val);
       } else if (!strcasecmp (var, "rtp-jitbuf-latency")) {
         stream->rtp_jitbuf_latency = atoi(val);
@@ -2373,6 +2375,9 @@ load_endpoints (switch_xml_t endpoints, switch_bool_t reload)
 static switch_status_t
 load_globals (switch_xml_t cfg)
 {
+  globals.ptp_domain = 0;
+  // hacky fix to prevent failing to get ptp from crashing FreeSWITCH
+
   switch_xml_t settings, param;
   if ((settings = switch_xml_child (cfg, "settings"))) {
     for (param = switch_xml_child (settings, "param"); param;
@@ -2450,7 +2455,9 @@ load_globals (switch_xml_t cfg)
         if (!zstr(iface)) {
           strncpy(globals.ptp_iface, iface, NW_IFACE_LEN - 1);
         }
-      } else if (!strcasecmp (var, "synthetic-ptp")) {
+	  } else if (!strcasecmp(var, "ptp-interface")) {
+		strncpy(globals.ptp_iface, val, NW_IFACE_LEN - 1);
+	  } else if (!strcasecmp(var, "synthetic-ptp")) {
         globals.synthetic_ptp = atoi(val);
       } else if (!strcasecmp (var, "rtp-ts-offset")) {
         globals.rtp_ts_offset = strtod(val, NULL);
@@ -2465,6 +2472,7 @@ load_globals (switch_xml_t cfg)
       }
     }
   }
+  // do a check here to see that none of the required parms are null
   return SWITCH_STATUS_SUCCESS;
 }
 
@@ -2754,8 +2762,7 @@ open_audio_stream (g_stream_t ** stream, udp_sock_t * indev,
   return 0;
 }
 
-int
-open_shared_audio_stream (shared_audio_stream_t * shstream)
+int open_shared_audio_stream (shared_audio_stream_t * shstream)
 {
   pipeline_data_t data;
   udp_sock_t *indev = shstream->indev;
@@ -3032,13 +3039,13 @@ SWITCH_STANDARD_API(aes_cmd)
   switch_status_t status = SWITCH_STATUS_SUCCESS;
   const char *usage_string = "USAGE:\n"
   "--------------------------------------------------------------------------------\n"
-  "aes help\n"
-  "aes streams\n"
-  "aes endpoints\n"
-  "aes ptpstats <on|off> \n"
-  "aes rtpstats <stream>\n"
-  "aes txflow <stream> <on|off>\n"
-  "aes reloadconf\n"
+  "aes67 help\n"
+  "aes67 streams\n"
+  "aes67 endpoints\n"
+  "aes67 ptpstats <on|off> \n"
+  "aes67 rtpstats <stream>\n"
+  "aes67 txflow <stream> <on|off>\n"
+  "aes67 reloadconf\n"
   "--------------------------------------------------------------------------------\n";
   if (zstr(cmd)) {
     stream->write_function(stream, "%s", usage_string);
