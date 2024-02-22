@@ -2442,6 +2442,71 @@ switch_status_t switch_core_sqldb_init(const char **err)
 	return SWITCH_STATUS_SUCCESS;
 }
 
+SWITCH_DECLARE(void) switch_setenv (const char *var, const char *value, int overwrite) {
+
+#ifdef WIN32
+		if (_putenv_s(var, value) != 0) {
+#else
+		if (setenv(var, value, overwrite) != 0) {
+#endif
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "unable to be set %s as %s\n", var, value);
+		} else {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s updated with: %s\n", var, value);
+		}
+}
+
+/*
+ Update the PATH environment variable with the location
+ of gstreamer-1.0-0.dll. It is expected to be installed in
+ "<mod_dir_path>../../Media/bin"
+ So pre-pend the PATH with this location, so that loader will
+ pick from only that location
+ */
+static void switch_update_media_env_path () {
+
+#define MAX_PATH_LEN 10000
+#define MAX_VAR_LEN 100
+	char * mod_dir = SWITCH_GLOBAL_dirs.mod_dir;
+	char new_path[MAX_PATH_LEN];
+	char media_bin_dir[MAX_PATH_LEN];
+	char * path = NULL;
+	char separator;
+	char variable[MAX_VAR_LEN];
+
+	switch_snprintf(media_bin_dir, MAX_PATH_LEN, "%s/../../Media/bin", mod_dir);
+
+	switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Resolving the absolute path to Media (GStreamer) path: %s\n", media_bin_dir);
+#ifdef WIN32
+	separator = ';';
+	switch_snprintf(variable,MAX_VAR_LEN, "PATH");
+	if (_fullpath(media_bin_dir, media_bin_dir, MAX_PATH_LEN) != NULL) {
+#else
+	separator = ':';
+	switch_snprintf(variable,MAX_VAR_LEN, "LD_LIBRARY_PATH");
+	if (realpath(media_bin_dir, media_bin_dir) !=  NULL) {
+#endif
+		switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Resolved the abolute path to Media (GStreamer) path as %s\n", media_bin_dir);
+	} else {
+		switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to resolve the Media (GStreamer) path"
+#ifdef WIN32
+		" \n");
+#else
+		"%s\n", strerror(errno));
+#endif
+		return;
+	}
+
+	if (NULL == (path = getenv(variable))) {
+		switch_snprintf(new_path, MAX_PATH_LEN, "%s", media_bin_dir);
+	} else {
+		switch_snprintf(new_path, MAX_PATH_LEN, "%s%c%s", media_bin_dir, separator, path);
+	}
+
+	switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Updating %s as %s\n",variable, new_path);
+
+	switch_setenv (variable, new_path, 1);
+}
+
 SWITCH_DECLARE(switch_status_t) switch_core_init_and_modload(switch_core_flag_t flags, switch_bool_t console, const char **err)
 {
 	switch_event_t *event;
@@ -2467,6 +2532,8 @@ SWITCH_DECLARE(switch_status_t) switch_core_init_and_modload(switch_core_flag_t 
 	switch_load_network_lists(SWITCH_FALSE);
 
 	switch_msrp_init();
+
+	switch_update_media_env_path();
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "Bringing up environment.\n");
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "Loading Modules.\n");
