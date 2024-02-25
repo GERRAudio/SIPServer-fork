@@ -1635,10 +1635,36 @@ SWITCH_MODULE_LOAD_FUNCTION (mod_aes67_load)
 {
   switch_status_t status;
   switch_api_interface_t *api_interface;
-
+#define MAX_PATH_LEN 10000
+  char *mod_dir = NULL;
+  char media_dir[MAX_PATH_LEN];
   module_pool = pool;
 
   memset (&globals, 0, sizeof (globals));
+
+  mod_dir = SWITCH_GLOBAL_dirs.mod_dir;
+
+  //using forward slash to support in both Linux and Windows
+  switch_snprintf (media_dir, sizeof (media_dir), "%s/../../Media", mod_dir);
+	switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Resolving the absolute path to Media (GStreamer) path: %s\n", media_dir);
+
+#ifdef _WIN32
+	if (_fullpath(media_dir, media_dir, MAX_PATH_LEN) != NULL) {
+#else
+	if (realpath(media_dir, media_dir) !=  NULL) {
+#endif
+		switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Resolved the abolute path to Media (GStreamer) path as %s\n", media_dir);
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Setting it as environment variable: GST_PLUGIN_SYSTEM_PATH\n");
+    switch_setenv("GST_PLUGIN_SYSTEM_PATH", media_dir, TRUE);
+	} else {
+		switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to resolve the Media (GStreamer) path"
+#ifdef _WIN32
+		" \n");
+#else
+		"%s\n", strerror(errno));
+#endif
+  }
+
   gst_init (NULL, NULL);
   switch_core_hash_init (&globals.call_hash);
   switch_core_hash_init (&globals.sh_streams);
