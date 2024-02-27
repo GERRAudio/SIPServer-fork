@@ -170,6 +170,8 @@ typedef struct _shared_audio_stream_t
   GRWLock rwlock;
   /* context name for threadshare elements*/
   char ts_context_name[TS_CONTEXT_NAME_LEN];
+  /* accept multiple listen only streams*/
+  switch_bool_t multiple_listen;
 } shared_audio_stream_t;
 
 typedef struct private_object private_t;
@@ -191,20 +193,8 @@ typedef struct _audio_endpoint
   /*! Channel index within the output stream where we get the audio for this endpoint */
   int outchan;
 
-  /*! Associated private information if involved in a call */
-  private_t *master;
-
-  /*! For timed read and writes */
-  switch_timer_t read_timer;
-  switch_timer_t write_timer;
-
-  /* We need our own read frame */
-  switch_frame_t read_frame;
-  unsigned char read_buf[SWITCH_RECOMMENDED_BUFFER_SIZE];
-
-  /* Needed codecs for the core to read/write in the proper format */
-  switch_codec_t read_codec;
-  switch_codec_t write_codec;
+  /*! Number of Listen only sessions that are connected to same endpoint*/
+  switch_size_t active_listen_sessions;
 
   /*! Let's be safe */
   switch_mutex_t *mutex;
@@ -232,6 +222,17 @@ struct private_object
   float old_value_weight;
   uint32_t scount_rx;
   uint32_t scount_tx;
+  /*! For timed read and writes */
+  switch_timer_t read_timer;
+  switch_timer_t write_timer;
+
+  /* We need our own read frame */
+  switch_frame_t read_frame;
+  unsigned char read_buf[SWITCH_RECOMMENDED_BUFFER_SIZE];
+
+  /* Needed codecs for the core to read/write in the proper format */
+  switch_codec_t read_codec;
+  switch_codec_t write_codec;
 };
 
 
@@ -432,11 +433,13 @@ channel_on_routing (switch_core_session_t * session)
 	  switch_mutex_lock (tech_pvt->audio_endpoint->mutex);
 	  if (tech_pvt->audio_endpoint && tech_pvt->audio_endpoint->in_stream) {
 		  audio_endpoint_t *audio_endp = tech_pvt->audio_endpoint;
-
+		  char session_id[SESSION_ID_LEN];
+		  switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(session));
 		  STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
-		  //Setting the 'drop' property to TRUE will drop the buffers before reaching appsink, after hangup
-		  drop_input_buffers (FALSE, audio_endp->in_stream->stream,
-				  audio_endp->inchan);
+      if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream,
+          tech_pvt->audio_endpoint->inchan, session_id)) {
+			  tech_pvt->audio_endpoint->active_listen_sessions++;
+      }
 
 		  STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
 	  }
@@ -880,13 +883,15 @@ channel_on_hangup (switch_core_session_t * session)
 
     tech_pvt->audio_endpoint = NULL;
 
-    release_stream_channel (endpoint->in_stream, endpoint->inchan, 1);
-    release_stream_channel (endpoint->out_stream, endpoint->outchan, 0);
-    switch_core_timer_destroy (&endpoint->read_timer);
-    switch_core_timer_destroy (&endpoint->write_timer);
-    switch_core_codec_destroy (&endpoint->read_codec);
-    switch_core_codec_destroy (&endpoint->write_codec);
-    endpoint->master = NULL;
+    if (endpoint->active_listen_sessions == 0) {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "releasing inchan \n");
+        release_stream_channel(endpoint->in_stream, endpoint->inchan, 1);
+    }
+    release_stream_channel(endpoint->out_stream, endpoint->outchan, 0);
+    switch_core_timer_destroy(&tech_pvt->read_timer);
+    switch_core_timer_destroy(&tech_pvt->write_timer);
+    switch_core_codec_destroy(&tech_pvt->read_codec);
+    switch_core_codec_destroy(&tech_pvt->write_codec);
 
     switch_mutex_unlock (endpoint->mutex);
   }
@@ -925,11 +930,13 @@ channel_kill_channel (switch_core_session_t * session, int sig)
 
       if (tech_pvt->audio_endpoint && tech_pvt->audio_endpoint->in_stream) {
         audio_endpoint_t *audio_endp = tech_pvt->audio_endpoint;
+		  char session_id[SESSION_ID_LEN];
+        switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(tech_pvt->session));
 
         STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
-        //Setting the 'drop' property to TRUE will drop the buffers before reaching appsink, after hangup
-        drop_input_buffers (TRUE, audio_endp->in_stream->stream,
-            audio_endp->inchan);
+        if(remove_appsink(audio_endp->in_stream->stream,
+            audio_endp->inchan, session_id))
+            audio_endp->active_listen_sessions--;
 
         STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
       }
@@ -962,11 +969,14 @@ channel_on_exchange_media (switch_core_session_t * session)
 
   if (tech_pvt->audio_endpoint && tech_pvt->audio_endpoint->in_stream) {
     audio_endpoint_t *audio_endp = tech_pvt->audio_endpoint;
+    char session_id[SESSION_ID_LEN];
+    switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(session));
 
     STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
-    //Setting the 'drop' property to FALSE will let the buffers flow to appsink
-    drop_input_buffers (FALSE, audio_endp->in_stream->stream,
-        audio_endp->inchan);
+    if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream,
+        tech_pvt->audio_endpoint->inchan, session_id)) {
+        tech_pvt->audio_endpoint->active_listen_sessions++;
+    }
 
     STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
   }
@@ -991,20 +1001,21 @@ channel_send_dtmf (switch_core_session_t * session, const switch_dtmf_t * dtmf)
 }
 
 static switch_status_t
-channel_endpoint_read (audio_endpoint_t * endpoint, switch_frame_t ** frame)
+channel_endpoint_read (private_t * tech_pvt, switch_frame_t ** frame, char *session_id)
 {
   int bytes = 0;
   int samples = 0;
+  audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;
 
   if (!endpoint->in_stream) {
-    switch_core_timer_next (&endpoint->read_timer);
+    switch_core_timer_next (&tech_pvt->read_timer);
     *frame = &globals.cng_frame;
     return SWITCH_STATUS_SUCCESS;
   }
 
-  endpoint->read_frame.data = endpoint->read_buf;
-  endpoint->read_frame.buflen = sizeof (endpoint->read_buf);
-  endpoint->read_frame.source = __FILE__;
+  tech_pvt->read_frame.data = tech_pvt->read_buf;
+  tech_pvt->read_frame.buflen = sizeof (tech_pvt->read_buf);
+  tech_pvt->read_frame.source = __FILE__;
 
   if (STREAM_READER_TRYLOCK(endpoint->in_stream)) {
     if (!endpoint->in_stream->stream) {
@@ -1012,29 +1023,29 @@ channel_endpoint_read (audio_endpoint_t * endpoint, switch_frame_t ** frame)
     }
     bytes =
       pull_buffers (endpoint->in_stream->stream,
-          (unsigned char *) endpoint->read_frame.data,
+          (unsigned char *) tech_pvt->read_frame.data,
           STREAM_SAMPLES_PER_PACKET (endpoint->in_stream) *
           2 /* FIXME: non-S16LE */ ,
-          endpoint->inchan, &endpoint->read_timer);
+          endpoint->inchan, &tech_pvt->read_timer, session_id);
     STREAM_READER_UNLOCK(endpoint->in_stream);
   } else {
     // Pipeline is being reset, feed some silence
     bytes = STREAM_SAMPLES_PER_PACKET (endpoint->in_stream) * 2;
-    memset(endpoint->read_frame.data, 0, bytes);
+    memset(tech_pvt->read_frame.data, 0, bytes);
   }
 
   // FIXME: Only works for S16LE
   samples = bytes / sizeof (int16_t);
   if (!bytes) {
-    switch_core_timer_next (&endpoint->read_timer);
+    switch_core_timer_next (&tech_pvt->read_timer);
     *frame = &globals.cng_frame;
     return SWITCH_STATUS_SUCCESS;
   }
 
-  endpoint->read_frame.datalen = bytes;
-  endpoint->read_frame.samples = samples;
-  endpoint->read_frame.codec = &endpoint->read_codec;
-  *frame = &endpoint->read_frame;
+  tech_pvt->read_frame.datalen = bytes;
+  tech_pvt->read_frame.samples = samples;
+  tech_pvt->read_frame.codec = &tech_pvt->read_codec;
+  *frame = &tech_pvt->read_frame;
   return SWITCH_STATUS_SUCCESS;
 }
 
@@ -1062,8 +1073,8 @@ static void update_level (private_t *tech_pvt, switch_frame_t *frame, uint8_t rx
 
   // Fire an event when hitting the per-second rate
   // we only fire a single event for both rx/tx and do it on the rx cycle for simplicity
-  samples = tech_pvt->audio_endpoint ?
-    tech_pvt->audio_endpoint->read_codec.implementation->actual_samples_per_second :
+  samples = tech_pvt ?
+    tech_pvt->read_codec.implementation->actual_samples_per_second :
     globals.read_codec.implementation->actual_samples_per_second;
 
   if (scount >= samples) {
@@ -1114,9 +1125,12 @@ channel_read_frame (switch_core_session_t * session, switch_frame_t ** frame,
   int bytes = 0;
   switch_status_t status = SWITCH_STATUS_FALSE;
   switch_assert (tech_pvt != NULL);
+  char session_id[SESSION_ID_LEN];
+  switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(session));
+
 
   if (tech_pvt->audio_endpoint) {
-    status = channel_endpoint_read (tech_pvt->audio_endpoint, frame);
+    status = channel_endpoint_read (tech_pvt, frame, session_id);
     goto normal_return;
   }
 
@@ -1193,7 +1207,7 @@ channel_read_frame (switch_core_session_t * session, switch_frame_t ** frame,
       (unsigned char *) globals.read_frame.data,
       globals.read_codec.implementation->samples_per_packet *
       2 /* FIXME: S16LE-only */ ,
-      0, &globals.read_timer);
+      0, &globals.read_timer, session_id);
   // FIXME: won't work for L24/L32
   samples = bytes / sizeof (int16_t);
   switch_mutex_unlock (globals.device_lock);
@@ -1230,20 +1244,18 @@ cng_wait:
 }
 
 static switch_status_t
-channel_endpoint_write (audio_endpoint_t * endpoint, switch_frame_t * frame)
+channel_endpoint_write (private_t * tech_pvt, switch_frame_t * frame)
 {
+  audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;
   if (!endpoint->out_stream) {
-    switch_core_timer_next (&endpoint->write_timer);
+    switch_core_timer_next (&tech_pvt->write_timer);
     return SWITCH_STATUS_SUCCESS;
   }
 
-  if (!endpoint->master) {
-    return SWITCH_STATUS_SUCCESS;
-  }
-  if (switch_test_flag (endpoint->master, TFLAG_HUP)) {
+  if (switch_test_flag (tech_pvt, TFLAG_HUP)) {
     return SWITCH_STATUS_FALSE;
   }
-  if (!switch_test_flag (endpoint->master, TFLAG_IO)) {
+  if (!switch_test_flag (tech_pvt, TFLAG_IO)) {
     return SWITCH_STATUS_SUCCESS;
   }
 
@@ -1255,7 +1267,7 @@ channel_endpoint_write (audio_endpoint_t * endpoint, switch_frame_t * frame)
     // Pipeline is not being reset, we can push data
     push_buffer (endpoint->out_stream->stream,
             (unsigned char *) frame->data, frame->datalen, endpoint->outchan,
-            &(endpoint->write_timer));
+            &(tech_pvt->write_timer));
     STREAM_READER_UNLOCK(endpoint->out_stream);
   }
 
@@ -1273,7 +1285,7 @@ channel_write_frame (switch_core_session_t * session, switch_frame_t * frame,
   update_level (tech_pvt, frame, 0);
 
   if (tech_pvt->audio_endpoint) {
-    return channel_endpoint_write (tech_pvt->audio_endpoint, frame);
+    return channel_endpoint_write (tech_pvt, frame);
   }
 
   if (!globals.main_stream) {
@@ -1361,7 +1373,7 @@ switch_io_routines_t aes67_io_routines = {
 
 static int create_shared_audio_stream (shared_audio_stream_t * stream);
 static int
-take_stream_channel (shared_audio_stream_t * stream, int index, int input)
+take_stream_channel (shared_audio_stream_t * stream, int index, int input, const char* session_id)
 {
   int rc = 0;
   if (!stream) {
@@ -1376,7 +1388,8 @@ take_stream_channel (shared_audio_stream_t * stream, int index, int input)
   }
 
   if (input) {
-    if (stream->inchan_used[index]) {
+	  if (stream->inchan_used[index] &&
+        !stream->multiple_listen) {
       rc = -1;
       goto done;
     }
@@ -1420,10 +1433,10 @@ static void init_pvt_level (private_t *tech_pvt)
   // Init audio level weight factors
   // FIXME: Have to adjust this if we decide on a different avg window
   float window = 1000.0f; // window in ms
-  uint32_t samples = tech_pvt->audio_endpoint ?
-    tech_pvt->audio_endpoint->read_codec.implementation->actual_samples_per_second :
+  uint32_t samples = tech_pvt?
+    tech_pvt->read_codec.implementation->actual_samples_per_second :
     globals.read_codec.implementation->actual_samples_per_second;
-  
+
   tech_pvt->new_value_weight = 1.0f / ((float)samples * (window / 1000.0f));
   tech_pvt->old_value_weight = 1.0f - tech_pvt->new_value_weight;
 }
@@ -1449,6 +1462,7 @@ channel_outgoing_channel (switch_core_session_t * session,
   audio_endpoint_t *endpoint = NULL;
   char *endpoint_name = NULL;
   const char *endpoint_answer = NULL;
+  char new_sess_id[SESSION_ID_LEN];
 
   if (!outbound_profile) {
     switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -1501,12 +1515,21 @@ channel_outgoing_channel (switch_core_session_t * session,
       goto error;
     }
 
+    switch_snprintf(new_sess_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(*new_session));
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(*new_session), SWITCH_LOG_DEBUG, "New session id: %s\n", new_sess_id);
+
     switch_mutex_lock (endpoint->mutex);
 
-    if (endpoint->master) {
-      /* someone already has this endpoint */
-      retcause = SWITCH_CAUSE_USER_BUSY;
-      goto error;
+    if (endpoint->active_listen_sessions) {
+	    // someone already has this endpoint
+      // do not allow to the session
+      //  if endpoint is not rx only or
+      //  if the instream (rx) is not enabled to allow mulitple listeners
+      if (endpoint->out_stream ||
+       (!endpoint->in_stream && !endpoint->in_stream->multiple_listen)) {
+        retcause = SWITCH_CAUSE_USER_BUSY;
+        goto error;
+      }
     }
 
     codec_ms =
@@ -1520,7 +1543,7 @@ channel_outgoing_channel (switch_core_session_t * session,
         endpoint->in_stream ? endpoint->in_stream->
         sample_rate : endpoint->out_stream->sample_rate;
 
-    if (switch_core_timer_init (&endpoint->read_timer,
+    if (switch_core_timer_init (&tech_pvt->read_timer,
             globals.timer_name, codec_ms,
             samples_per_packet, module_pool) != SWITCH_STATUS_SUCCESS) {
       switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -1529,7 +1552,7 @@ channel_outgoing_channel (switch_core_session_t * session,
     }
 
     /* The write timer must be setup regardless */
-    if (switch_core_timer_init (&endpoint->write_timer,
+    if (switch_core_timer_init (&tech_pvt->write_timer,
             globals.timer_name, codec_ms,
             samples_per_packet, module_pool) != SWITCH_STATUS_SUCCESS) {
       switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -1537,7 +1560,7 @@ channel_outgoing_channel (switch_core_session_t * session,
       goto error;
     }
     //hardcode to Raw 16bit
-    if (switch_core_codec_init (&endpoint->read_codec,
+    if (switch_core_codec_init (&tech_pvt->read_codec,
             "L16", NULL, NULL, sample_rate, codec_ms, 1,
             SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE, NULL,
             NULL) != SWITCH_STATUS_SUCCESS) {
@@ -1546,7 +1569,7 @@ channel_outgoing_channel (switch_core_session_t * session,
       goto error;
     }
     //hardcode to Raw 16bit
-    if (switch_core_codec_init (&endpoint->write_codec,
+    if (switch_core_codec_init (&tech_pvt->write_codec,
             "L16", NULL, NULL, sample_rate, codec_ms, 1,
             SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE, NULL,
             NULL) != SWITCH_STATUS_SUCCESS) {
@@ -1555,16 +1578,16 @@ channel_outgoing_channel (switch_core_session_t * session,
       goto error;
     }
     switch_core_session_set_read_codec (tech_pvt->session,
-        &endpoint->read_codec);
+        &tech_pvt->read_codec);
     switch_core_session_set_write_codec (tech_pvt->session,
-        &endpoint->write_codec);
+        &tech_pvt->write_codec);
 
     /* try to acquire the stream */
-    if (take_stream_channel (endpoint->in_stream, endpoint->inchan, 1)) {
+    if (take_stream_channel (endpoint->in_stream, endpoint->inchan, 1, new_sess_id)) {
       retcause = SWITCH_CAUSE_USER_BUSY;
       goto error;
     }
-    if (take_stream_channel (endpoint->out_stream, endpoint->outchan, 0)) {
+    if (take_stream_channel (endpoint->out_stream, endpoint->outchan, 0, NULL)) {
       release_stream_channel (endpoint->in_stream, endpoint->inchan, 1);
       retcause = SWITCH_CAUSE_USER_BUSY;
       goto error;
@@ -1580,7 +1603,7 @@ channel_outgoing_channel (switch_core_session_t * session,
     } else {
       switch_set_flag (tech_pvt, TFLAG_AUTO_ANSWER);
     }
-    endpoint->master = tech_pvt;
+
     tech_pvt->audio_endpoint = endpoint;
     switch_mutex_unlock (endpoint->mutex);
   } else {
@@ -1607,20 +1630,18 @@ channel_outgoing_channel (switch_core_session_t * session,
   return SWITCH_CAUSE_SUCCESS;
 
 error:
-  if (endpoint) {
-    if (!endpoint->master) {
-      if (endpoint->read_timer.interval) {
-        switch_core_timer_destroy (&endpoint->read_timer);
-      }
-      if (endpoint->write_timer.interval) {
-        switch_core_timer_destroy (&endpoint->write_timer);
-      }
-      if (endpoint->read_codec.codec_interface) {
-        switch_core_codec_destroy (&endpoint->read_codec);
-      }
-      if (endpoint->write_codec.codec_interface) {
-        switch_core_codec_destroy (&endpoint->write_codec);
-      }
+  if (tech_pvt) {
+    if (tech_pvt->read_timer.interval) {
+          switch_core_timer_destroy(&tech_pvt->read_timer);
+    }
+	  if (tech_pvt->write_timer.interval) {
+          switch_core_timer_destroy(&tech_pvt->write_timer);
+    }
+	  if (tech_pvt->read_codec.codec_interface) {
+          switch_core_codec_destroy(&tech_pvt->read_codec);
+    }
+	  if (tech_pvt->write_codec.codec_interface) {
+          switch_core_codec_destroy(&tech_pvt->write_codec);
     }
     switch_mutex_unlock (endpoint->mutex);
   }
@@ -1799,12 +1820,16 @@ link_rx_stream (shared_audio_stream_t *stream)
 
     if (tech_pvt->audio_endpoint->in_stream == stream) {
 
-        switch_channel_t *ch = switch_core_session_get_channel(tech_pvt->session);
-        switch_channel_callstate_t state = switch_channel_get_callstate(ch);
-
-        if (state == CCS_ACTIVE)
-          drop_input_buffers(FALSE, tech_pvt->audio_endpoint->in_stream->stream,
-              tech_pvt->audio_endpoint->inchan);
+      switch_channel_t *ch = switch_core_session_get_channel(tech_pvt->session);
+      switch_channel_callstate_t state = switch_channel_get_callstate(ch);
+      char session_id[SESSION_ID_LEN];
+      switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(tech_pvt->session));
+      if (state == CCS_ACTIVE) {
+        if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream,
+            tech_pvt->audio_endpoint->inchan, session_id)) {
+			    tech_pvt->audio_endpoint->active_listen_sessions++;
+        }
+      }
     }
   }
 }
@@ -2024,6 +2049,7 @@ again:
     stream->rtp_payload_type = globals.rtp_payload_type;
     stream->rtp_jitbuf_latency = globals.rtp_jitbuf_latency;
     stream->txflow = TRUE;
+	stream->multiple_listen = FALSE;
     memset(stream->ts_context_name, 0, TS_CONTEXT_NAME_LEN);
     switch_snprintf (stream->name, sizeof (stream->name), "%s", stream_name);
     for (param = switch_xml_child (mystream, "param"); param;
@@ -2109,6 +2135,8 @@ again:
         stream->txflow = atoi(val);
       } else if (!strcasecmp (var, "ts-context-name")) {
         strncpy(stream->ts_context_name, val, TS_CONTEXT_NAME_LEN-1);
+	    } else if (!strcasecmp(var, "allow-multiple-listen")) {
+        stream->multiple_listen = atoi(val);
       }
     }
     if (stream->indev == NULL && stream->outdev == NULL) {

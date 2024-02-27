@@ -13,6 +13,7 @@
 #define MAX_IO_CHANNELS 256
 
 #define TS_CONTEXT_NAME_LEN 100
+#define SESSION_ID_LEN 20
 
 typedef enum
 { L16, L24 } aes67_codec_t;
@@ -57,6 +58,7 @@ struct g_stream
   volatile gint clock_sync;
   GstClock *clock;
   gint sample_rate;
+  char *ts_ctx;
 };
 
 g_stream_t *create_pipeline (pipeline_data_t *data, event_callback_t * error_cb);
@@ -68,9 +70,11 @@ void start_mainloop (GMainLoop * loop);
 gboolean push_buffer (g_stream_t *stream, unsigned char *payload, guint len,
     guint ch_idx, switch_timer_t * timer);
 int pull_buffers (g_stream_t * stream, unsigned char *payload, guint buflen,
-    guint ch_idx, switch_timer_t * timer);
+    guint ch_idx, switch_timer_t * timer, gchar *session);
 void drop_input_buffers (gboolean drop, g_stream_t * stream, guint32 ch_idx);
 gchar *get_rtp_stats (g_stream_t *stream);
 void drop_output_buffers (gboolean drop, g_stream_t * stream);
+gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session);
+gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session);
 
 #endif /*__GSTREAMER_API__*/
