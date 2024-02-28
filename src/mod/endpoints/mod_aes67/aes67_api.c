@@ -10,6 +10,14 @@
 #define NAME_ELEMENT(name, element, ch_idx) \
     g_snprintf(name, ELEMENT_NAME_SIZE, "%s-ch%u", element, ch_idx)
 
+#define NAME_SESSION_ELEMENT(name, element, ch_idx, sess_id) \
+  do { \
+    if (sess_id != NULL) \
+      g_snprintf(name, ELEMENT_NAME_SIZE, "%s-ch%u-sess%s", element, ch_idx, sess_id); \
+    else \
+      g_snprintf(name, ELEMENT_NAME_SIZE, "%s-ch%u", element, ch_idx); \
+  } while (0)
+
 #define RTP_DEPAY "rx-depay"
 
 #ifdef _WIN32
@@ -140,8 +148,8 @@ deinterleave_pad_added (GstElement * deinterleave, GstPad * pad,
     gpointer userdata)
 {
   GstElement *pipeline =
-      GST_ELEMENT (gst_element_get_parent (deinterleave)), *queue;
-  GstPad *queue_sink_pad;
+      GST_ELEMENT (gst_element_get_parent (deinterleave)), *tee;
+  GstPad *tee_sink_pad;
   gchar name[ELEMENT_NAME_SIZE];
   gchar *pad_name;
   guint ch_idx;
@@ -149,21 +157,21 @@ deinterleave_pad_added (GstElement * deinterleave, GstPad * pad,
   pad_name = gst_pad_get_name (pad);
   sscanf (pad_name, "src_%u", &ch_idx);
 
-  NAME_ELEMENT (name, "rx-queue", ch_idx);
-  queue = gst_bin_get_by_name (GST_BIN (pipeline), name);
-  g_assert_nonnull (queue);
+  NAME_ELEMENT (name, "tee", ch_idx);
+  tee = gst_bin_get_by_name (GST_BIN (pipeline), name);
+  g_assert_nonnull (tee);
 
-  queue_sink_pad = gst_element_get_static_pad (queue, "sink");
+  tee_sink_pad = gst_element_get_static_pad (tee, "sink");
 
-  if (gst_pad_link (pad, queue_sink_pad) != GST_PAD_LINK_OK) {
+  if (gst_pad_link (pad, tee_sink_pad) != GST_PAD_LINK_OK) {
     switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
         "Failed to link deinterleave %s pad in the rx pipeline", pad_name);
   }
 
   dump_pipeline(GST_PIPELINE(pipeline), pad_name);
 
-  gst_object_unref (queue_sink_pad);
-  gst_object_unref(queue);
+  gst_object_unref (tee_sink_pad);
+  gst_object_unref(tee);
   gst_object_unref(pipeline);
   g_free (pad_name);
 }
@@ -203,6 +211,153 @@ gboolean update_clock (gpointer userdata) {
   return G_SOURCE_CONTINUE;
 }
 
+gboolean
+add_appsink (g_stream_t *stream, guint ch_idx, gchar *session)
+{
+  gchar name[ELEMENT_NAME_SIZE];
+  gchar dot_name[ELEMENT_NAME_SIZE+10];
+  GstPad *tee_src_pad, *queue_sink_pad;
+  NAME_ELEMENT(name, "tee", ch_idx);
+  GstElement *tee, *queue, *appsink;
+  tee = gst_bin_get_by_name (GST_BIN(stream->pipeline), name);
+  if (tee == NULL) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+        "Failed to get %s element in the pipeline\n", name);
+    return FALSE;
+  }
+
+  NAME_SESSION_ELEMENT(name, "queue", ch_idx, session);
+  if (NULL != (queue = gst_bin_get_by_name(stream->pipeline, name))) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+        "%s already exists in the pipeline ch: %d, session %s", name, ch_idx, session);
+    gst_object_unref(queue);
+    return FALSE;
+  }
+#ifndef ENABLE_THREADSHARE
+      queue = gst_element_factory_make ("queue", name);
+#else
+      MAKE_TS_ELEMENT(queue, "ts-queue", name, stream->ts_ctx);
+#endif
+
+  NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
+  appsink = gst_element_factory_make ("appsink", name);
+
+  if (!queue || !appsink ) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+            "Failed to create appsink or queue element for ch: %d, session %s", ch_idx, session);
+    return FALSE;
+  }
+
+  g_object_set (appsink, "emit-signals", FALSE, "sync", FALSE, "async", FALSE,
+      "drop", TRUE, "max-buffers", 1, "enable-last-sample", FALSE, NULL);
+
+  if (!gst_bin_add(GST_BIN(stream->pipeline), appsink) || !gst_bin_add(GST_BIN(stream->pipeline), queue)) {
+	  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+			"Failed to add appsink or queue to the pipeline ch: %d, session: %s", ch_idx, session);
+    goto error;
+  }
+
+  if (!gst_element_link(queue, appsink)) {
+	  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+						"Failed to link appsink and queue ch: %d, session: %s", ch_idx, session);
+    goto error;
+  }
+
+  if (NULL == (tee_src_pad = gst_element_request_pad_simple (tee, "src_%u"))) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+            "Failed to get src pad from the tee element ch: %d, session: %s", ch_idx, session);
+    goto error;
+  }
+
+  if (NULL == (queue_sink_pad = gst_element_get_static_pad (queue, "sink"))) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+            "Failed to get sink pad from the queue element ch: %d, session: %s", ch_idx, session);
+    goto error;
+  }
+
+  if (!gst_element_sync_state_with_parent (queue) ||
+    !gst_element_sync_state_with_parent(appsink)) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+            "Failed to sync queue or appsink state with pipeline. ch: %d, session: %s", ch_idx, session);
+    goto error;
+  }
+
+  if (GST_PAD_LINK_OK != (gst_pad_link(tee_src_pad, queue_sink_pad))) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+            "Failed to link the queue and tee. ch: %d, session: %s", ch_idx, session);
+    goto error;
+  }
+
+  g_snprintf(dot_name, ELEMENT_NAME_SIZE+10, "%s-add", name);
+  dump_pipeline(GST_PIPELINE(stream->pipeline), dot_name);
+
+  return TRUE;
+
+  error:
+    gst_object_unref(appsink);
+    gst_object_unref(queue);
+    return FALSE;
+}
+
+gboolean
+remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session) {
+    gchar name[ELEMENT_NAME_SIZE];
+	gchar dot_name[ELEMENT_NAME_SIZE + 10];
+	GstElement *queue, *appsink, *tee;
+  GstPad *tee_src_pad, *queue_sink_pad;
+	NAME_SESSION_ELEMENT(name, "queue", ch_idx, session);
+	queue = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);
+  if (queue == NULL ) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+        "Failed to find %s in the pipeline\n", name);
+    return FALSE;
+  }
+
+	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
+  appsink = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);
+  if (appsink == NULL ) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+        "Failed to find %s in the pipeline\n", name);
+    return FALSE;
+  }
+
+  NAME_ELEMENT(name, "tee", ch_idx);
+	tee = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);
+  if (tee == NULL ) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+        "Failed to find %s in the pipeline\n", name);
+    return FALSE;
+  }
+
+  if (NULL == (queue_sink_pad = gst_element_get_static_pad (queue, "sink"))) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+            "Failed to get sink pad from the tee queue element ch: %d, session: %s", ch_idx, session);
+    return FALSE;
+  }
+  if (NULL == (tee_src_pad = gst_pad_get_peer (queue_sink_pad))) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+            "Failed to get src pad from the tee element ch: %d, session: %s", ch_idx, session);
+    return FALSE;
+  }
+
+  gst_element_release_request_pad (tee, tee_src_pad);
+  gst_object_unref(tee_src_pad);
+
+  gst_element_unlink(queue, appsink);
+
+  if (!gst_bin_remove(GST_BIN(stream->pipeline), queue) ||
+      !gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {
+	  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+			"Failed to remove appsink or queue to the pipeline ch: %d, session: %s", ch_idx, session);
+	  return FALSE;
+  }
+
+  g_snprintf(dot_name, ELEMENT_NAME_SIZE+10, "%s-del", name);
+  dump_pipeline(GST_PIPELINE(stream->pipeline), dot_name);
+
+  return TRUE;
+}
+
 g_stream_t *
 create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
 {
@@ -220,6 +375,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
   if (0 != strlen(data->ts_context_name))
     ts_ctx = data->ts_context_name;
 
+  stream->ts_ctx = ts_ctx;
   pipeline = gst_pipeline_new (pipeline_name);
   if (!pipeline) {
     switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -229,7 +385,7 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
 
   if (data->direction & DIRECTION_RX) {
     GstElement *udp_source, *appsink, *deinterleave, *rx_audioconv,
-        *capsfilter, *queue, *valve, *split;
+        *capsfilter, *queue, *valve, *split, *tee;
     GstCaps *udp_caps = NULL, *rx_caps = NULL;
 
 #ifndef ENABLE_THREADSHARE
@@ -291,39 +447,18 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
     for (guint ch = 0; ch < data->channels; ch++) {
       gchar name[ELEMENT_NAME_SIZE];
 
-      NAME_ELEMENT (name, "rx-queue", ch);
-#ifndef ENABLE_THREADSHARE
-      queue = gst_element_factory_make ("queue", name);
-#else
-      MAKE_TS_ELEMENT(queue, "ts-queue", name, ts_ctx);
-#endif
-      NAME_ELEMENT (name, "appsink", ch);
-      appsink = gst_element_factory_make ("appsink", name);
-      NAME_ELEMENT (name, "valve", ch);
-      valve = gst_element_factory_make ("valve", name);
+      NAME_ELEMENT(name, "tee", ch);
+      tee = gst_element_factory_make ("tee", name);
 
-      if (!queue || !appsink || !valve) {
+      if (!tee) {
         switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to create receive elements");
+            "Failed to create tee element in rx pipeline\n");
         continue;
       }
+      g_object_set(tee, "allow-not-linked", TRUE, NULL);
 
-      g_object_set (appsink, "emit-signals", FALSE, "sync", FALSE, "async", FALSE,
-          "drop", TRUE, "max-buffers", 1, "enable-last-sample", FALSE, NULL);
-      g_object_set (queue, "max-size-time", 100000000 /* 100 ms */ ,
-#ifndef ENABLE_THREADSHARE
-          "leaky", 2 /* downstream */,
-#endif
-          NULL);
-      g_object_set (valve, "drop", TRUE, NULL);
-
-      gst_bin_add (GST_BIN (pipeline), queue);
-      gst_bin_add (GST_BIN (pipeline), valve);
-      gst_bin_add (GST_BIN (pipeline), appsink);
-
-      gst_element_link_many (queue, valve, appsink, NULL);
-
-      // The deinterleave will be linked to the queue dynamically
+      gst_bin_add (GST_BIN(pipeline), tee);
+      // The deinterleave will be linked to the tee dynamically
     }
 
     g_signal_connect (deinterleave, "pad-added",
@@ -633,7 +768,7 @@ done:
 
 int
 pull_buffers (g_stream_t * stream, unsigned char *payload, guint needed_bytes,
-    guint ch_idx, switch_timer_t * timer)
+    guint ch_idx, switch_timer_t * timer, gchar *session)
 {
   GstState cur_state = GST_STATE_NULL, pending_state;
   GstBuffer *buf;
@@ -643,12 +778,16 @@ pull_buffers (g_stream_t * stream, unsigned char *payload, guint needed_bytes,
   gchar name[ELEMENT_NAME_SIZE];
   GstElement *appsink;
 
-  NAME_ELEMENT (name, "appsink", ch_idx);
+  if (session == NULL)
+    NAME_ELEMENT (name, "appsink", ch_idx);
+  else
+    NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
+
   appsink = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);
 
   if (appsink == NULL) {
     switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to find appsink in the pipeline\n");
+        "Failed to find %s in the pipeline\n", name);
     return 0;
   }
 
@@ -662,6 +801,7 @@ pull_buffers (g_stream_t * stream, unsigned char *payload, guint needed_bytes,
 
   // Note: assumes leftover_bytes will never be more than buflen, which is
   // likely true (packet is limited to MTU, while buflen is 8192)
+  // FIXME: revisit this to check whether we need this anymore
   if (stream->leftover_bytes[ch_idx]) {
     int copy =
         stream->leftover_bytes[ch_idx] <=
