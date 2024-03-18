@@ -1,4 +1,4 @@
-# Backup running fork and config of SIPServer
+# Backup fork and running config of SIPServer
 - .gitignore has been modified to allow some generated and config files to be maintained here.
 
 
