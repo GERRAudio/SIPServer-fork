@@ -43,7 +43,7 @@
 #ifdef _WIN32
 // FIXME: Shall we make this configurable or detect when the underlying driver requires it?
 #define PA_COM_INIT
-#include "C:\Development\sipserver\libs\portaudio\src\os\win\pa_win_coinitialize.h"
+#include <pa_win_coinitialize.h>
 // we can remove this after is all debugged, they must match internal values in pa_win_coinitialize.c
 #define PAWINUTIL_COM_INITIALIZED       (0xb38f)
 #define PAWINUTIL_COM_NOT_INITIALIZED   (0xf1cd)

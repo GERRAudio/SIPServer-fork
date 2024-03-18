@@ -59,7 +59,7 @@
 
 #if ENABLE_SENTRY
 #define SENTRY_BUILD_STATIC 1
-#include "C:\Development\sentry-native\include\sentry.h"
+#include <sentry.h>
 #endif
 
 

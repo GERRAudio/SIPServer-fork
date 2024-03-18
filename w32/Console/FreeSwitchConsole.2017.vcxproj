@@ -86,8 +86,8 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <TargetName>SIPServer</TargetName>
-    <LibraryPath>C:\Development\sipserver\x64\SIP Server;C:\Development\sentry-native\Release;$(LibraryPath)</LibraryPath>
-    <IncludePath>C:\Development\sentry-native\include\;$(IncludePath)</IncludePath>
+    <LibraryPath>..\..\..\libs\sentry-native\out\install\x64-Release\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>..\..\libs\sentry-native\include\;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <TargetName>SIPServer</TargetName>
@@ -147,7 +147,7 @@
       <DataExecutionPrevention>
       </DataExecutionPrevention>
       <TargetMachine>MachineX64</TargetMachine>
-      <AdditionalDependencies>C:\Development\sentry-native\Release\sentry.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -192,7 +192,7 @@
       <DisableSpecificWarnings>28251;6031;6340;6246;6011;6387;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>C:\Development\sipserver\x64\SIP Server;$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
       <OptimizeReferences>true</OptimizeReferences>
@@ -201,7 +201,7 @@
       <DataExecutionPrevention>
       </DataExecutionPrevention>
       <TargetMachine>MachineX64</TargetMachine>
-      <AdditionalDependencies>C:\Development\sipserver\x64\SIP Server\sentry.lib;C:\Development\sentry-native\Release\sentry.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -250,9 +250,17 @@
     <None Include="..\..\..\sentry-native\Release\sentry.dll">
       <DeploymentContent>true</DeploymentContent>
     </None>
+    <None Include="packages.config" />
     <None Include="switch_version.rc2" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="..\..\packages\x64sentry-native.0.6.1\build\x64sentry-native.targets" Condition="Exists('..\..\packages\x64sentry-native.0.6.1\build\x64sentry-native.targets')" />
   </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\..\packages\x64sentry-native.0.6.1\build\x64sentry-native.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\packages\x64sentry-native.0.6.1\build\x64sentry-native.targets'))" />
+  </Target>
 </Project>
