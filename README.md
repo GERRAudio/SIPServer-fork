@@ -1,5 +1,6 @@
 # Backup fork and running config of SIPServer
 - .gitignore has been modified to allow some generated and config files to be maintained here.
+- - todo: security sensitive files to be stored in a separate repo folder (currently there are none here)
 
 
 # FreeSWITCH
