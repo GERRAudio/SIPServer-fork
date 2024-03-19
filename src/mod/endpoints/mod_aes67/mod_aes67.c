@@ -2576,11 +2576,15 @@ load_config (void)
   }
 
   if (globals.ptp_domain >= 0) {
-    /* using PTP clock, clean up the default GST_CLOCK_TYPE_REALTIME clock */
-    gst_object_unref (globals.clock);
-    globals.clock = init_ptp (globals.ptp_domain, globals.ptp_iface);
-    if (NULL == globals.clock)
-      return SWITCH_STATUS_GENERR;
+    void *ptp_clock = init_ptp (globals.ptp_domain, globals.ptp_iface);
+    if (NULL == ptp_clock) {
+      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,"Switching to Synthetic PTP \n");
+      globals.synthetic_ptp = 1;
+    } else {
+      /* using PTP clock, clean up the default GST_CLOCK_TYPE_REALTIME clock */
+      gst_object_unref (globals.clock);
+      globals.clock = ptp_clock;
+    }
   }
 
   globals.enable_ptp_stats = FALSE;
