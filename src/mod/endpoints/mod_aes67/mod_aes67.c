@@ -1802,9 +1802,12 @@ emit_ptp_gm_change (gboolean synced)
          synced? "TRUE": "FALSE", globals.ptp_gm_id, globals.ptp_gm_mac_addr);
 
   if (switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, MY_EVENT_PTP_GM_CHANGE) == SWITCH_STATUS_SUCCESS) {
-    switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-SYNC-STATUS", "%s", synced? "TRUE": "FALSE");
-    switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-ID", "%016" G_GINT64_MODIFIER "X", globals.ptp_gm_id);
-    switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-MAC", "%012" G_GINT64_MODIFIER "X", globals.ptp_gm_mac_addr);
+    switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-SYNC-STATUS", "%s",
+			synced ? "TRUE": "FALSE");
+    switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-ID", "%016" G_GINT64_MODIFIER "X",
+			globals.ptp_gm_id);
+    switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-MAC", "%012" G_GINT64_MODIFIER "X",
+			globals.ptp_gm_mac_addr);
 
     switch_event_fire(&event);
   }
@@ -1814,15 +1817,16 @@ static gboolean
 ptp_stats_cb (guint8 d, const GstStructure * stats, gpointer user_data)
 {
   gchar master_clock_stats[] = "GstPtpStatisticsBestMasterClockSelected";
-  gchar *st_name = gst_structure_get_name(stats);
+  const gchar *st_name = gst_structure_get_name(stats);
+
   if (0 == strncasecmp(st_name, master_clock_stats, strlen(master_clock_stats))) {
     if (gst_structure_get_uint64(stats, "grandmaster-clock-id", &globals.ptp_gm_id) ) {
       emit_ptp_gm_change(globals.ptp_synced);
     }
-  }
-  else if (globals.enable_ptp_stats) {
+  } else if (globals.enable_ptp_stats) {
     switch_event_t *event;
     gchar *stats_str = gst_structure_to_string (stats);
+
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
         "PTP Stats: %s "
         "grandmaster-clock-id=0x%016" G_GINT64_MODIFIER "x, "
@@ -1836,6 +1840,7 @@ ptp_stats_cb (guint8 d, const GstStructure * stats, gpointer user_data)
 
         switch_event_fire(&event);
     }
+
     g_free (stats_str);
   }
   return TRUE;
@@ -1972,16 +1977,22 @@ stream_compare (shared_audio_stream_t *current, shared_audio_stream_t *new)
   return stream_changed;
 }
 
-void clock_synced_cb (GstClock *ptp_clock, gboolean synced, void* data) {
+void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void* data)
+{
   switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "PTP clock sync status: %d\n", synced);
-  g_object_get(ptp_clock, "grandmaster-clock-id", &globals.ptp_gm_id, NULL);
+
   globals.ptp_synced = synced;
+  // Update the global for event emission
+  g_object_get(ptp_clock, "grandmaster-clock-id", &globals.ptp_gm_id, NULL);
   emit_ptp_gm_change(synced);
+
   if (!synced)
     return;
 
-  gst_object_unref (globals.clock);
-  globals.clock = ptp_clock;
+  if (globals.clock) {
+    gst_object_unref(globals.clock);
+    globals.clock = gst_object_ref(ptp_clock);
+  }
   globals.synthetic_ptp = 0;
 
   //FIXME: add a mutex to protect sh_shtreams list from being changed by another operation like reloadconf
@@ -1990,6 +2001,7 @@ void clock_synced_cb (GstClock *ptp_clock, gboolean synced, void* data) {
     const void *var;
     void *val;
     shared_audio_stream_t *s = NULL;
+
     switch_core_hash_this(hi, &var, NULL, &val);
     s = val;
     STREAM_WRITER_LOCK(s);
