@@ -52,6 +52,7 @@
 #define MY_EVENT_CALL_AUDIO_LEVEL "aes67::call_audio_level"
 #define MY_EVENT_ERROR_AUDIO_DEV "aes67::audio_dev_error"
 #define MY_EVENT_PTP_STATS "aes67::ptp_stats"
+#define MY_EVENT_PTP_GM_CHANGE "aes67::ptp_grandmaster_change"
 #define SWITCH_PA_CALL_ID_VARIABLE "gst_call_id"
 
 #define MIN_STREAM_SAMPLE_RATE 8000
@@ -296,6 +297,7 @@ static struct
   int level_report;
   uint64_t ptp_gm_id;
   uint64_t ptp_gm_mac_addr;
+  gboolean ptp_synced;
   /* PTP domain using signed int to have -1 as default value */
   int8_t ptp_domain;
   /* Network interface to be used for PTP */
@@ -1781,10 +1783,44 @@ SWITCH_MODULE_LOAD_FUNCTION (mod_aes67_load)
   return SWITCH_STATUS_SUCCESS;
 }
 
+static void
+emit_ptp_gm_change (gboolean synced)
+{
+  switch_event_t *event;
+
+  // Clock ID formed from the MAC address
+  // if the MAC address is A1-B2-C3-D4-E5-F6, the clock id would be A1-B2-C3-FF-FE-D4-E5-F6
+  // strip byte 4 and 5 to retrieve MAC address from the Clock ID
+  globals.ptp_gm_mac_addr = ((0xFFFFFF0000000000 & globals.ptp_gm_id) >> 16) | (0xFFFFFF & globals.ptp_gm_id);
+
+  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+        MY_EVENT_PTP_GM_CHANGE
+        " "
+        "sync-status=%s, "
+        "grandmaster-clock-id=0x%016" G_GINT64_MODIFIER "x, "
+        "grandmaster-mac-addr=0x%012" G_GINT64_MODIFIER "x \n",
+         synced? "TRUE": "FALSE", globals.ptp_gm_id, globals.ptp_gm_mac_addr);
+
+  if (switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, MY_EVENT_PTP_GM_CHANGE) == SWITCH_STATUS_SUCCESS) {
+    switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-SYNC-STATUS", "%s", synced? "TRUE": "FALSE");
+    switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-ID", "%016" G_GINT64_MODIFIER "X", globals.ptp_gm_id);
+    switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-MAC", "%012" G_GINT64_MODIFIER "X", globals.ptp_gm_mac_addr);
+
+    switch_event_fire(&event);
+  }
+}
+
 static gboolean
 ptp_stats_cb (guint8 d, const GstStructure * stats, gpointer user_data)
 {
-  if (globals.enable_ptp_stats) {
+  gchar master_clock_stats[] = "GstPtpStatisticsBestMasterClockSelected";
+  gchar *st_name = gst_structure_get_name(stats);
+  if (0 == strncasecmp(st_name, master_clock_stats, strlen(master_clock_stats))) {
+    if (gst_structure_get_uint64(stats, "grandmaster-clock-id", &globals.ptp_gm_id) ) {
+      emit_ptp_gm_change(globals.ptp_synced);
+    }
+  }
+  else if (globals.enable_ptp_stats) {
     switch_event_t *event;
     gchar *stats_str = gst_structure_to_string (stats);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
@@ -1802,7 +1838,6 @@ ptp_stats_cb (guint8 d, const GstStructure * stats, gpointer user_data)
     }
     g_free (stats_str);
   }
-
   return TRUE;
 }
 
@@ -1937,6 +1972,32 @@ stream_compare (shared_audio_stream_t *current, shared_audio_stream_t *new)
   return stream_changed;
 }
 
+void clock_synced_cb (GstClock *ptp_clock, gboolean synced, void* data) {
+  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "PTP clock sync status: %d\n", synced);
+  g_object_get(ptp_clock, "grandmaster-clock-id", &globals.ptp_gm_id, NULL);
+  globals.ptp_synced = synced;
+  emit_ptp_gm_change(synced);
+  if (!synced)
+    return;
+
+  gst_object_unref (globals.clock);
+  globals.clock = ptp_clock;
+  globals.synthetic_ptp = 0;
+
+  //FIXME: add a mutex to protect sh_shtreams list from being changed by another operation like reloadconf
+  switch_hash_index_t *hi;
+  for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
+    const void *var;
+    void *val;
+    shared_audio_stream_t *s = NULL;
+    switch_core_hash_this(hi, &var, NULL, &val);
+    s = val;
+    STREAM_WRITER_LOCK(s);
+    use_ptp_clock(s->stream, ptp_clock);
+    STREAM_WRITER_UNLOCK(s);
+  }
+}
+
 static void *
 init_ptp (int domain, char *iface)
 {
@@ -1957,14 +2018,13 @@ init_ptp (int domain, char *iface)
   clock = gst_ptp_clock_new ("ptp-clock", domain);
   if (!gst_clock_wait_for_sync (GST_CLOCK (clock), timeout)) {
     switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Timed out waiting for the clock to sync\n");
+    g_signal_connect(G_OBJECT(clock), "synced", G_CALLBACK(clock_synced_cb), NULL);
     return NULL;
   }
 
+  globals.ptp_synced = TRUE;
   g_object_get(clock, "grandmaster-clock-id", &globals.ptp_gm_id, NULL);
-  // Clock ID formed from the MAC address
-  // if the MAC address is A1-B2-C3-D4-E5-F6, the clock id would be A1-B2-C3-FF-FE-D4-E5-F6
-  // strip byte 4 and 5 to retrieve MAC address from the Clock ID
-  globals.ptp_gm_mac_addr = ((0xFFFFFF0000000000 & globals.ptp_gm_id) >> 16) | (0xFFFFFF & globals.ptp_gm_id);
+  emit_ptp_gm_change(TRUE);
 
   return clock;
 }
