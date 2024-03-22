@@ -33,7 +33,7 @@ namespace SIPServer.Events
                     {
                         if (eventDictionary.ContainsKey("API-Command") && eventDictionary.ContainsKey("API-Command-Argument"))
                         {
-                            Console.WriteLine($"API request => {eventDictionary["API-Command"]} {eventDictionary["API-Command-Argument"]}");
+                            Serilog.Log.Debug($"API request => {eventDictionary["API-Command"]} {eventDictionary["API-Command-Argument"]}");
                         }
 
                     }
@@ -60,14 +60,17 @@ namespace SIPServer.Events
             var firstHeader = args.EventObj.headers;
             while (true)
             {
-                returnDictionary.Add(firstHeader.name, firstHeader.value);
-                if (firstHeader.next != null)
+                if (!returnDictionary.ContainsKey(firstHeader.name))
                 {
-                    firstHeader = firstHeader.next;
-                }
-                else
-                {
-                    break;
+                    returnDictionary.Add(firstHeader.name, firstHeader.value);
+                    if (firstHeader.next != null)
+                    {
+                        firstHeader = firstHeader.next;
+                    }
+                    else
+                    {
+                        break;
+                    }
                 }
             }
 

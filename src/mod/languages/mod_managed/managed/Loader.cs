@@ -203,6 +203,8 @@ namespace FreeSWITCH {
                 return;
             }
 
+            Log.WriteLine(LogLevel.Debug, "In Managed loading " + fileName);
+
             Type pmType;
             switch (Path.GetExtension(fileName).ToLowerInvariant()) {
                 case ".dll":
@@ -227,6 +229,8 @@ namespace FreeSWITCH {
                 setup.ConfigurationFile = fileName + ".config";
             }
             setup.ApplicationBase = Native.freeswitch.SWITCH_GLOBAL_dirs.mod_dir;
+            Log.WriteLine(LogLevel.Debug, "Application Base is " + setup.ApplicationBase);
+           // setup.ApplicationBase = AppDomain.CurrentDomain.BaseDirectory;
             setup.LoaderOptimization = LoaderOptimization.MultiDomainHost; // TODO: would MultiDomain work better since FreeSWITCH.Managed isn't gac'd?
             setup.CachePath = shadowDir;
             setup.ShadowCopyFiles = "true";
@@ -257,14 +261,26 @@ namespace FreeSWITCH {
             // bringing all together
             setup.PrivateBinPath = string.Join(";", binPaths);
 
+            Log.WriteLine(LogLevel.Debug, "Binary path " + setup.PrivateBinPath);
+
             // Create domain and load PM inside
             System.Threading.Interlocked.Increment(ref appDomainCount);
             setup.ApplicationName = Path.GetFileName(fileName) + "_" + appDomainCount;
+            Log.WriteLine(LogLevel.Debug, "Application NAme is " + setup.ApplicationName);
+            AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler(CurrentDomain_AssemblyResolve);
+
+            Log.WriteLine(LogLevel.Info, "Creating an Application Domain named: " + setup.ApplicationName);
+           // var domain = AppDomain.CreateDomain(setup.ApplicationName, AppDomain.CurrentDomain.Evidence, AppDomain.CurrentDomain.BaseDirectory, AppDomain.CurrentDomain.RelativeSearchPath, AppDomain.CurrentDomain.ShadowCopyFiles);
             var domain = AppDomain.CreateDomain(setup.ApplicationName, null, setup);
+           // domain.AssemblyResolve += new ResolveEventHandler(CurrentDomain_AssemblyResolve);
 
             PluginManager pm;
             try {
+                Log.WriteLine(LogLevel.Info, "Assembly Name: " + pmType.Assembly.FullName);
+                // var pmInstance = domain.CreateInstanceFromAndUnwrap(pmType.Assembly.Location, pmType.FullName);
+                //pm = pmInstance as PluginManager;
                 pm = (PluginManager)domain.CreateInstanceAndUnwrap(pmType.Assembly.FullName, pmType.FullName, null);
+                
                 if (!pm.Load(fileName)) {
                     AppDomain.Unload(domain);
                     unloadFile(fileName);
@@ -279,6 +295,61 @@ namespace FreeSWITCH {
             }
 
             addPlugin(fileName, domain, pm);
+        }
+
+        private static Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args)
+        {
+            try
+            {
+                /*
+             *
+             *  This handler is called only when the common language runtime tries to bind to the assembly and fails.
+             * 
+             */
+
+                Log.WriteLine(LogLevel.Info, "Looking for Current Domain");
+
+                string CommonAssmbPath = string.Empty;
+
+                Assembly MyAssembly = null;
+                Assembly objExecutingAssemblies = Assembly.GetExecutingAssembly();
+                AssemblyName[] arrReferencedAssmbNames = objExecutingAssemblies.GetReferencedAssemblies();
+
+                //Loop through the array of referenced assembly names.
+                foreach (AssemblyName strAssmbName in arrReferencedAssmbNames)
+                {
+                    //Check for the assembly names that have raised the "AssemblyResolve" event.
+                    if (strAssmbName.FullName.Substring(0, strAssmbName.FullName.IndexOf(",")) == args.Name.Substring(0, args.Name.IndexOf(",")))
+                    {
+                        //Build the path of the assembly from where it has to be loaded.
+                        String Folder = System.Reflection.Assembly.GetCallingAssembly().Location;
+                        string appFolder = System.IO.Path.GetDirectoryName(Folder);
+                        CommonAssmbPath = appFolder.Substring(0, (appFolder.LastIndexOf("\\"))) + "\\Common\\" + args.Name.Substring(0, args.Name.IndexOf(",")) + ".dll";
+
+
+                        //Check to see if dll exists
+                        if (File.Exists(CommonAssmbPath))
+                        {
+                            //Load the assembly from the specified path.                     
+                            MyAssembly = Assembly.LoadFrom(CommonAssmbPath);
+                        }
+                        else
+                            Log.WriteLine(LogLevel.Error, "Could not find dll [" + CommonAssmbPath + "]");
+
+
+                        break;
+                    }
+
+                }
+
+                //Return the loaded assembly.
+                return MyAssembly;
+            }
+            catch (Exception ex)
+            {
+                Log.WriteLine(LogLevel.Warning, ex.Message);
+                return null;
+            }
         }
 
         static void addPlugin(string fileName, AppDomain domain, PluginManager pm) {

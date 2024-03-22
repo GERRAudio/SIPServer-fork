@@ -36,6 +36,23 @@ SWITCH_MODULE_DEFINITION(mod_bert, mod_bert_load, mod_bert_shutdown, NULL);
 
 #define G711_ULAW_IDLE_OCTET        0xFF
 
+#ifdef  WIN32
+void *memmem(const void *haystack, size_t haystack_len, const void *const needle, const size_t needle_len)
+{
+	if (haystack == NULL) return NULL; // or assert(haystack != NULL);
+	if (haystack_len == 0) return NULL;
+	if (needle == NULL) return NULL; // or assert(needle != NULL);
+	if (needle_len == 0) return NULL;
+
+	for (const char *h = haystack; haystack_len >= needle_len; ++h, --haystack_len) {
+		if (!memcmp(h, needle, needle_len)) { return h; }
+	}
+	return NULL;
+}
+
+#endif //  WIN32
+
+
 /* http://en.wikipedia.org/wiki/Digital_milliwatt */
 unsigned char ulaw_digital_milliwatt[8] = { 0x1e, 0x0b, 0x0b, 0x1e, 0x9e, 0x8b, 0x8b, 0x9e };
 
