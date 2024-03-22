@@ -2501,8 +2501,6 @@ load_endpoints (switch_xml_t endpoints, switch_bool_t reload)
 static switch_status_t
 load_globals (switch_xml_t cfg)
 {
-  globals.ptp_domain = 0;
-  // hacky fix to prevent failing to get ptp from crashing FreeSWITCH
 
   switch_xml_t settings, param;
   if ((settings = switch_xml_child (cfg, "settings"))) {
@@ -2581,9 +2579,12 @@ load_globals (switch_xml_t cfg)
         if (!zstr(iface)) {
           strncpy(globals.ptp_iface, iface, NW_IFACE_LEN - 1);
         }
-	  } else if (!strcasecmp(var, "ptp-interface")) {
-		strncpy(globals.ptp_iface, val, NW_IFACE_LEN - 1);
-	  } else if (!strcasecmp(var, "synthetic-ptp")) {
+      } else if (!strcasecmp(var, "ptp-interface")) {
+        globals.ptp_domain = 0;
+        // hacky fix to prevent failing to get ptp from crashing FreeSWITCH
+
+        strncpy(globals.ptp_iface, val, NW_IFACE_LEN - 1);
+      } else if (!strcasecmp(var, "synthetic-ptp")) {
         globals.synthetic_ptp = atoi(val);
       } else if (!strcasecmp (var, "rtp-ts-offset")) {
         globals.rtp_ts_offset = strtod(val, NULL);
