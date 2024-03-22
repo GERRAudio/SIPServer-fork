@@ -413,17 +413,12 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
           "media", G_TYPE_STRING, "audio", NULL);
     }
 
-#ifndef ENABLE_THREADSHARE
     rtpjitbuf = gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
-#else
-    MAKE_TS_ELEMENT(rtpjitbuf, "ts-jitterbuffer", "rx-jitbuf", ts_ctx);
     g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map),
         gst_caps_ref(udp_caps), destroy_caps, 0);
-#endif
+
     g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency,
-#ifndef ENABLE_THREADSHARE
         "mode", 0 /* none */,
-#endif
         NULL);
     rx_audioconv = gst_element_factory_make ("audioconvert", "rx-aconv");
     g_object_set(rx_audioconv, "dithering", 0 /* none */, NULL);
