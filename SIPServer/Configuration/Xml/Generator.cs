@@ -13,13 +13,13 @@ namespace SIPServer.Configuration.Xml
     {
         internal static string ConfigXmlProvider(SwitchXmlSearchBinding.XmlBindingArgs args)
         {
-            System.Diagnostics.Debug.WriteLine(args.KeyName + " " + args.KeyValue);
+            Serilog.Log.Logger.Debug("Configuration Provider: " + args.KeyName + " " + args.KeyValue);
             return CreateXml(args.Section, args.KeyValue, args.TagName);
         }
 
         internal static string DialplanXmlProvider(SwitchXmlSearchBinding.XmlBindingArgs args)
         {
-            System.Diagnostics.Debug.WriteLine(args.KeyName + " " + args.KeyValue);
+            Serilog.Log.Logger.Debug("Dialplan Provider: " + args.KeyName + " " + args.KeyValue);
             return CreateXml(args.Section, args.KeyValue, args.TagName);
         }
         internal static string CreateXml(string section, string moduleName, string moduleDescription)
@@ -50,8 +50,7 @@ namespace SIPServer.Configuration.Xml
 
             configurationNode.Attributes.Append(nameAttribute);
             configurationNode.Attributes.Append(descriptionAttribute);
-
-            Console.WriteLine("Asking for configuration for " + moduleName);
+            Serilog.Log.Debug("Asking for configuration for " + moduleName);
             switch (moduleName)
             {
                 case "modules.conf":
