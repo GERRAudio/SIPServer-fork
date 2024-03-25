@@ -2965,7 +2965,8 @@ clear_shared_audio_stream (shared_audio_stream_t * shstream)
 {
   switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
       "Destroying shared audio stream %s\n", shstream->name);
-  stop_pipeline (shstream->stream);
+  if (shstream->stream)
+    stop_pipeline (shstream->stream);
 
   shstream->stream = NULL;
 
