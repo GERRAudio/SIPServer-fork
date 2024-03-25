@@ -2048,9 +2048,9 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\SIPServer\\SIPServerEmbedded.csproj",
-      "projectName": "SIPServerEmbedded",
-      "projectPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\SIPServer\\SIPServerEmbedded.csproj",
+      "projectUniqueName": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\SIPServer\\Engine.csproj",
+      "projectName": "Engine",
+      "projectPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\SIPServer\\Engine.csproj",
       "packagesPath": "C:\\Users\\suppo\\.nuget\\packages\\",
       "outputPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\SIPServer\\obj\\",
       "projectStyle": "PackageReference",

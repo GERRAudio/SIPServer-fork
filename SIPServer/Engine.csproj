@@ -15,6 +15,9 @@
     <BaseOutputPath>C:\Users\suppo\OneDrive\Documents\GitHub\SIPServer\x64\Release</BaseOutputPath>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <PlatformTarget>x64</PlatformTarget>
+    <Title>MAS SIP Server Launcher</Title>
+    <Product>Engine</Product>
+    <Copyright>2024 Clear-Com LLC</Copyright>
   </PropertyGroup>
 
 	

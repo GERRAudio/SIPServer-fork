@@ -34,7 +34,7 @@ namespace SIPServer
 
             if (!string.IsNullOrEmpty(newCommand))
             {
-                return SIPServerEmbedded.Communication.SIPServerCommands.SendCommand(newCommand);
+                return SIPServerCommands.SendCommand(newCommand);
             }
 
             return "";
@@ -55,7 +55,7 @@ namespace SIPServer
         static string ProcessCommand(string newCommand, bool fromConsole)
         {
             string returnString = ProcessCommand(newCommand);
-            Console.Write("Server>");
+            Console.Write("MAS>");
             return returnString;
 
         }

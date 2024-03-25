@@ -551,7 +551,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test_switch_ivr_originate",
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mod_aes67", "src\mod\endpoints\mod_aes67\mod_aes67.vcxproj", "{5AC15CAA-B153-4B45-804A-0CFDF6FA3422}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SIPServerEmbedded", "SIPServer\SIPServerEmbedded.csproj", "{2E5326FB-A5F1-404B-9E95-47FE7D9AE348}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Engine", "SIPServer\Engine.csproj", "{2E5326FB-A5F1-404B-9E95-47FE7D9AE348}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mod_portaudio_stream", "src\mod\formats\mod_portaudio_stream\mod_portaudio_stream.2017.vcxproj", "{2CA40887-1622-46A1-A7F9-17FD7E7E545C}"
 EndProject
@@ -7763,7 +7763,6 @@ Global
 		{580675D7-C1C9-4197-AAC5-00F64FAFDE78}.Release|Win32.ActiveCfg = Release|Win32
 		{580675D7-C1C9-4197-AAC5-00F64FAFDE78}.Release|Win32.Build.0 = Release|Win32
 		{580675D7-C1C9-4197-AAC5-00F64FAFDE78}.Release|x64.ActiveCfg = Release|x64
-		{580675D7-C1C9-4197-AAC5-00F64FAFDE78}.Release|x64.Build.0 = Release|x64
 		{69A7464A-9B0D-4804-A108-835229DACF58}.All|Any CPU.ActiveCfg = Debug|x64
 		{69A7464A-9B0D-4804-A108-835229DACF58}.All|Any CPU.Build.0 = Debug|x64
 		{69A7464A-9B0D-4804-A108-835229DACF58}.All|Win32.ActiveCfg = Release|Win32
@@ -7805,7 +7804,6 @@ Global
 		{69A7464A-9B0D-4804-A108-835229DACF58}.Release|Win32.ActiveCfg = Release|Win32
 		{69A7464A-9B0D-4804-A108-835229DACF58}.Release|Win32.Build.0 = Release|Win32
 		{69A7464A-9B0D-4804-A108-835229DACF58}.Release|x64.ActiveCfg = Release|x64
-		{69A7464A-9B0D-4804-A108-835229DACF58}.Release|x64.Build.0 = Release|x64
 		{5AC15CAA-B153-4B45-804A-0CFDF6FA3422}.All|Any CPU.ActiveCfg = Release|x64
 		{5AC15CAA-B153-4B45-804A-0CFDF6FA3422}.All|Any CPU.Build.0 = Release|x64
 		{5AC15CAA-B153-4B45-804A-0CFDF6FA3422}.All|Win32.ActiveCfg = Debug|Win32
