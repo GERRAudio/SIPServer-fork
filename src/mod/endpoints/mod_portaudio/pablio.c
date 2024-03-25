@@ -46,7 +46,6 @@
 #include <math.h>
 #include <string.h>
 #include <time.h>
-#include <portaudio.h>
 #include "pa_ringbuffer.h"
 #include "pablio.h"
 

@@ -558,6 +558,10 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mod_snapshot", "src\mod\applications\mod_snapshot\mod_snapshot.2017.vcxproj", "{11C9BC3D-45E9-46E3-BE84-B8CEE4685E44}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mod_oreka", "src\mod\applications\mod_oreka\mod_oreka.2017.vcxproj", "{15A41D3F-1D84-42B0-960D-8C567172C5C4}"
+	ProjectSection(ProjectDependencies) = postProject
+		{1AF3A893-F7BE-43DD-B697-8AB2397C0D67} = {1AF3A893-F7BE-43DD-B697-8AB2397C0D67}
+		{202D7A4E-760D-4D0E-AFA1-D7459CED30FF} = {202D7A4E-760D-4D0E-AFA1-D7459CED30FF}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mod_bert", "src\mod\applications\mod_bert\mod_bert.2017.vcxproj", "{11C9CC3D-45E9-46E3-BE84-B8CEE4685E44}"
 EndProject
