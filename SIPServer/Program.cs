@@ -1,8 +1,10 @@
 ﻿using FreeSWITCH;
 using FreeSWITCH.Native;
 using Serilog;
+using Serilog.Sinks.SystemConsole.Themes;
 using SIPServer.Configuration;
 using SIPServer.Loaders;
+using SIPServerEmbedded.Communication;
 using System.Runtime.InteropServices;
 
 namespace SIPServer
@@ -13,7 +15,7 @@ namespace SIPServer
         static void Main(string[] args)
         {
             Serilog.Log.Logger = new LoggerConfiguration()
-                .WriteTo.Console()
+                .WriteTo.Console(theme: AnsiConsoleTheme.Sixteen)
             .CreateLogger();
 
             Serilog.Log.Logger.Information("Starting Engine");
@@ -22,18 +24,40 @@ namespace SIPServer
             while (true)
             {
                 var newCommand = Console.ReadLine();
-                ProcessCommand(newCommand);
+                ProcessCommand(newCommand, true);
             }
         }
 
-        static void ProcessCommand(string newCommand)
+        static string ProcessCommandOnEngine(string newCommand)
         {
+
+
             if (!string.IsNullOrEmpty(newCommand))
             {
-                Serilog.Log.Logger.Debug(newCommand);
-                var result = SIPEngine.SIPServerAPI.ExecuteString(newCommand);
-                Serilog.Log.Logger.Information(result);
+                return SIPServerEmbedded.Communication.SIPServerCommands.SendCommand(newCommand);
             }
+
+            return "";
+         
+        }
+
+        static string ProcessCommand(string newCommand)
+        {
+            if (!APICommands.Decode(newCommand))
+            {
+
+                return ProcessCommandOnEngine(newCommand);
+            }
+
+            return "";
+        }
+
+        static string ProcessCommand(string newCommand, bool fromConsole)
+        {
+            string returnString = ProcessCommand(newCommand);
+            Console.Write("Server>");
+            return returnString;
+
         }
 
     }

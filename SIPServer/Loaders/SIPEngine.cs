@@ -23,9 +23,9 @@ namespace SIPServer.Loaders
                 /*Next 3 lines only needed if you want to bind to the initial event or xml config search loops */
                 freeswitch.switch_core_init(flags, switch_bool_t.SWITCH_FALSE, out err);
                 Serilog.Log.Information("Binding configuration");
-                var search_config_bind = SwitchXmlSearchBinding.Bind(Configuration.Xml.Generator.ConfigXmlProvider, switch_xml_section_enum_t.SWITCH_XML_SECTION_CONFIG);
+                //var search_config_bind = SwitchXmlSearchBinding.Bind(Configuration.Xml.Generator.ConfigXmlProvider, switch_xml_section_enum_t.SWITCH_XML_SECTION_CONFIG);
                 Serilog.Log.Information("Binding dialplan");
-                var search_dialplan_bind = SwitchXmlSearchBinding.Bind(Configuration.Xml.Generator.DialplanXmlProvider, switch_xml_section_enum_t.SWITCH_XML_SECTION_DIALPLAN);
+                //var search_dialplan_bind = SwitchXmlSearchBinding.Bind(Configuration.Xml.Generator.DialplanXmlProvider, switch_xml_section_enum_t.SWITCH_XML_SECTION_DIALPLAN);
                 Serilog.Log.Information("Binding events");
                 var event_bind = EventBinding.Bind("SIPClient", switch_event_types_t.SWITCH_EVENT_ALL, null, Events.Handler.SIPEventHandler, true);
                 
