@@ -257,6 +257,7 @@ static struct
   switch_mutex_t *streams_lock;
   switch_mutex_t *flag_mutex;
   switch_mutex_t *gst_mutex;
+  switch_mutex_t *sh_shtreams_lock;
   int sample_rate;
   int codec_ms;
   char bit_depth[AUDIO_FMT_STR_LEN];
@@ -596,11 +597,12 @@ destroy_shared_audio_streams ()
 
   globals.destroying_streams = 1;
 
+  switch_mutex_lock(globals.sh_shtreams_lock);
   for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
     switch_core_hash_this(hi, NULL, NULL, (void **)&stream);
     free_shared_audio_stream(stream);
   }
-
+  switch_mutex_unlock(globals.sh_shtreams_lock);
   globals.destroying_streams = 0;
 }
 
@@ -1697,6 +1699,7 @@ SWITCH_MODULE_LOAD_FUNCTION (mod_aes67_load)
   switch_mutex_init (&globals.streams_lock, SWITCH_MUTEX_NESTED, module_pool);
   switch_mutex_init (&globals.flag_mutex, SWITCH_MUTEX_NESTED, module_pool);
   switch_mutex_init (&globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
+  switch_mutex_init (&globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
   globals.codecs_inited = 0;
   globals.read_frame.data = globals.databuf;
   globals.read_frame.buflen = sizeof (globals.databuf);
@@ -1995,8 +1998,8 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void* data)
   }
   globals.synthetic_ptp = 0;
 
-  //FIXME: add a mutex to protect sh_shtreams list from being changed by another operation like reloadconf
   switch_hash_index_t *hi;
+  switch_mutex_lock(globals.sh_shtreams_lock);
   for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
     const void *var;
     void *val;
@@ -2008,6 +2011,7 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void* data)
     use_ptp_clock(s->stream, ptp_clock);
     STREAM_WRITER_UNLOCK(s);
   }
+  switch_mutex_unlock(globals.sh_shtreams_lock);
 }
 
 static void *
@@ -2058,6 +2062,7 @@ load_streams (switch_xml_t streams, switch_bool_t reload)
       globals.destroying_streams = 1;
 
 again:
+      switch_mutex_lock(globals.sh_shtreams_lock);
       for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 
           switch_core_hash_this(hi, NULL, NULL, (void **)&stream);
@@ -2070,6 +2075,7 @@ again:
               goto again;
           }
       }
+      switch_mutex_unlock(globals.sh_shtreams_lock);
 
       globals.destroying_streams = 0;
   }
@@ -2088,7 +2094,7 @@ again:
     }
 
     /* check if that stream name is not already used */
-    stream = switch_core_hash_find (globals.sh_streams, stream_name);
+    stream = switch_core_hash_find_locked (globals.sh_streams, stream_name, globals.sh_shtreams_lock);
     if (stream) {
       if (!reload) {
         switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -2241,7 +2247,7 @@ again:
       switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
           "Created stream '%s', sample-rate = %d, codec-ms = %d\n", stream->name,
           stream->sample_rate, stream->codec_ms);
-      switch_core_hash_insert (globals.sh_streams, stream->name, stream);
+      switch_core_hash_insert_locked(globals.sh_streams, stream->name, stream, globals.sh_shtreams_lock);
 
       /* Create ahead-of-time to start clock sync, etc. */
       create_shared_audio_stream(stream);
@@ -2287,7 +2293,7 @@ check_stream (char *streamstr, int check_input, int *chanindex)
   chan++;
   cnum = atoi (chan);
 
-  stream = switch_core_hash_find (globals.sh_streams, stream_name);
+  stream = switch_core_hash_find_locked (globals.sh_streams, stream_name, globals.sh_shtreams_lock);
   if (!stream) {
     return NULL;
   }
@@ -3081,6 +3087,7 @@ static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
 {
   switch_hash_index_t *hi;
   int cnt = 0;
+  switch_mutex_lock(globals.sh_shtreams_lock);
   for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
     const void *var;
     void *val;
@@ -3097,6 +3104,7 @@ static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
                     s->synthetic_ptp, s->txflow?"on":"off");
     cnt++;
   }
+  switch_mutex_unlock(globals.sh_shtreams_lock);
   stream->write_function(stream, "Total streams: %d\n", cnt);
   return SWITCH_STATUS_SUCCESS;
 }
@@ -3230,7 +3238,7 @@ SWITCH_STANDARD_API(aes_cmd)
       goto done;
     }
 
-    astream = switch_core_hash_find (globals.sh_streams, argv[1]);
+    astream = switch_core_hash_find_locked (globals.sh_streams, argv[1], globals.sh_shtreams_lock);
     if (!astream) {
       stream->write_function(stream, "Stream with name %s not found\n", argv[1]);
       stream->write_function(stream, "%s", usage_string);
@@ -3257,7 +3265,7 @@ SWITCH_STANDARD_API(aes_cmd)
       goto done;
     }
 
-    astream = switch_core_hash_find (globals.sh_streams, argv[1]);
+    astream = switch_core_hash_find_locked (globals.sh_streams, argv[1], globals.sh_shtreams_lock);
     if (!astream) {
       stream->write_function(stream, "Stream with name %s not found\n", argv[1]);
       stream->write_function(stream, "%s", usage_string);
