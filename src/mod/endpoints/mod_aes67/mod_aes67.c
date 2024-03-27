@@ -2728,12 +2728,10 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION (mod_aes67_shutdown)
   if (globals.ptp_stats_cb_id != -1)
     gst_ptp_statistics_callback_remove(globals.ptp_stats_cb_id);
 
-  // FIXME: deinit is causing SIGABRT while free'ing the domain_clocks list
-  // gst_ptp_deinit();
-
   destroy_audio_streams ();
   destroy_shared_audio_streams ();
   destroy_codecs ();
+  gst_ptp_deinit ();
 
   if (globals.clock)
     gst_object_unref (globals.clock);
