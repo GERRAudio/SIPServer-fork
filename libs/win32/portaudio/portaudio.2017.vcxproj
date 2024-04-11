@@ -125,7 +125,7 @@
     <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>..\..\..\libs\portaudio\src\os\win;..\..\..\libs\portaudio\include;$(IncludePath)</IncludePath>
+    <IncludePath>..\..\..\libs\portaudio\src\hostapi\asio\ASIOSDK\common;..\..\..\libs\portaudio\src\os\win;..\..\..\libs\portaudio\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">
     <IncludePath>..\..\..\libs\portaudio\src\os\win;..\..\..\libs\portaudio\include;$(IncludePath)</IncludePath>

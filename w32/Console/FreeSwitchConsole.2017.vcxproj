@@ -86,8 +86,8 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <TargetName>SIPServer</TargetName>
-    <LibraryPath>..\..\..\libs\sentry-native\out\install\x64-Release\lib;$(LibraryPath)</LibraryPath>
-    <IncludePath>..\..\libs\sentry-native\include\;$(IncludePath)</IncludePath>
+    <LibraryPath>$(LibraryPath)</LibraryPath>
+    <IncludePath>$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <TargetName>SIPServer</TargetName>

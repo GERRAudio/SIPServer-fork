@@ -2043,19 +2043,19 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\Administrator\\.nuget\\packages\\": {}
+    "C:\\Users\\suppo\\.nuget\\packages\\": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Development\\GitHub\\NetworkAudio\\SIPServer\\SIPServer\\SIPServerEmbedded.csproj",
-      "projectName": "SIPServerEmbedded",
-      "projectPath": "C:\\Development\\GitHub\\NetworkAudio\\SIPServer\\SIPServer\\SIPServerEmbedded.csproj",
-      "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-      "outputPath": "C:\\Development\\GitHub\\NetworkAudio\\SIPServer\\SIPServer\\obj\\",
+      "projectUniqueName": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\SIPServer\\Engine.csproj",
+      "projectName": "Engine",
+      "projectPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\SIPServer\\Engine.csproj",
+      "packagesPath": "C:\\Users\\suppo\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\SIPServer\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Users\\suppo\\AppData\\Roaming\\NuGet\\NuGet.Config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
       "originalTargetFrameworks": [
@@ -2069,11 +2069,11 @@
         "net8.0-windows10.0.22621": {
           "targetAlias": "net8.0-windows10.0.22621.0",
           "projectReferences": {
-            "C:\\Development\\GitHub\\NetworkAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj": {
-              "projectPath": "C:\\Development\\GitHub\\NetworkAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj"
+            "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj": {
+              "projectPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj"
             },
-            "C:\\Development\\GitHub\\NetworkAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj": {
-              "projectPath": "C:\\Development\\GitHub\\NetworkAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj"
+            "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj": {
+              "projectPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj"
             }
           }
         }

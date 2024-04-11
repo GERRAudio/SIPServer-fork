@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using SIPServerEmbedded.Events;
 
 namespace SIPServer.Events
 {
@@ -19,7 +20,7 @@ namespace SIPServer.Events
             {
                 return;
             }
-            var eventDictionary = CreateEventDictionary(args);
+            var eventDictionary = Converter.ToDictionary(args);
 
             switch (args.EventObj.event_id)
             {
@@ -53,28 +54,6 @@ namespace SIPServer.Events
             // throw new NotImplementedException();
         }
 
-        private static Dictionary<string, string> CreateEventDictionary(EventBinding.EventBindingArgs args)
-        {
-            Dictionary<string, string> returnDictionary = new Dictionary<string, string>();
-
-            var firstHeader = args.EventObj.headers;
-            while (true)
-            {
-                if (!returnDictionary.ContainsKey(firstHeader.name))
-                {
-                    returnDictionary.Add(firstHeader.name, firstHeader.value);
-                    if (firstHeader.next != null)
-                    {
-                        firstHeader = firstHeader.next;
-                    }
-                    else
-                    {
-                        break;
-                    }
-                }
-            }
-
-            return returnDictionary;
-        }
+       
     }
 }
