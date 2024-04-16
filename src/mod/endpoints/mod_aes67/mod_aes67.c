@@ -52,6 +52,7 @@
 #define MY_EVENT_CALL_AUDIO_LEVEL "aes67::call_audio_level"
 #define MY_EVENT_ERROR_AUDIO_DEV "aes67::audio_dev_error"
 #define MY_EVENT_PTP_STATS "aes67::ptp_stats"
+#define MY_EVENT_PTP_GM_CHANGE "aes67::ptp_grandmaster_change"
 #define SWITCH_PA_CALL_ID_VARIABLE "gst_call_id"
 
 #define MIN_STREAM_SAMPLE_RATE 8000
@@ -256,6 +257,7 @@ static struct
   switch_mutex_t *streams_lock;
   switch_mutex_t *flag_mutex;
   switch_mutex_t *gst_mutex;
+  switch_mutex_t *sh_shtreams_lock;
   int sample_rate;
   int codec_ms;
   char bit_depth[AUDIO_FMT_STR_LEN];
@@ -296,6 +298,7 @@ static struct
   int level_report;
   uint64_t ptp_gm_id;
   uint64_t ptp_gm_mac_addr;
+  gboolean ptp_synced;
   /* PTP domain using signed int to have -1 as default value */
   int8_t ptp_domain;
   /* Network interface to be used for PTP */
@@ -594,11 +597,12 @@ destroy_shared_audio_streams ()
 
   globals.destroying_streams = 1;
 
+  switch_mutex_lock(globals.sh_shtreams_lock);
   for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
     switch_core_hash_this(hi, NULL, NULL, (void **)&stream);
     free_shared_audio_stream(stream);
   }
-
+  switch_mutex_unlock(globals.sh_shtreams_lock);
   globals.destroying_streams = 0;
 }
 
@@ -1695,6 +1699,7 @@ SWITCH_MODULE_LOAD_FUNCTION (mod_aes67_load)
   switch_mutex_init (&globals.streams_lock, SWITCH_MUTEX_NESTED, module_pool);
   switch_mutex_init (&globals.flag_mutex, SWITCH_MUTEX_NESTED, module_pool);
   switch_mutex_init (&globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
+  switch_mutex_init (&globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
   globals.codecs_inited = 0;
   globals.read_frame.data = globals.databuf;
   globals.read_frame.buflen = sizeof (globals.databuf);
@@ -1781,12 +1786,50 @@ SWITCH_MODULE_LOAD_FUNCTION (mod_aes67_load)
   return SWITCH_STATUS_SUCCESS;
 }
 
+static void
+emit_ptp_gm_change (gboolean synced)
+{
+  switch_event_t *event;
+
+  // Clock ID formed from the MAC address
+  // if the MAC address is A1-B2-C3-D4-E5-F6, the clock id would be A1-B2-C3-FF-FE-D4-E5-F6
+  // strip byte 4 and 5 to retrieve MAC address from the Clock ID
+  globals.ptp_gm_mac_addr = ((0xFFFFFF0000000000 & globals.ptp_gm_id) >> 16) | (0xFFFFFF & globals.ptp_gm_id);
+
+  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+        MY_EVENT_PTP_GM_CHANGE
+        " "
+        "sync-status=%s, "
+        "grandmaster-clock-id=0x%016" G_GINT64_MODIFIER "x, "
+        "grandmaster-mac-addr=0x%012" G_GINT64_MODIFIER "x \n",
+         synced? "TRUE": "FALSE", globals.ptp_gm_id, globals.ptp_gm_mac_addr);
+
+  if (switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, MY_EVENT_PTP_GM_CHANGE) == SWITCH_STATUS_SUCCESS) {
+    switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-SYNC-STATUS", "%s",
+			synced ? "TRUE": "FALSE");
+    switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-ID", "%016" G_GINT64_MODIFIER "X",
+			globals.ptp_gm_id);
+    switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-MAC", "%012" G_GINT64_MODIFIER "X",
+			globals.ptp_gm_mac_addr);
+
+    switch_event_fire(&event);
+  }
+}
+
 static gboolean
 ptp_stats_cb (guint8 d, const GstStructure * stats, gpointer user_data)
 {
-  if (globals.enable_ptp_stats) {
+  gchar master_clock_stats[] = "GstPtpStatisticsBestMasterClockSelected";
+  const gchar *st_name = gst_structure_get_name(stats);
+
+  if (0 == strncasecmp(st_name, master_clock_stats, strlen(master_clock_stats))) {
+    if (gst_structure_get_uint64(stats, "grandmaster-clock-id", &globals.ptp_gm_id) ) {
+      emit_ptp_gm_change(globals.ptp_synced);
+    }
+  } else if (globals.enable_ptp_stats) {
     switch_event_t *event;
     gchar *stats_str = gst_structure_to_string (stats);
+
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
         "PTP Stats: %s "
         "grandmaster-clock-id=0x%016" G_GINT64_MODIFIER "x, "
@@ -1800,9 +1843,9 @@ ptp_stats_cb (guint8 d, const GstStructure * stats, gpointer user_data)
 
         switch_event_fire(&event);
     }
+
     g_free (stats_str);
   }
-
   return TRUE;
 }
 
@@ -1937,6 +1980,40 @@ stream_compare (shared_audio_stream_t *current, shared_audio_stream_t *new)
   return stream_changed;
 }
 
+void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void* data)
+{
+  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "PTP clock sync status: %d\n", synced);
+
+  globals.ptp_synced = synced;
+  // Update the global for event emission
+  g_object_get(ptp_clock, "grandmaster-clock-id", &globals.ptp_gm_id, NULL);
+  emit_ptp_gm_change(synced);
+
+  if (!synced)
+    return;
+
+  if (globals.clock) {
+    gst_object_unref(globals.clock);
+    globals.clock = gst_object_ref(ptp_clock);
+  }
+  globals.synthetic_ptp = 0;
+
+  switch_hash_index_t *hi;
+  switch_mutex_lock(globals.sh_shtreams_lock);
+  for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
+    const void *var;
+    void *val;
+    shared_audio_stream_t *s = NULL;
+
+    switch_core_hash_this(hi, &var, NULL, &val);
+    s = val;
+    STREAM_WRITER_LOCK(s);
+    use_ptp_clock(s->stream, ptp_clock);
+    STREAM_WRITER_UNLOCK(s);
+  }
+  switch_mutex_unlock(globals.sh_shtreams_lock);
+}
+
 static void *
 init_ptp (int domain, char *iface)
 {
@@ -1957,14 +2034,13 @@ init_ptp (int domain, char *iface)
   clock = gst_ptp_clock_new ("ptp-clock", domain);
   if (!gst_clock_wait_for_sync (GST_CLOCK (clock), timeout)) {
     switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Timed out waiting for the clock to sync\n");
+    g_signal_connect(G_OBJECT(clock), "synced", G_CALLBACK(clock_synced_cb), NULL);
     return NULL;
   }
 
+  globals.ptp_synced = TRUE;
   g_object_get(clock, "grandmaster-clock-id", &globals.ptp_gm_id, NULL);
-  // Clock ID formed from the MAC address
-  // if the MAC address is A1-B2-C3-D4-E5-F6, the clock id would be A1-B2-C3-FF-FE-D4-E5-F6
-  // strip byte 4 and 5 to retrieve MAC address from the Clock ID
-  globals.ptp_gm_mac_addr = ((0xFFFFFF0000000000 & globals.ptp_gm_id) >> 16) | (0xFFFFFF & globals.ptp_gm_id);
+  emit_ptp_gm_change(TRUE);
 
   return clock;
 }
@@ -1986,6 +2062,7 @@ load_streams (switch_xml_t streams, switch_bool_t reload)
       globals.destroying_streams = 1;
 
 again:
+      switch_mutex_lock(globals.sh_shtreams_lock);
       for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 
           switch_core_hash_this(hi, NULL, NULL, (void **)&stream);
@@ -1998,6 +2075,7 @@ again:
               goto again;
           }
       }
+      switch_mutex_unlock(globals.sh_shtreams_lock);
 
       globals.destroying_streams = 0;
   }
@@ -2016,7 +2094,7 @@ again:
     }
 
     /* check if that stream name is not already used */
-    stream = switch_core_hash_find (globals.sh_streams, stream_name);
+    stream = switch_core_hash_find_locked (globals.sh_streams, stream_name, globals.sh_shtreams_lock);
     if (stream) {
       if (!reload) {
         switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -2169,7 +2247,7 @@ again:
       switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
           "Created stream '%s', sample-rate = %d, codec-ms = %d\n", stream->name,
           stream->sample_rate, stream->codec_ms);
-      switch_core_hash_insert (globals.sh_streams, stream->name, stream);
+      switch_core_hash_insert_locked(globals.sh_streams, stream->name, stream, globals.sh_shtreams_lock);
 
       /* Create ahead-of-time to start clock sync, etc. */
       create_shared_audio_stream(stream);
@@ -2215,7 +2293,7 @@ check_stream (char *streamstr, int check_input, int *chanindex)
   chan++;
   cnum = atoi (chan);
 
-  stream = switch_core_hash_find (globals.sh_streams, stream_name);
+  stream = switch_core_hash_find_locked (globals.sh_streams, stream_name, globals.sh_shtreams_lock);
   if (!stream) {
     return NULL;
   }
@@ -2429,8 +2507,6 @@ load_endpoints (switch_xml_t endpoints, switch_bool_t reload)
 static switch_status_t
 load_globals (switch_xml_t cfg)
 {
-  globals.ptp_domain = 0;
-  // hacky fix to prevent failing to get ptp from crashing FreeSWITCH
 
   switch_xml_t settings, param;
   if ((settings = switch_xml_child (cfg, "settings"))) {
@@ -2509,9 +2585,12 @@ load_globals (switch_xml_t cfg)
         if (!zstr(iface)) {
           strncpy(globals.ptp_iface, iface, NW_IFACE_LEN - 1);
         }
-	  } else if (!strcasecmp(var, "ptp-interface")) {
-		strncpy(globals.ptp_iface, val, NW_IFACE_LEN - 1);
-	  } else if (!strcasecmp(var, "synthetic-ptp")) {
+      } else if (!strcasecmp(var, "ptp-interface")) {
+        globals.ptp_domain = 0;
+        // hacky fix to prevent failing to get ptp from crashing FreeSWITCH
+
+        strncpy(globals.ptp_iface, val, NW_IFACE_LEN - 1);
+      } else if (!strcasecmp(var, "synthetic-ptp")) {
         globals.synthetic_ptp = atoi(val);
       } else if (!strcasecmp (var, "rtp-ts-offset")) {
         globals.rtp_ts_offset = strtod(val, NULL);
@@ -2892,7 +2971,8 @@ clear_shared_audio_stream (shared_audio_stream_t * shstream)
 {
   switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
       "Destroying shared audio stream %s\n", shstream->name);
-  stop_pipeline (shstream->stream);
+  if (shstream->stream)
+    stop_pipeline (shstream->stream);
 
   shstream->stream = NULL;
 
@@ -3007,6 +3087,7 @@ static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
 {
   switch_hash_index_t *hi;
   int cnt = 0;
+  switch_mutex_lock(globals.sh_shtreams_lock);
   for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
     const void *var;
     void *val;
@@ -3023,6 +3104,7 @@ static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
                     s->synthetic_ptp, s->txflow?"on":"off");
     cnt++;
   }
+  switch_mutex_unlock(globals.sh_shtreams_lock);
   stream->write_function(stream, "Total streams: %d\n", cnt);
   return SWITCH_STATUS_SUCCESS;
 }
@@ -3156,7 +3238,7 @@ SWITCH_STANDARD_API(aes_cmd)
       goto done;
     }
 
-    astream = switch_core_hash_find (globals.sh_streams, argv[1]);
+    astream = switch_core_hash_find_locked (globals.sh_streams, argv[1], globals.sh_shtreams_lock);
     if (!astream) {
       stream->write_function(stream, "Stream with name %s not found\n", argv[1]);
       stream->write_function(stream, "%s", usage_string);
@@ -3183,7 +3265,7 @@ SWITCH_STANDARD_API(aes_cmd)
       goto done;
     }
 
-    astream = switch_core_hash_find (globals.sh_streams, argv[1]);
+    astream = switch_core_hash_find_locked (globals.sh_streams, argv[1], globals.sh_shtreams_lock);
     if (!astream) {
       stream->write_function(stream, "Stream with name %s not found\n", argv[1]);
       stream->write_function(stream, "%s", usage_string);

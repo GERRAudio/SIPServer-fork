@@ -413,17 +413,12 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
           "media", G_TYPE_STRING, "audio", NULL);
     }
 
-#ifndef ENABLE_THREADSHARE
     rtpjitbuf = gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
-#else
-    MAKE_TS_ELEMENT(rtpjitbuf, "ts-jitterbuffer", "rx-jitbuf", ts_ctx);
     g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map),
         gst_caps_ref(udp_caps), destroy_caps, 0);
-#endif
+
     g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency,
-#ifndef ENABLE_THREADSHARE
         "mode", 0 /* none */,
-#endif
         NULL);
     rx_audioconv = gst_element_factory_make ("audioconvert", "rx-aconv");
     g_object_set(rx_audioconv, "dithering", 0 /* none */, NULL);
@@ -638,6 +633,32 @@ error:
   g_free (stream);
   return NULL;
 
+}
+
+void
+use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
+{
+  g_atomic_int_set(&stream->clock_sync, 0);
+  gst_element_set_state(GST_ELEMENT (stream->pipeline), GST_STATE_PAUSED);
+
+  /* cb_rx_stats_id will be non zero only when
+  Rx is operational and pipeline clock is not ptp*/
+  if (stream->cb_rx_stats_id) {
+    g_source_remove(stream->cb_rx_stats_id);
+    stream->cb_rx_stats_id = 0;
+  }
+
+  if (stream->clock) {
+    gst_object_unref (stream->clock);
+    stream->clock = NULL;
+  }
+
+  gst_pipeline_use_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
+  gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
+  gst_element_set_state(GST_ELEMENT (stream->pipeline), GST_STATE_PLAYING);
+  dump_pipeline(stream->pipeline, "ptp-clock-switch");
+
+  g_atomic_int_set (&stream->clock_sync, 1);
 }
 
 void *
