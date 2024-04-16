@@ -18,7 +18,7 @@ namespace SIPServer.Loaders
             {
                 Configuration.Status.Current.GenerateDefaults();
                 String err = "";
-                const uint flags = (uint)(switch_core_flag_enum_t.SCF_USE_SQL | switch_core_flag_enum_t.SCF_VERBOSE_EVENTS | switch_core_flag_enum_t.SCF_USE_WIN32_MONOTONIC);
+                const uint flags = (uint)(switch_core_flag_enum_t.SCF_VERBOSE_EVENTS | switch_core_flag_enum_t.SCF_USE_WIN32_MONOTONIC);
                 freeswitch.switch_core_set_globals();
                 /*Next 3 lines only needed if you want to bind to the initial event or xml config search loops */
                 freeswitch.switch_core_init(flags, switch_bool_t.SWITCH_FALSE, out err);
