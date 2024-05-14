@@ -1647,8 +1647,11 @@ error:
 	  if (tech_pvt->write_codec.codec_interface) {
           switch_core_codec_destroy(&tech_pvt->write_codec);
     }
-    switch_mutex_unlock (endpoint->mutex);
   }
+
+  if (endpoint)
+    switch_mutex_unlock (endpoint->mutex);
+
   if (new_session && *new_session) {
     switch_core_session_destroy (new_session);
   }
