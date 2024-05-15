@@ -13,25 +13,31 @@ namespace SIPServerEmbedded.Events
     {
         public static Dictionary<string, string> ToDictionary(EventBindingArgs args)
         {
+
             Dictionary<string, string> returnDictionary = new Dictionary<string, string>();
 
-            var firstHeader = args.EventObj.headers;
-            while (true)
+            try
             {
-                if (!returnDictionary.ContainsKey(firstHeader.name))
+                var firstHeader = args.EventObj.headers;
+                while (true)
                 {
-                    returnDictionary.Add(firstHeader.name, firstHeader.value);
-                    if (firstHeader.next != null)
+                    if (!returnDictionary.ContainsKey(firstHeader.name))
                     {
-                        firstHeader = firstHeader.next;
-                    }
-                    else
-                    {
-                        break;
+                        returnDictionary.Add(firstHeader.name, firstHeader.value);
+                        if (firstHeader.next != null)
+                        {
+                            firstHeader = firstHeader.next;
+                        }
+                        else
+                        {
+                            break;
+                        }
                     }
                 }
+            } catch(Exception e)
+            {
+                Console.WriteLine(e.Message);
             }
-
             return returnDictionary;
         }
 

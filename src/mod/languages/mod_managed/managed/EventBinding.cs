@@ -81,9 +81,9 @@ namespace FreeSWITCH
         //typedef void (*switch_event_callback_t) (switch_event_t *);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        delegate void switch_event_callback_delegate(IntPtr event_data);
+        public delegate void switch_event_callback_delegate(IntPtr event_data);
 
-        readonly switch_event_callback_delegate del; // Prevent GC
+        public readonly switch_event_callback_delegate del; // Prevent GC
         readonly SWIGTYPE_p_f_p_switch_event__void function;
 
         private EventBinding(SWIGTYPE_p_f_p_switch_event__void function, switch_event_callback_delegate origDelegate)
@@ -118,9 +118,12 @@ namespace FreeSWITCH
             return dupe_evt;
 
         }
+
+        static switch_event_callback_delegate boundFunc;
+
         public static IDisposable Bind(string id, switch_event_types_t event_types, string subclass_name, Action<EventBindingArgs> f, bool dupe)
         {
-            switch_event_callback_delegate boundFunc;
+            
             if (dupe)
             {
                 boundFunc = (eventObj) =>

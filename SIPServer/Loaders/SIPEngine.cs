@@ -12,6 +12,9 @@ namespace SIPServer.Loaders
     {
         internal static Api? SIPServerAPI;
 
+        internal static IDisposable event_bind;
+
+        internal static IDisposable log_bind;
         internal static void RunSipServer()
         {
             try
@@ -27,9 +30,9 @@ namespace SIPServer.Loaders
                 Serilog.Log.Information("Binding dialplan");
                 //var search_dialplan_bind = SwitchXmlSearchBinding.Bind(Configuration.Xml.Generator.DialplanXmlProvider, switch_xml_section_enum_t.SWITCH_XML_SECTION_DIALPLAN);
                 Serilog.Log.Information("Binding events");
-                var event_bind = EventBinding.Bind("SIPClient", switch_event_types_t.SWITCH_EVENT_ALL, null, Events.Handler.SIPEventHandler, true);
+                event_bind = EventBinding.Bind("SIPClient", switch_event_types_t.SWITCH_EVENT_ALL, null, Events.Handler.SIPEventHandler, true);
                 
-                var log_bind = LogBinding.Bind(switch_log_level_t.SWITCH_LOG_DEBUG, switch_bool_t.SWITCH_TRUE, Logging.LogEngine.LogHandler);
+                log_bind = LogBinding.Bind(switch_log_level_t.SWITCH_LOG_DEBUG, switch_bool_t.SWITCH_TRUE, Logging.LogEngine.LogHandler);
 
                 freeswitchPINVOKE.set_realtime_priority();
 
