@@ -1170,7 +1170,6 @@ GCC_DIAG_ON(deprecated-declarations)
 	} else if (ret == AVERROR(EAGAIN)) {
 		/* we fully drain all the output in each encode call, so this should not ever happen */
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG9, "Error sending frame to encoder on draining AVERROR_BUG - should never happen\n");
-		ret = AVERROR_BUG;
 		goto do_break;
 	} else if (ret < 0) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG9, "Error sending frame to encoder on draining\n");
@@ -1568,9 +1567,7 @@ static switch_status_t open_input_file(av_file_context_t *context, switch_file_h
 		if (c[1]) {
 			context->audio_st[1].frame = av_frame_alloc();
 			switch_assert(context->audio_st[1].frame);
-		}
 
-		if (c[0] && c[1]) {
 			context->audio_st[0].channels = 1;
 			context->audio_st[1].channels = 1;
 		} else {
@@ -2016,7 +2013,6 @@ GCC_DIAG_ON(deprecated-declarations)
 			} else if (dret == AVERROR(EAGAIN)) {
 				/* we fully drain all the output in each decode call, so this should not ever happen */
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG9, "Error sending audio packet to decoder - BUG, should never happen\n");
-				dret = AVERROR_BUG;
 				goto do_continue;
 			} else if (dret < 0) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG9, "Error sending audio packet to decoder\n");
