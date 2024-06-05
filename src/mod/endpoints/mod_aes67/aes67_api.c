@@ -326,23 +326,21 @@ add_appsink (g_stream_t *stream, guint ch_idx, gchar *session)
 gboolean
 remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session) {
   gchar name[ELEMENT_NAME_SIZE];
-	gchar dot_name[ELEMENT_NAME_SIZE + 10];
+  gchar dot_name[ELEMENT_NAME_SIZE + 10];
 
-	GstElement *queue = NULL, *appsink = NULL, *tee = NULL;
+  GstElement *queue = NULL, *appsink = NULL, *tee = NULL;
   GstPad *tee_src_pad = NULL, *queue_sink_pad = NULL;
   gboolean ret = FALSE;
 
-	NAME_SESSION_ELEMENT(name, "queue", ch_idx, session);
-	queue = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);
+  /*
+   * tee -> queue -> appsink
+   *
+   * We unlink the tee and queue first and then remove the queue and
+   * appsink.
+   */
+  NAME_SESSION_ELEMENT(name, "queue", ch_idx, session);
+  queue = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);
   if (queue == NULL ) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to find %s in the pipeline\n", name);
-    goto exit;
-  }
-
-	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
-  appsink = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);
-  if (appsink == NULL ) {
     switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
         "Failed to find %s in the pipeline\n", name);
     goto exit;
@@ -358,35 +356,46 @@ remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session) {
 
   if (NULL == (queue_sink_pad = gst_element_get_static_pad (queue, "sink"))) {
     switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to get sink pad from the tee queue element ch: %d, session: %s", ch_idx, session);
+            "Failed to get sink pad from the queue element ch: %d, session: %s", ch_idx, session);
     goto exit;
   }
+
   if (NULL == (tee_src_pad = gst_pad_get_peer (queue_sink_pad))) {
     switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
             "Failed to get src pad from the tee element ch: %d, session: %s", ch_idx, session);
     goto exit;
   }
 
-  // unlink the pads explicitly (even though bin_remove can unlink the pads)
-  gst_pad_unlink(tee_src_pad, queue_sink_pad);
+  if (!gst_pad_unlink(tee_src_pad, queue_sink_pad)) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+            "Failed to unlink tee and queue ch: %d, session: %s", ch_idx, session);
+  }
   gst_element_release_request_pad (tee, tee_src_pad);
+
   gst_object_unref(tee_src_pad);
   tee_src_pad = NULL;
+
   gst_object_unref(queue_sink_pad);
   queue_sink_pad = NULL;
+
+  NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
+  appsink = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);
+  if (appsink == NULL ) {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+        "Failed to find %s in the pipeline\n", name);
+    goto exit;
+  }
 
   gst_element_unlink(queue, appsink);
 
   if (!gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
-	  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-			"Failed to remove queue to the pipeline ch: %d, session: %s", ch_idx, session);
-    goto exit;
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+        "Failed to remove queue from the pipeline ch: %d, session: %s", ch_idx, session);
   }
 
   if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {
-	  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-			"Failed to remove appsink to the pipeline ch: %d, session: %s", ch_idx, session);
-    goto exit;
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+        "Failed to remove appsink from the pipeline ch: %d, session: %s", ch_idx, session);
   }
 
   gst_element_set_state(queue, GST_STATE_NULL);
@@ -394,20 +403,20 @@ remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session) {
 
   g_snprintf(dot_name, ELEMENT_NAME_SIZE+10, "%s-del", name);
   dump_pipeline(GST_PIPELINE(stream->pipeline), dot_name);
+
   ret = TRUE;
 
-  exit:
-    if (NULL != tee_src_pad){
-      gst_object_unref(tee_src_pad);
-    }
-    if (NULL != queue_sink_pad)
-      gst_object_unref(queue_sink_pad);
-    if (NULL != appsink)
-      gst_object_unref(appsink);
-    if (NULL != queue)
-      gst_object_unref(queue);
-    if (NULL != tee)
-      gst_object_unref(tee);
+exit:
+  if (NULL != tee_src_pad)
+    gst_object_unref(tee_src_pad);
+  if (NULL != queue_sink_pad)
+    gst_object_unref(queue_sink_pad);
+  if (NULL != appsink)
+    gst_object_unref(appsink);
+  if (NULL != queue)
+    gst_object_unref(queue);
+  if (NULL != tee)
+    gst_object_unref(tee);
 
   return ret;
 }
