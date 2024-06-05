@@ -438,8 +438,8 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
   }
 
   if (data->direction & DIRECTION_RX) {
-    GstElement *udp_source, *appsink, *deinterleave, *rx_audioconv,
-        *capsfilter, *queue, *valve, *split, *tee;
+    GstElement *udp_source, *deinterleave, *rx_audioconv,
+        *capsfilter, *split, *tee;
     GstCaps *udp_caps = NULL, *rx_caps = NULL;
 
 #ifndef ENABLE_THREADSHARE
