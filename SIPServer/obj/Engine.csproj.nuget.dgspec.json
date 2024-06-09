@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\SIPServer\\Engine.csproj": {}
+    "C:\\Development\\GitHub\\SIPServer\\SIPServer\\Engine.csproj": {}
   },
   "projects": {
-    "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\SIPServer\\Engine.csproj": {
+    "C:\\Development\\GitHub\\SIPServer\\SIPServer\\Engine.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\SIPServer\\Engine.csproj",
+        "projectUniqueName": "C:\\Development\\GitHub\\SIPServer\\SIPServer\\Engine.csproj",
         "projectName": "Engine",
-        "projectPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\SIPServer\\Engine.csproj",
+        "projectPath": "C:\\Development\\GitHub\\SIPServer\\SIPServer\\Engine.csproj",
         "packagesPath": "C:\\Users\\suppo\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\SIPServer\\obj\\",
+        "outputPath": "C:\\Development\\GitHub\\SIPServer\\SIPServer\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\suppo\\AppData\\Roaming\\NuGet\\NuGet.Config",
@@ -28,11 +28,11 @@
           "net8.0-windows10.0.22621": {
             "targetAlias": "net8.0-windows10.0.22621.0",
             "projectReferences": {
-              "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj": {
-                "projectPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj"
+              "C:\\Development\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj": {
+                "projectPath": "C:\\Development\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj"
               },
-              "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj": {
-                "projectPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj"
+              "C:\\Development\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj": {
+                "projectPath": "C:\\Development\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj"
               }
             }
           }
@@ -55,13 +55,13 @@
             "Microsoft.DotNet.ILCompiler": {
               "suppressParent": "All",
               "target": "Package",
-              "version": "[8.0.3, )",
+              "version": "[8.0.4, )",
               "autoReferenced": true
             },
             "Microsoft.NET.ILLink.Tasks": {
               "suppressParent": "All",
               "target": "Package",
-              "version": "[8.0.3, )",
+              "version": "[8.0.4, )",
               "autoReferenced": true
             },
             "Serilog.Sinks.Console": {
@@ -99,7 +99,7 @@
             },
             {
               "name": "runtime.win-x64.Microsoft.DotNet.ILCompiler",
-              "version": "[8.0.3, 8.0.3]"
+              "version": "[8.0.4, 8.0.4]"
             }
           ],
           "frameworkReferences": {
@@ -110,35 +110,35 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.202/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
         }
       }
     },
-    "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj": {
+    "C:\\Development\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj": {
       "restore": {
-        "projectUniqueName": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj",
+        "projectUniqueName": "C:\\Development\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj",
         "projectName": "FreeSWITCH.Managed.2017",
-        "projectPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj",
+        "projectPath": "C:\\Development\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj",
         "frameworks": {
-          "net481": {
+          "net48": {
             "projectReferences": {}
           }
         }
       },
       "frameworks": {
-        "net481": {}
+        "net48": {}
       }
     },
-    "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj": {
+    "C:\\Development\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj": {
       "restore": {
-        "projectUniqueName": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj",
+        "projectUniqueName": "C:\\Development\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj",
         "projectName": "mod_managed",
-        "projectPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj",
+        "projectPath": "C:\\Development\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj",
         "frameworks": {
           "native": {
             "projectReferences": {
-              "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj": {
-                "projectPath": "C:\\Users\\suppo\\OneDrive\\Documents\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj"
+              "C:\\Development\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj": {
+                "projectPath": "C:\\Development\\GitHub\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj"
               }
             }
           }
