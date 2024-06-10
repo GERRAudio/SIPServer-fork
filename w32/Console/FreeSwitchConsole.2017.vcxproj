@@ -247,9 +247,6 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\sentry-native\Release\sentry.dll">
-      <DeploymentContent>true</DeploymentContent>
-    </None>
     <None Include="packages.config" />
     <None Include="switch_version.rc2" />
   </ItemGroup>
