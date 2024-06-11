@@ -182,8 +182,8 @@ x64/
 ipch/
 
 
-!x64/Release/conf/
-!x64/Release/mod/managed/
+!/x64/Release/conf/
+!/x64/Release/mod/managed/
 !*.csx
 
 
