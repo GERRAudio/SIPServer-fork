@@ -1658,6 +1658,66 @@ error:
   return retcause;
 }
 
+static void
+gst_logger (GstDebugCategory * category, GstDebugLevel level,
+    const gchar * file, const gchar * function, gint line,
+    GObject * object, GstDebugMessage * message, gpointer unused)
+{
+	gint fs_log_level;
+	gchar *tag;
+
+	if (level > gst_debug_category_get_threshold (category))
+		return;
+
+	switch (level) {
+		case GST_LEVEL_ERROR:
+		  fs_log_level = SWITCH_LOG_ERROR;
+		  break;
+		case GST_LEVEL_WARNING:
+		  fs_log_level = SWITCH_LOG_WARNING;
+		  break;
+		case GST_LEVEL_FIXME:
+		case GST_LEVEL_INFO:
+		  fs_log_level = SWITCH_LOG_INFO;
+		  break;
+		case GST_LEVEL_DEBUG:
+		  fs_log_level = SWITCH_LOG_DEBUG;
+		default:
+		  fs_log_level = SWITCH_LOG_INFO;
+		  break;
+	}
+
+	tag = g_strdup_printf ("GStreamer+%s",
+			gst_debug_category_get_name (category));
+
+	if (object) {
+		gchar *obj;
+
+		if (GST_IS_PAD (object) && GST_OBJECT_NAME (object)) {
+		  obj = g_strdup_printf ("<%s:%s>", GST_DEBUG_PAD_NAME (object));
+		} else if (GST_IS_OBJECT (object) && GST_OBJECT_NAME (object)) {
+		  obj = g_strdup_printf ("<%s>", GST_OBJECT_NAME (object));
+		} else if (G_IS_OBJECT (object)) {
+		  obj = g_strdup_printf ("<%s@%p>", G_OBJECT_TYPE_NAME (object), (void *) object);
+		} else {
+		  obj = g_strdup_printf ("<%p>", (void *) object);
+		}
+
+		switch_log_printf (SWITCH_CHANNEL_LOG, fs_log_level,
+			"%s %p %s:%d:%s:%s %s\n",
+			tag, (void *) g_thread_self (),
+			file, line, function, obj, gst_debug_message_get (message));
+
+		g_free (obj);
+	} else {
+		switch_log_printf (SWITCH_CHANNEL_LOG, fs_log_level,
+			"%s %p %s:%d:%s %s\n",
+			tag, (void *) g_thread_self (),
+			file, line, function, gst_debug_message_get (message));
+	}
+
+	g_free (tag);
+}
 
 SWITCH_MODULE_LOAD_FUNCTION (mod_aes67_load)
 {
@@ -1694,6 +1754,9 @@ SWITCH_MODULE_LOAD_FUNCTION (mod_aes67_load)
   }
 
   gst_init (NULL, NULL);
+  // gst_debug_remove_log_function (NULL);
+  // gst_debug_set_default_threshold (GST_LEVEL_WARNING);
+  gst_debug_add_log_function ((GstLogFunction) gst_logger, NULL, NULL);
   switch_core_hash_init (&globals.call_hash);
   switch_core_hash_init (&globals.sh_streams);
   switch_core_hash_init (&globals.endpoints);
