@@ -1,0 +1,33 @@
+﻿Build started 6/11/2024 11:53:21 AM.
+Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" on node 2 (Build target(s)).
+     1>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+     1>C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(2389,5): warning MSB3274: The primary reference "C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\x64\Release\mod\FreeSWITCH.Managed.dll" could not be resolved because it was built against the ".NETFramework,Version=v4.8" framework. This is a higher version than the currently targeted framework ".NETFramework,Version=v4.7.2".
+       InitializeBuildStatus:
+         Touching "x64\\mod_managed.tlog\unsuccessfulbuild".
+       GenerateTargetFrameworkMonikerAttribute:
+       Skipping target "GenerateTargetFrameworkMonikerAttribute" because all output files are up-to-date with respect to the input files.
+       ClCompile:
+         All outputs are up-to-date.
+         All outputs are up-to-date.
+         All outputs are up-to-date.
+       Link:
+         All outputs are up-to-date.
+         mod_managed.2017.vcxproj -> C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\x64\Release\mod\mod_managed.dll
+       MetaGen:
+       Skipping target "MetaGen" because all output files are up-to-date with respect to the input files.
+       FinalizeBuildStatus:
+         Deleting file "x64\\mod_managed.tlog\unsuccessfulbuild".
+         Touching "x64\\mod_managed.tlog\mod_managed.lastbuildstate".
+     1>Done Building Project "C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" (Build target(s)).
+
+Build succeeded.
+
+       "C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" (Build target) (1) ->
+       (ResolveAssemblyReferences target) -> 
+         C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(2389,5): warning MSB3274: The primary reference "C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\x64\Release\mod\FreeSWITCH.Managed.dll" could not be resolved because it was built against the ".NETFramework,Version=v4.8" framework. This is a higher version than the currently targeted framework ".NETFramework,Version=v4.7.2".
+
+    1 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:00.54

@@ -1,0 +1,25 @@
+﻿Build started 6/11/2024 11:53:50 AM.
+Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\src\mod\directories\mod_ldap\mod_ldap.2017.vcxproj" on node 3 (Build target(s)).
+     1>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Touching "x64\\mod_ldap.tlog\unsuccessfulbuild".
+     1>Project "C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\src\mod\directories\mod_ldap\mod_ldap.2017.vcxproj" (1) is building "C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\w32\Library\FreeSwitchCore.2017.vcxproj" (2:3) on node 1 (GetProjectInfoForReference target(s)).
+     2>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+     2>Done Building Project "C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\w32\Library\FreeSwitchCore.2017.vcxproj" (GetProjectInfoForReference target(s)).
+     1>ClCompile:
+         All outputs are up-to-date.
+       Link:
+         All outputs are up-to-date.
+         mod_ldap.2017.vcxproj -> C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\x64\Release\mod\mod_ldap.dll
+       FinalizeBuildStatus:
+         Deleting file "x64\\mod_ldap.tlog\unsuccessfulbuild".
+         Touching "x64\\mod_ldap.tlog\mod_ldap.lastbuildstate".
+     1>Done Building Project "C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\src\mod\directories\mod_ldap\mod_ldap.2017.vcxproj" (Build target(s)).
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:01.27

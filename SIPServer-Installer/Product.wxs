@@ -28,6 +28,7 @@
 	
 	
 	<?define ReleaseBuildDirectoryPath = "..\..\SIPServer\x64\Release\" ?>
+	<?define GSTMediaDirectoryPath = "..\..\SIPServer\x64\Media\" ?>
 	<?define IconsEtcPath= ".\InstallUtils\" ?>
 	<?define SIPServerVersion=1.10.12.1?>
 	<?define DestinationFolder="C:\inetpub\SIPServer\"?>
@@ -364,6 +365,30 @@
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\*.cab"/>
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\*.msi"/>
 			</Files>
+			
+			<Files   Include="$(GSTMediaDirectoryPath)\**">
+				<!--TODO - check if we can exclude dev files-->
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\.git*"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\.git"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\.pem"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.pdb"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.lib"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.exp"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.log"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.user"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.suo"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.ncb"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.map"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.obj"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.idb"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.res"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.cab"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.msi"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.h"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.c"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.cpp"/>
+				<Exclude Files ="$(GSTMediaDirectoryPath)\**\*.props"/>
+			</Files>
 		</ComponentGroup>
 
 	</Fragment>
@@ -372,7 +397,7 @@
 
 		
 		<!-- stop service (try both ways) and backup prev version -->
-		<!-- TODO C runtime dlls-->
+
 
 		<CustomAction Id="StopApp"
 			ExeCommand='cmd.exe /c  echo Stopping service... please do not close window &amp;&amp; c:\inetpub\SIPserver\SIPServer.exe -stop 2>NUL >NUL '
