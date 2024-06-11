@@ -1,0 +1,482 @@
+{
+  "version": 3,
+  "targets": {
+    "native,Version=v0.0": {
+      "WixToolset.Dependency.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Dependency.wixext.targets": {}
+        }
+      },
+      "WixToolset.Firewall.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Firewall.wixext.targets": {}
+        }
+      },
+      "WixToolset.Heat/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Heat.targets": {}
+        }
+      },
+      "WixToolset.Iis.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Iis.wixext.targets": {}
+        }
+      },
+      "WixToolset.UI.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.UI.wixext.targets": {}
+        }
+      },
+      "WixToolset.Util.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Util.wixext.targets": {}
+        }
+      },
+      "WixToolset.VisualStudio.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.VisualStudio.wixext.targets": {}
+        }
+      }
+    },
+    "native,Version=v0.0/win": {
+      "WixToolset.Dependency.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Dependency.wixext.targets": {}
+        }
+      },
+      "WixToolset.Firewall.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Firewall.wixext.targets": {}
+        }
+      },
+      "WixToolset.Heat/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Heat.targets": {}
+        }
+      },
+      "WixToolset.Iis.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Iis.wixext.targets": {}
+        }
+      },
+      "WixToolset.UI.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.UI.wixext.targets": {}
+        }
+      },
+      "WixToolset.Util.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Util.wixext.targets": {}
+        }
+      },
+      "WixToolset.VisualStudio.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.VisualStudio.wixext.targets": {}
+        }
+      }
+    },
+    "native,Version=v0.0/win-arm64": {
+      "WixToolset.Dependency.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Dependency.wixext.targets": {}
+        }
+      },
+      "WixToolset.Firewall.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Firewall.wixext.targets": {}
+        }
+      },
+      "WixToolset.Heat/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Heat.targets": {}
+        }
+      },
+      "WixToolset.Iis.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Iis.wixext.targets": {}
+        }
+      },
+      "WixToolset.UI.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.UI.wixext.targets": {}
+        }
+      },
+      "WixToolset.Util.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Util.wixext.targets": {}
+        }
+      },
+      "WixToolset.VisualStudio.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.VisualStudio.wixext.targets": {}
+        }
+      }
+    },
+    "native,Version=v0.0/win-x64": {
+      "WixToolset.Dependency.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Dependency.wixext.targets": {}
+        }
+      },
+      "WixToolset.Firewall.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Firewall.wixext.targets": {}
+        }
+      },
+      "WixToolset.Heat/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Heat.targets": {}
+        }
+      },
+      "WixToolset.Iis.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Iis.wixext.targets": {}
+        }
+      },
+      "WixToolset.UI.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.UI.wixext.targets": {}
+        }
+      },
+      "WixToolset.Util.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Util.wixext.targets": {}
+        }
+      },
+      "WixToolset.VisualStudio.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.VisualStudio.wixext.targets": {}
+        }
+      }
+    },
+    "native,Version=v0.0/win-x86": {
+      "WixToolset.Dependency.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Dependency.wixext.targets": {}
+        }
+      },
+      "WixToolset.Firewall.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Firewall.wixext.targets": {}
+        }
+      },
+      "WixToolset.Heat/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Heat.targets": {}
+        }
+      },
+      "WixToolset.Iis.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Iis.wixext.targets": {}
+        }
+      },
+      "WixToolset.UI.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.UI.wixext.targets": {}
+        }
+      },
+      "WixToolset.Util.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.Util.wixext.targets": {}
+        }
+      },
+      "WixToolset.VisualStudio.wixext/5.0.0": {
+        "type": "package",
+        "build": {
+          "build/WixToolset.VisualStudio.wixext.targets": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "WixToolset.Dependency.wixext/5.0.0": {
+      "sha512": "8SlExC21IP3pwpfMcrfQiSYnGYfnXifelabR0EljU9i+ffO60kBqL1S3J1bX0iwGG/IZ/xl/RKbwRtj5YDIsxg==",
+      "type": "package",
+      "path": "wixtoolset.dependency.wixext/5.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "build/WixToolset.Dependency.wixext.targets",
+        "wix.png",
+        "wixext5/WixToolset.Dependency.wixext.dll",
+        "wixtoolset.dependency.wixext.5.0.0.nupkg.sha512",
+        "wixtoolset.dependency.wixext.nuspec"
+      ]
+    },
+    "WixToolset.Firewall.wixext/5.0.0": {
+      "sha512": "ImdAKuoOkZcqPiIXmrcprM8Y1azA17EXZdUecpDD/V5jJcY+Ir4EtRLIWjYNno8FgUXRFyFskmAV13Us2SIInA==",
+      "type": "package",
+      "path": "wixtoolset.firewall.wixext/5.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "build/WixToolset.Firewall.wixext.targets",
+        "wix.png",
+        "wixext5/WixToolset.Firewall.wixext.dll",
+        "wixtoolset.firewall.wixext.5.0.0.nupkg.sha512",
+        "wixtoolset.firewall.wixext.nuspec"
+      ]
+    },
+    "WixToolset.Heat/5.0.0": {
+      "sha512": "7xrTqQ3BUnA/Ax+XpQ3FBCo+IxuI1un3oaubmlSBQXS5+PDhv4yCRd/6N5lqwrMxgXC2JbAbEeTC2WUVK5OtJQ==",
+      "type": "package",
+      "path": "wixtoolset.heat/5.0.0",
+      "hasTools": true,
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "build/WixToolset.Heat.targets",
+        "tools/net472/WixToolset.HeatTasks.dll",
+        "tools/net472/x64/Microsoft.Win32.Registry.dll",
+        "tools/net472/x64/System.Configuration.ConfigurationManager.dll",
+        "tools/net472/x64/System.Diagnostics.PerformanceCounter.dll",
+        "tools/net472/x64/System.IO.FileSystem.AccessControl.dll",
+        "tools/net472/x64/System.Runtime.CompilerServices.Unsafe.dll",
+        "tools/net472/x64/System.Security.AccessControl.dll",
+        "tools/net472/x64/System.Security.Permissions.dll",
+        "tools/net472/x64/System.Security.Principal.Windows.dll",
+        "tools/net472/x64/System.Text.Encoding.CodePages.dll",
+        "tools/net472/x64/WixToolset.Core.dll",
+        "tools/net472/x64/WixToolset.Data.dll",
+        "tools/net472/x64/WixToolset.Extensibility.dll",
+        "tools/net472/x64/WixToolset.Versioning.dll",
+        "tools/net472/x64/heat.exe",
+        "tools/net472/x64/heat.exe.config",
+        "tools/net472/x86/Microsoft.Win32.Registry.dll",
+        "tools/net472/x86/System.Configuration.ConfigurationManager.dll",
+        "tools/net472/x86/System.Diagnostics.PerformanceCounter.dll",
+        "tools/net472/x86/System.IO.FileSystem.AccessControl.dll",
+        "tools/net472/x86/System.Runtime.CompilerServices.Unsafe.dll",
+        "tools/net472/x86/System.Security.AccessControl.dll",
+        "tools/net472/x86/System.Security.Permissions.dll",
+        "tools/net472/x86/System.Security.Principal.Windows.dll",
+        "tools/net472/x86/System.Text.Encoding.CodePages.dll",
+        "tools/net472/x86/WixToolset.Core.dll",
+        "tools/net472/x86/WixToolset.Data.dll",
+        "tools/net472/x86/WixToolset.Extensibility.dll",
+        "tools/net472/x86/WixToolset.Versioning.dll",
+        "tools/net472/x86/heat.exe",
+        "tools/net472/x86/heat.exe.config",
+        "tools/net6.0/Microsoft.Win32.SystemEvents.dll",
+        "tools/net6.0/System.Configuration.ConfigurationManager.dll",
+        "tools/net6.0/System.Diagnostics.PerformanceCounter.dll",
+        "tools/net6.0/System.DirectoryServices.dll",
+        "tools/net6.0/System.Drawing.Common.dll",
+        "tools/net6.0/System.Security.Cryptography.ProtectedData.dll",
+        "tools/net6.0/System.Security.Permissions.dll",
+        "tools/net6.0/System.Windows.Extensions.dll",
+        "tools/net6.0/WixToolset.Core.dll",
+        "tools/net6.0/WixToolset.Data.dll",
+        "tools/net6.0/WixToolset.Extensibility.dll",
+        "tools/net6.0/WixToolset.HeatTasks.deps.json",
+        "tools/net6.0/WixToolset.HeatTasks.dll",
+        "tools/net6.0/WixToolset.Versioning.dll",
+        "tools/net6.0/heat.deps.json",
+        "tools/net6.0/heat.dll",
+        "tools/net6.0/heat.dll.config",
+        "tools/net6.0/heat.runtimeconfig.json",
+        "tools/net6.0/runtimes/unix/lib/net6.0/System.Drawing.Common.dll",
+        "tools/net6.0/runtimes/win/lib/net6.0/Microsoft.Win32.SystemEvents.dll",
+        "tools/net6.0/runtimes/win/lib/net6.0/System.Drawing.Common.dll",
+        "tools/net6.0/runtimes/win/lib/net6.0/System.Security.Cryptography.ProtectedData.dll",
+        "tools/net6.0/runtimes/win/lib/net6.0/System.Windows.Extensions.dll",
+        "tools/net6.0/runtimes/win/lib/netcoreapp2.0/System.Diagnostics.PerformanceCounter.dll",
+        "tools/net6.0/runtimes/win/lib/netcoreapp2.0/System.DirectoryServices.dll",
+        "wix.png",
+        "wixtoolset.heat.5.0.0.nupkg.sha512",
+        "wixtoolset.heat.nuspec"
+      ]
+    },
+    "WixToolset.Iis.wixext/5.0.0": {
+      "sha512": "c0Ba8RGxfCZDzPO2Y1AJ/cNhA6LbIfNntWmvqZIC4xX5zWFOpEnXHvNLvq+05vo8qwf3E9Fu4du00dLlV3T+0w==",
+      "type": "package",
+      "path": "wixtoolset.iis.wixext/5.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "build/WixToolset.Iis.wixext.targets",
+        "wix.png",
+        "wixext5/WixToolset.Iis.wixext.dll",
+        "wixtoolset.iis.wixext.5.0.0.nupkg.sha512",
+        "wixtoolset.iis.wixext.nuspec"
+      ]
+    },
+    "WixToolset.UI.wixext/5.0.0": {
+      "sha512": "bSXUeHrfylVOeoklBb3mSlmMmiIVmQnEakCLeEtQoUundgWY3LOlVr7yjLu/3RBkMCiYdGmaNhg7MHwS2iQDsA==",
+      "type": "package",
+      "path": "wixtoolset.ui.wixext/5.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "build/WixToolset.UI.wixext.targets",
+        "wix.png",
+        "wixext5/WixToolset.UI.wixext.dll",
+        "wixtoolset.ui.wixext.5.0.0.nupkg.sha512",
+        "wixtoolset.ui.wixext.nuspec"
+      ]
+    },
+    "WixToolset.Util.wixext/5.0.0": {
+      "sha512": "7lLwyrf+2cTuPju0swTWtRNYesnOMxXhGugMnGGNEPDB4g/+BCUsub2RDYAxnBnbnND7QmPwZnneLrTIQOdAbg==",
+      "type": "package",
+      "path": "wixtoolset.util.wixext/5.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "build/WixToolset.Util.wixext.targets",
+        "wix.png",
+        "wixext5/WixToolset.Util.wixext.dll",
+        "wixtoolset.util.wixext.5.0.0.nupkg.sha512",
+        "wixtoolset.util.wixext.nuspec"
+      ]
+    },
+    "WixToolset.VisualStudio.wixext/5.0.0": {
+      "sha512": "PU00Np3AVaBbEr8HgAn3MMmDnnwxNp1N3gyCQhugvMx5GOXo3V5iQN5zE4laRzu7yFzFGyJ+NjOb3u88l/ANig==",
+      "type": "package",
+      "path": "wixtoolset.visualstudio.wixext/5.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "build/WixToolset.VisualStudio.wixext.targets",
+        "wix.png",
+        "wixext5/WixToolset.VisualStudio.wixext.dll",
+        "wixtoolset.visualstudio.wixext.5.0.0.nupkg.sha512",
+        "wixtoolset.visualstudio.wixext.nuspec"
+      ]
+    }
+  },
+  "projectFileDependencyGroups": {
+    "native,Version=v0.0": [
+      "WixToolset.Dependency.wixext >= 5.0.0",
+      "WixToolset.Firewall.wixext >= 5.0.0",
+      "WixToolset.Heat >= 5.0.0",
+      "WixToolset.Iis.wixext >= 5.0.0",
+      "WixToolset.UI.wixext >= 5.0.0",
+      "WixToolset.Util.wixext >= 5.0.0",
+      "WixToolset.VisualStudio.wixext >= 5.0.0"
+    ]
+  },
+  "packageFolders": {
+    "C:\\Users\\Administrator\\.nuget\\packages\\": {},
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer-master\\SIPServer-Installer\\SIPServer_Installer.wixproj",
+      "projectName": "SIPServer_Installer",
+      "projectPath": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer-master\\SIPServer-Installer\\SIPServer_Installer.wixproj",
+      "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+      "outputPath": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer-master\\SIPServer-Installer\\obj\\",
+      "projectStyle": "PackageReference",
+      "fallbackFolders": [
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+      ],
+      "configFilePaths": [
+        "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+      ],
+      "originalTargetFrameworks": [
+        "native"
+      ],
+      "sources": {
+        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "native": {
+          "targetAlias": "native",
+          "projectReferences": {}
+        }
+      },
+      "restoreAuditProperties": {
+        "enableAudit": "true",
+        "auditLevel": "low",
+        "auditMode": "direct"
+      }
+    },
+    "frameworks": {
+      "native": {
+        "targetAlias": "native",
+        "dependencies": {
+          "WixToolset.Dependency.wixext": {
+            "target": "Package",
+            "version": "[5.0.0, )"
+          },
+          "WixToolset.Firewall.wixext": {
+            "target": "Package",
+            "version": "[5.0.0, )"
+          },
+          "WixToolset.Heat": {
+            "target": "Package",
+            "version": "[5.0.0, )"
+          },
+          "WixToolset.Iis.wixext": {
+            "target": "Package",
+            "version": "[5.0.0, )"
+          },
+          "WixToolset.UI.wixext": {
+            "target": "Package",
+            "version": "[5.0.0, )"
+          },
+          "WixToolset.Util.wixext": {
+            "target": "Package",
+            "version": "[5.0.0, )"
+          },
+          "WixToolset.VisualStudio.wixext": {
+            "target": "Package",
+            "version": "[5.0.0, )"
+          }
+        }
+      }
+    },
+    "runtimes": {
+      "win": {
+        "#import": []
+      },
+      "win-arm64": {
+        "#import": []
+      },
+      "win-x64": {
+        "#import": []
+      },
+      "win-x86": {
+        "#import": []
+      }
+    }
+  }
+}

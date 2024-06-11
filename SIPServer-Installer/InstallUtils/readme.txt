@@ -1,0 +1,48 @@
+# Deployment instructions
+0. Prerequisites
+   - SIPServer_Installer.msi
+   - Bruce_Communicator_Framework_Installer.msi
+   - files in this repo, including conf and mod subfolders and files
+
+1. update the following folders from Github/GERRAudio
+	- C:\inetpub\Sipserver\conf	(config for IP telephony)
+	- C:\inetpub\SipServer\mod	(system connectivity to other apps) - are there IP address changes to make here?
+   
+2. Provided installers will update as well as backup older version of:
+	- C:\inetpub\SipServer	(telephony interface) and install it as a service
+  	- C:\inet\wwwroot	(Web server for Communicator and Kiosk)
+  
+3. Install gstreamer using provided/downloaded installer
+
+4. Verify vars.xml to check that the AES67 NIC name corresponds exactly to the value in the file (multicast IP - AES67)
+	- Note that the NIC's on the machine must be set at AES67 (UDP/multicast) and Bruce.91 (TCP/IP)
+
+5. Configure the certificates by updating:
+	- C:\SipServer\certs
+	- using IIS to provide certs to the Communicator pages
+        	- port certs at server level, edit site binding
+        	- conf05ha01/02  certs correspond to .10 and .11
+        	- any client browser (i.e. Kiosk or Operator) should have both certs 01 and 02 to talk to either server
+
+6. Check that the Microsoft system dependencies are in place:
+	- .NET Extensibility 3.5 and 4.8
+	- Application Initialization
+	- ASP
+	- ASP.NET 3.5 and 4.8
+	- ISAPI Extensions
+	- ISAPI Filters
+	- Server Side Includes
+	- WebSocket Protocol
+	
+7. Check firewall rules, they can be imported from the .wvw file
+8. Check both system and user environment variables, the installers will set them, and alternately you use the .reg file to import them (simply click on it)
+9. Check C:\SipServer\sounds and recordings to ensure all required files are present
+10. Test by
+	- starting/restarting IIS
+	- starting the SIPServer service using Microsoft Services or
+ 	- manually starting C:\inetpub\SipServer\SipServer.exe in a command prompt
+	- Using Miscrosoft Edge to access
+		- Communicator at 10.8.91.10 or .11
+		- Kiosk at 10.8.91.10/Kiosk  or .11/Kiosk
+
+
