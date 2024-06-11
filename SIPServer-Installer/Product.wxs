@@ -19,8 +19,7 @@
 		 Change the SIPServerVersion define for every release.
 		 Version downgrades are permitted.
 		 		 
-		 The conf and mod and cert directories are not installed 
-		 - TODO have the installer configure these
+		 The cert directory is not installed for security
 		 - TODO auto version increments
 		 - TODO stop gstreamer (in case)
 		 - TODO fix service issues
@@ -243,8 +242,9 @@
 				<!--Environment variables to set or modify-->
 				<!-- sys env var(s) -->
 				<!-- usr env var(s) -->
-				<!-- redundant, but hey...-->
+				<!-- keep for reference, no longer required, handled by aes67 module...
 
+				
 				<Environment Id ="GSTR0SYS"
 						Name="GSTREAMER_1_0_ROOT_MSVC_X86_64"
 						Permanent ="yes"
@@ -302,6 +302,8 @@
 						Action ="set"
 						System ="no"
 						Value ="%GSTREAMER_1_0_ROOT_MSVC_X86_64%bin\"/>
+			-->
+						
 			</Component>
 		</DirectoryRef>
 
@@ -337,14 +339,14 @@
 				<!--Exclude Files ="$(ReleaseBuildDirectoryPath)\mod\**"/-->
 				<!--Exclude Files ="$(ReleaseBuildDirectoryPath)\conf\**"/-->
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\cert\**"/>
-				<!--in case it was copied by accident-->
+				<!--do not include the setup files -->
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\*.remove"/>
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\RenBackup.bat"/>
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\SetIP.bat"/>
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\grep.exe"/>
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\readme.txt"/>
 				
-				<!--Files we do not want to copy over-->
+				<!--Files we do not want to copy over - see .gitignore -->
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\.git*"/>
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\.git"/>
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\.pem"/>

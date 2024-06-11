@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer-master\\SIPServer-Installer\\SIPServer_Installer.wixproj": {}
+    "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer\\SIPServer-Installer\\SIPServer_Installer.wixproj": {}
   },
   "projects": {
-    "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer-master\\SIPServer-Installer\\SIPServer_Installer.wixproj": {
+    "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer\\SIPServer-Installer\\SIPServer_Installer.wixproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer-master\\SIPServer-Installer\\SIPServer_Installer.wixproj",
+        "projectUniqueName": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer\\SIPServer-Installer\\SIPServer_Installer.wixproj",
         "projectName": "SIPServer_Installer",
-        "projectPath": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer-master\\SIPServer-Installer\\SIPServer_Installer.wixproj",
+        "projectPath": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer\\SIPServer-Installer\\SIPServer_Installer.wixproj",
         "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-        "outputPath": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer-master\\SIPServer-Installer\\obj\\",
+        "outputPath": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer\\SIPServer-Installer\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
