@@ -182,6 +182,11 @@ x64/
 ipch/
 
 
+!x64/Release/conf/
+!x64/Release/mod/managed/
+!*.csx
+
+
 /libs/xmlrpc-c/tools/xml-rpc-api2txt
 
 /w32/Setup/obj
