@@ -18,11 +18,11 @@ namespace SIPServer.Configuration
 
             if(loaded)
             {
-                Serilog.Log.Information($"Loaded module => {module}");
+                Console.WriteLine($"Loaded module => {module}");
             } 
             else
             {
-                Serilog.Log.Information($"Unloaded module => {module}");
+                Console.WriteLine($"Unloaded module => {module}");
             }
         }
 
@@ -32,11 +32,10 @@ namespace SIPServer.Configuration
             {
                 if (LoadedModules[module] == true)
                 {
-                    Serilog.Log.Error($"Already loaded {module}");
                     return $"Already loaded {module}";
                 }
             }
-            Serilog.Log.Error($"Unable to load {module}");
+
             return $"Unable to load {module}";
             
         }
