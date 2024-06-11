@@ -103,7 +103,9 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <CodeAnalysisRuleSet>NativeMinimumRules.ruleset</CodeAnalysisRuleSet>
     <RunCodeAnalysis>false</RunCodeAnalysis>
-    <IncludePath>C:\freeswitch\libs\portaudio\src\os\win;$(IncludePath)</IncludePath>
+    <IncludePath>C:\gstreamer\1.0\msvc_x86_64\lib\glib-2.0\include\;C:\gstreamer\1.0\msvc_x86_64\include\glib-2.0\;C:\gstreamer\1.0\msvc_x86_64\include\;C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0;C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0\gst\app;C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0\gst\net;C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0\gst;C:\freeswitch\libs\portaudio\src\os\win;$(IncludePath)</IncludePath>
+    <ReferencePath>C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0\gst;C:\freeswitch\libs\portaudio\src\os\win;C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0\gst\app;C:\gstreamer\1.0\msvc_x86_64\include\gstreamer-1.0\gst\net;$(ReferencePath)</ReferencePath>
+    <SourcePath>C:\freeswitch\libs\portaudio\src\os\win;$(SourcePath)</SourcePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -176,12 +178,11 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>ksuser.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(ProjectDir)..\..\..\..\libs\portaudio\winvc\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\..\..\..\libs\portaudio\winvc\Lib;%(AdditionalLibraryDirectories);C:\gstreamer\1.0\msvc_x86_64\lib</AdditionalLibraryDirectories>
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <DataExecutionPrevention>
       </DataExecutionPrevention>
       <TargetMachine>MachineX64</TargetMachine>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
