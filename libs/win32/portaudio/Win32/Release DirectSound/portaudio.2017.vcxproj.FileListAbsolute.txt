@@ -1,1 +1,2 @@
 C:\Development\GitHub\NAUDSIPServer\SIPServer-master\libs\win32\portaudio\Win32\Release DirectSound\portaudio.lib
+C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\libs\win32\portaudio\Win32\Release DirectSound\portaudio.lib

@@ -2051,8 +2051,8 @@ static switch_status_t devlist(char **argv, int argc, switch_stream_handle_t *st
 			deviceInfo = Pa_GetDeviceInfo(i);
 			hostApiInfo = Pa_GetHostApiInfo(deviceInfo->hostApi);
 			stream->write_function(
-				stream, "\t\t<device id=\"%d\" name=\"%s\" hostapi=\"%s\" inputs=\"%d\" outputs=\"%d\" />\n", i,
-				deviceInfo->name, hostApiInfo->name, deviceInfo->maxInputChannels, deviceInfo->maxOutputChannels);
+				stream, "\t\t<device id=\"%d\" name=\"%s\" hostapi=\"%s\" inputs=\"%d\" outputs=\"%d\" sample-rate=\"%f\" />\n", i,
+				deviceInfo->name, hostApiInfo->name, deviceInfo->maxInputChannels, deviceInfo->maxOutputChannels, deviceInfo->defaultSampleRate);
 		}
 
 		stream->write_function(stream,
@@ -2068,8 +2068,8 @@ static switch_status_t devlist(char **argv, int argc, switch_stream_handle_t *st
 			deviceInfo = Pa_GetDeviceInfo(i);
 			hostApiInfo = Pa_GetHostApiInfo(deviceInfo->hostApi);
 
-			stream->write_function(stream, "%d;%s(%s);%d;%d;", i, deviceInfo->name, hostApiInfo->name,
-								   deviceInfo->maxInputChannels, deviceInfo->maxOutputChannels);
+			stream->write_function(stream, "%d;%s(%s);%d;%d;%f;", i, deviceInfo->name, hostApiInfo->name,
+								   deviceInfo->maxInputChannels, deviceInfo->maxOutputChannels, deviceInfo->defaultSampleRate);
 
 			prev = 0;
 			if (globals.ringdev == i) {
@@ -2501,16 +2501,30 @@ static switch_status_t list_shared_streams(char **argv, int argc, switch_stream_
 
 	if (argv[0] && !strcasecmp(argv[0], "xml")) {
 		stream->write_function(stream, "<xml>\n\t<devices>\n");
+		const PaDeviceInfo *deviceInfo;
+		const PaHostApiInfo *hostApiInfo;
 
 		for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 			const void *var;
 			void *val;
+			int deviceID = -1;
 			shared_audio_stream_t *s = NULL;
 			switch_core_hash_this(hi, &var, NULL, &val);
 			s = val;
+
+			if (s->indev != -1) {
+				deviceID = s->indev;
+
+			} else {
+				deviceID = s->outdev;
+			}
+
+			deviceInfo = Pa_GetDeviceInfo(deviceID);
+			hostApiInfo = Pa_GetHostApiInfo(deviceInfo->hostApi);
 			stream->write_function(stream,
-								   "\t\t<device name=\"%s\" indev=\"%d\" outdev=\"%d\" sample-rate=\"%d\" codec-ms=\"%d\" channels=\"%d\" />\n",
-								   s->name, s->indev, s->outdev, s->sample_rate, s->codec_ms, s->channels);
+								   "\t\t<device id=\"%d\" name=\"%s\" indev=\"%d\" outdev=\"%d\" sample-rate=\"%d\" codec-ms=\"%d\" channels=\"%d\" hostapi=\"%s\" />\n",
+								   deviceID, s->name, s->indev, s->outdev, s->sample_rate, s->codec_ms, s->channels,
+								   hostApiInfo->name);
 			cnt++;
 		}
 
@@ -2548,7 +2562,7 @@ static switch_status_t list_endpoints(char **argv, int argc, switch_stream_handl
 			e = val;
 
 			stream->write_function(stream,
-								   "\t\t<endpoint name=\"%s\" indev=\"%s\" inchannel=\%d\" outdev=\"%s\" outchannel=\"%d\" />\n",
+								   "\t\t<endpoint name=\"%s\" indev=\"%s\" inchannel=\"%d\" outdev=\"%s\" outchannel=\"%d\" />\n",
 								  e->name, e->in_stream ? e->in_stream->name : "(none)", e->inchan, e->out_stream ? e->out_stream->name : "(none)", e->outchan);
 			cnt++;
 		}

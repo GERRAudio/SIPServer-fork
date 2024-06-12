@@ -64,8 +64,14 @@ namespace FreeSWITCH.Native
 
         public string ExecuteString(string command)
         {
-            string ret = freeswitchPINVOKE.Api_ExecuteString(swigCPtr, command);
-            return ret;
+            try
+            {
+                string ret = freeswitchPINVOKE.Api_ExecuteString(swigCPtr, command);
+                return ret;
+            } catch(Exception ex)
+            {
+                return "Failure";
+            }
         }
 
         public string getTime()
