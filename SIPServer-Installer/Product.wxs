@@ -23,10 +23,11 @@
 		 The cert directory is not installed for security
 		 - TODO auto version increments
 		 - TODO stop gstreamer (in case)
-
+		 - TODO get rid of wssm one day
 	-->
 
-
+ 
+	
 	<?define ReleaseBuildDirectoryPath = "..\..\SIPServer\x64\Release\" ?>
 	<?define GSTMediaDirectoryPath = "..\..\SIPServer\x64\Media\" ?>
 	<?define IconsEtcPath= ".\InstallUtils\" ?>
@@ -198,33 +199,37 @@
 		<DirectoryRef Id="DesktopFolder">
 			<!--Desktop shortcut-->
 			<Component Id="ApplicationShortcutDesktop" Guid="335335B2-F691-408E-A857-56C3D30DA636">
-				<Shortcut Id="EXEApplicationDesktopShortcut"
-						Name="SIPServer"
-						Description="SIPServer Start"
-						Target="[SIPServerDir]SIPServer.exe"
-						WorkingDirectory="SIPServerDir"
-						Icon="GerrIcon.ico"/>
-
-				<Shortcut Id="CLIApplicationDesktopShortcut"
-						Name="fs_cli"
-						Description="SIPServer Command Line Interface (CLI)"
-						Target="[SIPServerDir]EngineCommandLine.exe"
-						WorkingDirectory="SIPServerDir"
-						Icon="GerrIconW.ico"/>
 
 				<Shortcut Id="ServiceStartDesktopShortcut"
 						Name="Start SIPServer Service"
 						Description="SIPServer Service Start"
-						Target='"[SIPServerDir]nssm.exe" start SIPServer"'
+						Target='[SIPServerDir]nssm.exe'
+						Arguments ='start SIPServer'
 						WorkingDirectory="SIPServerDir"
 						Icon="GerrIconW.ico"/>
 
 				<Shortcut Id="ServiceStopDesktopShortcut"
 						Name="Stop SIPServer Service"
 						Description="SIPServer Service Stop"
-						Target='"[SIPServerDir]nssm.exe" stop SIPServer'
+						Target='[SIPServerDir]nssm.exe'
+						Arguments ='stop SIPServer'
 						WorkingDirectory="SIPServerDir"
 						Icon="GerrIcon.ico"/>
+
+
+				<Shortcut Id="CLIApplicationDesktopShortcut"
+						Name="Command Line Interface (CLI)"
+						Description="SIPServer Command Line Interface (CLI)"
+						Target="[SIPServerDir]EngineCommandLine.exe"
+						WorkingDirectory="SIPServerDir"
+						Icon="GerrIconW.ico"/>
+
+				<!--Shortcut Id="EXEApplicationDesktopShortcut"
+						Name="SIPServer"
+						Description="SIPServer Start"
+						Target="[SIPServerDir]SIPServer.exe"
+						WorkingDirectory="SIPServerDir"
+						Icon="GerrIcon.ico"/-->
 
 
 				<RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPServerIDT" Name="installed1" Type="integer" Value="1" KeyPath="yes"/>
@@ -242,43 +247,50 @@
 		<!--Start menu shortcuts-->
 		<DirectoryRef Id="MYAPPFOLDER">
 			<Component Id="ApplicationShortcut" Guid="F5E4852D-0A23-4BBF-8E43-99B9D9C80837">
-				<Shortcut Id="ApplicationStartMenuShortcut"
-								  Name="SIPServer"
-								  Description="SIPServer Console"
-								  Target="[SIPServerDir]SIPServer.exe"
-								  WorkingDirectory="SIPServerDir"
-								  Icon="GerrIcon.ico"/>
-
-				<Shortcut Id="CLIApplicationStartMenuShortcut"
-								  Name="Command Line Interface (CLI)"
-								  Description="Command Line Interface (CLI) to access the service"
-								  Target="[SIPServerDir]EngineCommandLine.exe"
-								  WorkingDirectory="SIPServerDir"
-								  Icon="GerrIconW.ico"/>
-
 				<Shortcut Id="ServiceStartMenuShortcut"
 								  Name="Start SIP Service"
 								  Description="Start the SIPServer service"
-								  Target='"[SIPServerDir]nssm.exe" start SIPServer'
+								  Target='[SIPServerDir]nssm.exe'
+								  Arguments ='start SIPServer'
 								  WorkingDirectory="SIPServerDir"
 								  Icon="GerrIconW.ico"/>
 
 				<Shortcut Id="ServiceStopMenuShortcut"
 								  Name="Stop SIP Service"
 								  Description="Stop the SIPServer service"
-								  Target='"[SIPServerDir]nssm.exe" stop SIPServer'
+								  Target='[SIPServerDir]nssm.exe'
+								  Arguments ='stop SIPServer'
 								  WorkingDirectory="SIPServerDir"
 								  Icon="GerrIcon.ico"/>
 
+				<Shortcut Id="CLIApplicationStartMenuShortcut"
+					Name="Command Line Interface (CLI)"
+					Description="Command Line Interface (CLI) to access the service"
+					Target="[SIPServerDir]EngineCommandLine.exe"
+					WorkingDirectory="SIPServerDir"
+					Icon="GerrIconW.ico"/>
+
+				<Shortcut Id="ApplicationStartMenuShortcut"
+					Name="SIPServer Console"
+					Description="SIPServer Console"
+					Target="[SIPServerDir]SIPServer.exe"
+					WorkingDirectory="SIPServerDir"
+					Icon="GerrIcon.ico"/>
+
+
 				<RemoveFolder Id="UninstallShortcut" Directory="MYAPPFOLDER" On="uninstall"/>
-				<RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPServerI" Name="installed1" Type="integer" Value="1" KeyPath="yes"/>
-				<RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPServer" Name="installed1" Type="string" Value="SIPServer"  />
-				<RegistryValue Root="HKCU" Key="Software\GerrAudio\fs_cliI" Name="installed2" Type="integer" Value="1" />
-				<RegistryValue Root="HKCU" Key="Software\GerrAudio\fs_cli" Name="installed2" Type="string" Value="SIPServer-CLI"  />
+				<!-- order of shortcuts is determined here-->
 				<RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcStartI" Name="installed3" Type="integer" Value="1" />
 				<RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcStart" Name="installed3" Type="string" Value="ServerSvcStart"  />
 				<RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcStopI" Name="installed4" Type="integer" Value="1" />
 				<RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcStop" Name="installed4" Type="string" Value="ServerSvcStop"  />
+				<RegistryValue Root="HKCU" Key="Software\GerrAudio\fs_cliI" Name="installed2" Type="integer" Value="1" />
+				<RegistryValue Root="HKCU" Key="Software\GerrAudio\fs_cli" Name="installed2" Type="string" Value="SIPServer-CLI"  />
+				
+				<RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPServerI" Name="installed1" Type="integer" Value="1" KeyPath="yes"/>
+				<RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPServer" Name="installed1" Type="string" Value="SIPServer"  />
+
+
 
 				<!--Environment variables to set or modify-->
 				<!-- sys env var(s) -->
@@ -365,12 +377,12 @@
 					  Source="$(IconsEtcPath)\SetIP.bat" KeyPath="yes"
 				/>
 			</Component>
-			<Component Id="grep" Guid="">
+			<Component Id="grep" Guid="4A04A90C-094C-466B-86CB-2C3E2DBCE7B0">
 				<File Id="grep"
 					  Source="$(IconsEtcPath)\grep.exe" KeyPath="yes"
 				/>
 			</Component>
-			<Component Id="svcinstaller" Guid="">
+			<Component Id="svcinstaller" Guid="FFE671AF-0508-41DF-9500-194F3EDDD401">
 				<File Id="nssm"
 					  Source="$(IconsEtcPath)\nssm.exe" KeyPath="yes"
 				/>
