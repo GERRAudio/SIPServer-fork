@@ -365,14 +365,13 @@
 
 		<ComponentGroup  Id="HarvestedComponents" Directory="SIPServerDir">
 			<!--Special batch file utility-->
-			<Component Id="RenBackupFile" Guid="">
-				<!-- No Guid forces the batch to persist between installs-->
+			<!-- No Guid forces the batch to persist between installs-->
+			<Component Id="RenBackupFile" Guid="4BFDE8BB-EF40-4755-AF9C-18221D1D3DC4">
 				<File Id="RenBackupScript"
 					  Source="$(IconsEtcPath)\RenBackup.bat" KeyPath="yes"
 				/>
 			</Component>
-			<Component Id="SetIP" Guid="">
-				<!-- No Guid forces the batch to persist between installs-->
+			<Component Id="SetIP" Guid="5E8F3974-81B1-4984-BBCA-A42FE2D252C9">
 				<File Id="SetIPScript"
 					  Source="$(IconsEtcPath)\SetIP.bat" KeyPath="yes"
 				/>

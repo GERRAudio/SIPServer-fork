@@ -2,22 +2,19 @@
 0. Prerequisites
    - SIPServer_Installer.msi
    - Bruce_Communicator_Framework_Installer.msi
-   - files in this repo, including conf and mod subfolders and files
+   - files in this repo, including conf subfolders and files
 
 1. update the following folders from Github/GERRAudio
 	- C:\inetpub\Sipserver\conf	(config for IP telephony)
-	- C:\inetpub\SipServer\mod	(system connectivity to other apps) - are there IP address changes to make here?
    
 2. Provided installers will update as well as backup older version of:
 	- C:\inetpub\SipServer	(telephony interface) and install it as a service
   	- C:\inet\wwwroot	(Web server for Communicator and Kiosk)
   
-3. Install gstreamer using provided/downloaded installer
-
-4. Verify vars.xml to check that the AES67 NIC name corresponds exactly to the value in the file (multicast IP - AES67)
+3. Verify vars.xml to check that the AES67 NIC name corresponds exactly to the value in the file (multicast IP - AES67)
 	- Note that the NIC's on the machine must be set at AES67 (UDP/multicast) and Bruce.91 (TCP/IP)
 
-5. Configure the certificates by updating:
+4. Configure the certificates by updating:
 	- C:\SipServer\certs
 	- using IIS to provide certs to the Communicator pages
         	- port certs at server level, edit site binding
@@ -34,15 +31,13 @@
 	- Server Side Includes
 	- WebSocket Protocol
 	
-7. Check firewall rules, they can be imported from the .wvw file
-8. Check both system and user environment variables, the installers will set them, and alternately you use the .reg file to import them (simply click on it)
-9. Check C:\SipServer\sounds and recordings to ensure all required files are present
-10. Test by
+7. Check firewall rules to allow SIPServer. They can be imported from the .wvw file
+8. Check C:\SipServer\sounds and recordings to ensure all required files are present
+9. Test by
 	- starting/restarting IIS
-	- starting the SIPServer service using Microsoft Services or
- 	- manually starting C:\inetpub\SipServer\SipServer.exe in a command prompt
+	- starting the SIPServer service using the provided desktop or start menu shortcuts
 	- Using Miscrosoft Edge to access
-		- Communicator at 10.8.91.10 or .11
+		- Communicator at 10.8.91.10 or .11 (depending on where the server is running)
 		- Kiosk at 10.8.91.10/Kiosk  or .11/Kiosk
 
 
