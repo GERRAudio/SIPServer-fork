@@ -81,7 +81,7 @@
 				Control="Finish"
 				Event="DoAction"
 				Value="LaunchReadme"
-				Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT Installed'/>
+				Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT INSTALLED'/>
 		</UI>
 
 		<Binary Id="readme.txt" SourceFile="$(IconsEtcPath)readme.txt" />
@@ -136,7 +136,7 @@
 
 
 			<InstallUISequence>
-				<Show After="ProgressDlg" Dialog="IPDlg" Condition="NOT Installed" />
+				<Show After="ProgressDlg" Dialog="IPDlg" Condition="NOT INSTALLED" />
 			</InstallUISequence>
 
 		</UI>
@@ -173,7 +173,7 @@
 			<Custom Action="SetIP"			Before="InstallService"/>
 			<Custom Action="InstallService" Before="InstallFinalize"   />
 			<Custom Action="ConfigSvcSetup" After="InstallService"/>
-			<Custom Action="LaunchReadme"	After ="InstallFinalize" Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT Installed'/>
+			<Custom Action="LaunchReadme"	After ="InstallFinalize" Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT INSTALLED'/>
 		</InstallExecuteSequence>
 
 	</Package>
