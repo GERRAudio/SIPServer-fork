@@ -1,1 +1,2 @@
 C:\Development\GitHub\NAUDSIPServer\SIPServer-master\libs\win32\mpg123\Win32\Release_Generic\libmpg123.lib
+C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\libs\win32\mpg123\Win32\Release_Generic\libmpg123.lib
