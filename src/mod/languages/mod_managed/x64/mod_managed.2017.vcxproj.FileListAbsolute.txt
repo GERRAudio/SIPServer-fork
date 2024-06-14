@@ -1,3 +1,4 @@
 C:\Development\GitHub\NAUDSIPServer\SIPServer-master\src\mod\languages\mod_managed\x64\mod_managed.2017.vcxproj.AssemblyReference.cache
 C:\Development\GitHub\Forked-NetworkedAudio\SIPServer-master\src\mod\languages\mod_managed\x64\mod_managed.2017.vcxproj.AssemblyReference.cache
 C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\src\mod\languages\mod_managed\x64\mod_managed.2017.vcxproj.AssemblyReference.cache
+C:\Development\GitHub\SIPServer-fork\SIPServer\src\mod\languages\mod_managed\x64\mod_managed.2017.vcxproj.AssemblyReference.cache

@@ -2,7 +2,7 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\x64\release\pthread.dll</FullPath>
+      <FullPath>C:\Development\GitHub\SIPServer-fork\SIPServer\x64\release\pthread.dll</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles />

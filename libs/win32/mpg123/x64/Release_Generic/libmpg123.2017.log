@@ -1,21 +1,80 @@
-﻿Build started 6/11/2024 11:53:02 AM.
-Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" on node 2 (Build target(s)).
+﻿Build started 6/14/2024 3:24:01 PM.
+Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\SIPServer-fork\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" on node 5 (Build target(s)).
      1>PrepareForBuild:
          Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
        InitializeBuildStatus:
+         Creating "x64\Release_Generic\libmpg123.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
          Touching "x64\Release_Generic\libmpg123.tlog\unsuccessfulbuild".
        ClCompile:
-         All outputs are up-to-date.
+         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.39.33519\bin\HostX64\x64\CL.exe /c /I../../libmpg123/ports\MSVC++ /I../../libmpg123/src/libmpg123 /Zi /nologo /W3 /WX- /diagnostics:column /O2 /Ob2 /Oi /Ot /Oy /GL /D WIN32 /D _CRT_SECURE_NO_WARNINGS /D OPT_GENERIC /D _UNICODE /D UNICODE /Gm- /MD /GS- /Gy- /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /GR- /Fo"x64\Release_Generic\\" /Fd"x64\Release_Generic\libmpg123.pdb" /external:W3 /Gd /TC /wd4477 /wd4028 /wd4334 /wd4267 /wd4996 /FC /errorReport:prompt ..\..\libmpg123\src\libmpg123\compat.c ..\..\libmpg123\src\libmpg123\dct64.c ..\..\libmpg123\src\libmpg123\equalizer.c ..\..\libmpg123\src\libmpg123\feature.c ..\..\libmpg123\src\libmpg123\format.c ..\..\libmpg123\src\libmpg123\frame.c ..\..\libmpg123\src\libmpg123\icy.c ..\..\libmpg123\src\libmpg123\icy2utf8.c ..\..\libmpg123\src\libmpg123\id3.c ..\..\libmpg123\src\libmpg123\index.c ..\..\libmpg123\src\libmpg123\layer1.c ..\..\libmpg123\src\libmpg123\layer2.c ..\..\libmpg123\src\libmpg123\layer3.c ..\..\libmpg123\src\libmpg123\libmpg123.c ..\..\libmpg123\ports\MSVC++\msvc.c ..\..\libmpg123\src\libmpg123\ntom.c ..\..\libmpg123\src\libmpg123\optimize.c ..\..\libmpg123\src\libmpg123\parse.c ..\..\libmpg123\src\libmpg123\readers.c ..\..\libmpg123\src\libmpg123\stringbuf.c ..\..\libmpg123\src\libmpg123\synth.c ..\..\libmpg123\src\libmpg123\synth_8bit.c ..\..\libmpg123\src\libmpg123\synth_real.c ..\..\libmpg123\src\libmpg123\synth_s32.c ..\..\libmpg123\src\libmpg123\tabinit.c
+         compat.c
+         dct64.c
+         equalizer.c
+         feature.c
+         format.c
+         frame.c
+         icy.c
+         icy2utf8.c
+         id3.c
+         index.c
+         layer1.c
+         layer2.c
+         layer3.c
+         libmpg123.c
+         msvc.c
+     1>C:\Development\GitHub\SIPServer-fork\SIPServer\libs\libmpg123\ports\MSVC++\msvc.c(24,34): warning C4113: 'int (__cdecl *)(int,void *,unsigned int)' differs in parameter lists from 'ssize_t (__cdecl *)(int,void *,size_t)'
+         ntom.c
+         optimize.c
+         parse.c
+         readers.c
+         stringbuf.c
+         Compiling...
+         synth.c
+         synth_8bit.c
+         synth_real.c
+         synth_s32.c
+         tabinit.c
        Lib:
-         All outputs are up-to-date.
-         libmpg123.2017.vcxproj -> C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\libs\win32\mpg123\x64\Release_Generic\libmpg123.lib
+         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.39.33519\bin\HostX64\x64\Lib.exe /OUT:"x64\Release_Generic\libmpg123.lib" /NOLOGO /MACHINE:X64 /LTCG x64\Release_Generic\compat.obj
+         x64\Release_Generic\dct64.obj
+         x64\Release_Generic\equalizer.obj
+         x64\Release_Generic\feature.obj
+         x64\Release_Generic\format.obj
+         x64\Release_Generic\frame.obj
+         x64\Release_Generic\icy.obj
+         x64\Release_Generic\icy2utf8.obj
+         x64\Release_Generic\id3.obj
+         x64\Release_Generic\index.obj
+         x64\Release_Generic\layer1.obj
+         x64\Release_Generic\layer2.obj
+         x64\Release_Generic\layer3.obj
+         x64\Release_Generic\libmpg123.obj
+         x64\Release_Generic\msvc.obj
+         x64\Release_Generic\ntom.obj
+         x64\Release_Generic\optimize.obj
+         x64\Release_Generic\parse.obj
+         x64\Release_Generic\readers.obj
+         x64\Release_Generic\stringbuf.obj
+         x64\Release_Generic\synth.obj
+         x64\Release_Generic\synth_8bit.obj
+         x64\Release_Generic\synth_real.obj
+         x64\Release_Generic\synth_s32.obj
+         x64\Release_Generic\tabinit.obj
+         libmpg123.2017.vcxproj -> C:\Development\GitHub\SIPServer-fork\SIPServer\libs\win32\mpg123\x64\Release_Generic\libmpg123.lib
+       TlogCleanup:
+         Removing the following items from tlogs as they were removed from the project or build: C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\libs\libmpg123\src\libmpg123\compat.c
        FinalizeBuildStatus:
          Deleting file "x64\Release_Generic\libmpg123.tlog\unsuccessfulbuild".
          Touching "x64\Release_Generic\libmpg123.tlog\libmpg123.lastbuildstate".
-     1>Done Building Project "C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" (Build target(s)).
+     1>Done Building Project "C:\Development\GitHub\SIPServer-fork\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" (Build target(s)).
 
 Build succeeded.
-    0 Warning(s)
+
+       "C:\Development\GitHub\SIPServer-fork\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" (Build target) (1) ->
+       (ClCompile target) -> 
+         C:\Development\GitHub\SIPServer-fork\SIPServer\libs\libmpg123\ports\MSVC++\msvc.c(24,34): warning C4113: 'int (__cdecl *)(int,void *,unsigned int)' differs in parameter lists from 'ssize_t (__cdecl *)(int,void *,size_t)'
+
+    1 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:00.08
+Time Elapsed 00:00:06.51
