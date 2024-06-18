@@ -1,29 +1,29 @@
-﻿Build started 6/14/2024 3:29:47 PM.
-Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\SIPServer-fork\SIPServer\src\mod\directories\mod_ldap\mod_ldap.2017.vcxproj" on node 4 (Build target(s)).
+﻿Build started 6/18/2024 1:27:37 PM.
+Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\directories\mod_ldap\mod_ldap.2017.vcxproj" on node 3 (Build target(s)).
      1>PrepareForBuild:
          Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
        InitializeBuildStatus:
          Creating "x64\\mod_ldap.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
          Touching "x64\\mod_ldap.tlog\unsuccessfulbuild".
        ClCompile:
-         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.39.33519\bin\HostX64\x64\CL.exe /c /I"C:\Development\GitHub\SIPServer-fork\SIPServer\src\mod\directories\mod_ldap\..\..\..\..\libs\openldap\include" /I"C:\Development\GitHub\SIPServer-fork\SIPServer\\src\include" /I"C:\Development\GitHub\SIPServer-fork\SIPServer\libs\curl-7.88.0\include" /I"C:\Development\GitHub\SIPServer-fork\SIPServer\libs\zlib-1.2.11\include" /I"C:\Development\GitHub\SIPServer-fork\SIPServer\w32\..\libs\openssl-1.1.1t\include_x64" /I"C:\Development\GitHub\SIPServer-fork\SIPServer\w32\..\libs\openssl-1.1.1t\include" /Zi /nologo /W4 /WX- /diagnostics:column /O2 /GL /D WIN32 /D NDEBUG /D _WINDOWS /D _USRDLL /D MOD_EXPORTS /D MSLDAP /D NDEBUG /D WIN32 /D _WINDOWS /D _USRDLL /D MOD_EXPORTS /D HAVE_CURL /D CURL_STATICLIB /D HAVE_ZLIB /D ZLIB_STATICLIB /D Z_SOLO /D HAVE_LIBCRYPTO /D OPENSSL /D HAVE_OPENSSL /D HAVE_OPENSSL_DTLS_SRTP /D HAVE_OPENSSL_DTLS /D HAVE_OPENSSL_DTLSv1_2_method /D _WINDLL /D _MBCS /Gm- /EHsc /MD /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"x64\\" /Fd"x64\\vc143.pdb" /external:W4 /Gd /TC /wd6340 /wd6246 /wd6011 /wd6387 /analyze- /FC /errorReport:prompt mod_ldap.c
+         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.39.33519\bin\HostX64\x64\CL.exe /c /IC:\Development\GitHub\GERRAudio\SIPServer\src\mod\directories\mod_ldap\..\..\..\..\libs\openldap\include /IC:\Development\GitHub\GERRAudio\SIPServer\\src\include /I"C:\Development\GitHub\GERRAudio\SIPServer\libs\curl-7.88.0\include" /I"C:\Development\GitHub\GERRAudio\SIPServer\libs\zlib-1.2.11\include" /I"C:\Development\GitHub\GERRAudio\SIPServer\w32\..\libs\openssl-1.1.1t\include_x64" /I"C:\Development\GitHub\GERRAudio\SIPServer\w32\..\libs\openssl-1.1.1t\include" /Zi /nologo /W4 /WX- /diagnostics:column /O2 /GL /D WIN32 /D NDEBUG /D _WINDOWS /D _USRDLL /D MOD_EXPORTS /D MSLDAP /D NDEBUG /D WIN32 /D _WINDOWS /D _USRDLL /D MOD_EXPORTS /D HAVE_CURL /D CURL_STATICLIB /D HAVE_ZLIB /D ZLIB_STATICLIB /D Z_SOLO /D HAVE_LIBCRYPTO /D OPENSSL /D HAVE_OPENSSL /D HAVE_OPENSSL_DTLS_SRTP /D HAVE_OPENSSL_DTLS /D HAVE_OPENSSL_DTLSv1_2_method /D _WINDLL /D _MBCS /Gm- /EHsc /MD /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"x64\\" /Fd"x64\\vc143.pdb" /external:W4 /Gd /TC /wd6340 /wd6246 /wd6011 /wd6387 /analyze- /FC /errorReport:prompt mod_ldap.c
          mod_ldap.c
        Link:
-         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.39.33519\bin\HostX64\x64\link.exe /ERRORREPORT:PROMPT /OUT:"C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\mod\mod_ldap.dll" /INCREMENTAL:NO /NOLOGO /LIBPATH:"C:\Development\GitHub\SIPServer-fork\SIPServer\src\mod\directories\mod_ldap\..\..\..\..\libs\openldap\C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\mod\\" /LIBPATH:"C:\Development\GitHub\SIPServer-fork\SIPServer\libs\curl-7.88.0\binaries\x64\Release" /LIBPATH:"C:\Development\GitHub\SIPServer-fork\SIPServer\libs\zlib-1.2.11\binaries\x64\Release\lib" /LIBPATH:"C:\Development\GitHub\SIPServer-fork\SIPServer\w32\..\libs\openssl-1.1.1t\binaries\x64\Release\\" Wldap32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib Ws2_32.lib Iphlpapi.lib Winmm.lib curl.lib Wldap32.lib zlib.lib ws2_32.lib crypt32.lib libcrypto.lib libssl.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /PDB:"C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\mod\mod_ldap.pdb" /OPT:REF /OPT:ICF /LTCG /LTCGOUT:"x64\\mod_ldap.iobj" /TLBID:1 /DYNAMICBASE:NO /IMPLIB:"C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\mod\mod_ldap.lib" /MACHINE:X64 /DLL x64\\mod_ldap.obj
-         "C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\FreeSwitchCore.lib"
-            Creating library C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\mod\mod_ldap.lib and object C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\mod\mod_ldap.exp
+         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.39.33519\bin\HostX64\x64\link.exe /ERRORREPORT:PROMPT /OUT:"C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_ldap.dll" /INCREMENTAL:NO /NOLOGO /LIBPATH:C:\Development\GitHub\GERRAudio\SIPServer\src\mod\directories\mod_ldap\..\..\..\..\libs\openldap\C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\ /LIBPATH:"C:\Development\GitHub\GERRAudio\SIPServer\libs\curl-7.88.0\binaries\x64\Release" /LIBPATH:"C:\Development\GitHub\GERRAudio\SIPServer\libs\zlib-1.2.11\binaries\x64\Release\lib" /LIBPATH:"C:\Development\GitHub\GERRAudio\SIPServer\w32\..\libs\openssl-1.1.1t\binaries\x64\Release\\" Wldap32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib Ws2_32.lib Iphlpapi.lib Winmm.lib curl.lib Wldap32.lib zlib.lib ws2_32.lib crypt32.lib libcrypto.lib libssl.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /PDB:"C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_ldap.pdb" /OPT:REF /OPT:ICF /LTCG /LTCGOUT:"x64\\mod_ldap.iobj" /TLBID:1 /DYNAMICBASE:NO /IMPLIB:"C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_ldap.lib" /MACHINE:X64 /DLL x64\\mod_ldap.obj
+         C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\FreeSwitchCore.lib
+            Creating library C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_ldap.lib and object C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_ldap.exp
          Generating code
          Finished generating code
-         mod_ldap.2017.vcxproj -> C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\mod\mod_ldap.dll
+         mod_ldap.2017.vcxproj -> C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_ldap.dll
        TlogCleanup:
-         Removing the following items from tlogs as they were removed from the project or build: C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\src\mod\directories\mod_ldap\mod_ldap.c
+         Removing the following items from tlogs as they were removed from the project or build: C:\Development\GitHub\GERRAudio\SIPServer-fork\src\mod\directories\mod_ldap\mod_ldap.c
        FinalizeBuildStatus:
          Deleting file "x64\\mod_ldap.tlog\unsuccessfulbuild".
          Touching "x64\\mod_ldap.tlog\mod_ldap.lastbuildstate".
-     1>Done Building Project "C:\Development\GitHub\SIPServer-fork\SIPServer\src\mod\directories\mod_ldap\mod_ldap.2017.vcxproj" (Build target(s)).
+     1>Done Building Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\directories\mod_ldap\mod_ldap.2017.vcxproj" (Build target(s)).
 
 Build succeeded.
     0 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:00.69
+Time Elapsed 00:00:00.93

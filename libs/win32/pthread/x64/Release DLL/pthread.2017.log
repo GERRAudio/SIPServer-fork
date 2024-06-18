@@ -1,5 +1,5 @@
-﻿Build started 6/14/2024 3:24:46 PM.
-Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\SIPServer-fork\SIPServer\libs\win32\pthread\pthread.2017.vcxproj" on node 4 (Build target(s)).
+﻿Build started 6/18/2024 1:21:33 PM.
+Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\pthread\pthread.2017.vcxproj" on node 5 (Build target(s)).
      1>PrepareForBuild:
          Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
        InitializeBuildStatus:
@@ -11,19 +11,19 @@ Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\SIPSer
        ResourceCompile:
          C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\rc.exe /D NDEBUG /D PTW32_RC_MSC /D PTW32_ARCHx64 /D WIN64 /l"0x0409" /I. /nologo /fo"x64\Release DLL\version.res" "..\..\pthreads-w32-2-9-1\version.rc" 
        Link:
-         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.39.33519\bin\HostX64\x64\link.exe /ERRORREPORT:PROMPT /OUT:"C:\Development\GitHub\SIPServer-fork\SIPServer\x64\release\pthread.dll" /INCREMENTAL:NO /NOLOGO ws2_32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG:FULL /PDB:"C:\Development\GitHub\SIPServer-fork\SIPServer\x64\release\pthread.pdb" /TLBID:1 /DYNAMICBASE:NO /NXCOMPAT /IMPLIB:"C:\Development\GitHub\SIPServer-fork\SIPServer\x64\release\pthread.lib" /MACHINE:X64 /DLL "x64\Release DLL\version.res"
+         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.39.33519\bin\HostX64\x64\link.exe /ERRORREPORT:PROMPT /OUT:"C:\Development\GitHub\GERRAudio\SIPServer\x64\release\pthread.dll" /INCREMENTAL:NO /NOLOGO ws2_32.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG:FULL /PDB:"C:\Development\GitHub\GERRAudio\SIPServer\x64\release\pthread.pdb" /TLBID:1 /DYNAMICBASE:NO /NXCOMPAT /IMPLIB:"C:\Development\GitHub\GERRAudio\SIPServer\x64\release\pthread.lib" /MACHINE:X64 /DLL "x64\Release DLL\version.res"
          "x64\Release DLL\pthread.obj"
-            Creating library C:\Development\GitHub\SIPServer-fork\SIPServer\x64\release\pthread.lib and object C:\Development\GitHub\SIPServer-fork\SIPServer\x64\release\pthread.exp
-         pthread.2017.vcxproj -> C:\Development\GitHub\SIPServer-fork\SIPServer\x64\release\pthread.dll
+            Creating library C:\Development\GitHub\GERRAudio\SIPServer\x64\release\pthread.lib and object C:\Development\GitHub\GERRAudio\SIPServer\x64\release\pthread.exp
+         pthread.2017.vcxproj -> C:\Development\GitHub\GERRAudio\SIPServer\x64\release\pthread.dll
        TlogCleanup:
-         Removing the following items from tlogs as they were removed from the project or build: C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\libs\pthreads-w32-2-9-1\pthread.c
+         Removing the following items from tlogs as they were removed from the project or build: C:\Development\GitHub\GERRAudio\SIPServer-fork\libs\pthreads-w32-2-9-1\pthread.c
        FinalizeBuildStatus:
          Deleting file "x64\Release DLL\pthread.tlog\unsuccessfulbuild".
          Touching "x64\Release DLL\pthread.tlog\pthread.lastbuildstate".
-     1>Done Building Project "C:\Development\GitHub\SIPServer-fork\SIPServer\libs\win32\pthread\pthread.2017.vcxproj" (Build target(s)).
+     1>Done Building Project "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\pthread\pthread.2017.vcxproj" (Build target(s)).
 
 Build succeeded.
     0 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:08.25
+Time Elapsed 00:00:09.18

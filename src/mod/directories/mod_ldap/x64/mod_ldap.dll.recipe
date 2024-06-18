@@ -2,40 +2,40 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\libteletone.dll</FullPath>
+      <FullPath>C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\libteletone.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\Development\GitHub\SIPServer-fork\SIPServer\libs\win32\spandsp\Win32\All\make_at_dictionary.exe</FullPath>
+      <FullPath>C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\spandsp\Win32\All\make_at_dictionary.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\Development\GitHub\SIPServer-fork\SIPServer\libs\win32\spandsp\Win32\All\make_cielab_luts.exe</FullPath>
+      <FullPath>C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\spandsp\Win32\All\make_cielab_luts.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\Development\GitHub\SIPServer-fork\SIPServer\libs\win32\spandsp\Win32\All\make_math_fixed_tables.exe</FullPath>
+      <FullPath>C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\spandsp\Win32\All\make_math_fixed_tables.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\Development\GitHub\SIPServer-fork\SIPServer\libs\win32\spandsp\Win32\All\make_modem_filter.exe</FullPath>
+      <FullPath>C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\spandsp\Win32\All\make_modem_filter.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\Development\GitHub\SIPServer-fork\SIPServer\libs\win32\spandsp\Win32\All\make_t43_gray_code_tables.exe</FullPath>
+      <FullPath>C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\spandsp\Win32\All\make_t43_gray_code_tables.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\libspandsp.dll</FullPath>
+      <FullPath>C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\libspandsp.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\libpng16.dll</FullPath>
+      <FullPath>C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\libpng16.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\Development\GitHub\SIPServer-fork\SIPServer\x64\release\pthread.dll</FullPath>
+      <FullPath>C:\Development\GitHub\GERRAudio\SIPServer\x64\release\pthread.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\libapr.dll</FullPath>
+      <FullPath>C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\libapr.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\FreeSwitch.dll</FullPath>
+      <FullPath>C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\FreeSwitch.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\Development\GitHub\SIPServer-fork\SIPServer\x64\Release\mod\mod_ldap.dll</FullPath>
+      <FullPath>C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_ldap.dll</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles />
