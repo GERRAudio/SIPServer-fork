@@ -1,33 +1,21 @@
-﻿Build started 6/18/2024 1:26:58 PM.
-Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" on node 5 (Build target(s)).
+﻿Build started 6/20/2024 11:24:47 AM.
+Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" on node 2 (Build target(s)).
      1>PrepareForBuild:
          Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
      1>C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(2389,5): warning MSB3274: The primary reference "C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\FreeSWITCH.Managed.dll" could not be resolved because it was built against the ".NETFramework,Version=v4.8" framework. This is a higher version than the currently targeted framework ".NETFramework,Version=v4.7.2".
        InitializeBuildStatus:
-         Creating "x64\\mod_managed.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
          Touching "x64\\mod_managed.tlog\unsuccessfulbuild".
        GenerateTargetFrameworkMonikerAttribute:
        Skipping target "GenerateTargetFrameworkMonikerAttribute" because all output files are up-to-date with respect to the input files.
        ClCompile:
-         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.39.33519\bin\HostX64\x64\CL.exe /c /IC:\Development\GitHub\GERRAudio\SIPServer\\src\include /I"C:\Development\GitHub\GERRAudio\SIPServer\libs\curl-7.88.0\include" /I"C:\Development\GitHub\GERRAudio\SIPServer\libs\zlib-1.2.11\include" /I"C:\Development\GitHub\GERRAudio\SIPServer\w32\..\libs\openssl-1.1.1t\include_x64" /I"C:\Development\GitHub\GERRAudio\SIPServer\w32\..\libs\openssl-1.1.1t\include" /AI"C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\\" /AI"C:\Program Files (x86)\Windows Kits\10\References" /AI"C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\Facades\\" /Zi /clr /nologo /W4 /WX- /diagnostics:column /O2 /Oi /GL /D NDEBUG /D WIN32 /D _WINDOWS /D _USRDLL /D MOD_EXPORTS /D HAVE_CURL /D CURL_STATICLIB /D HAVE_ZLIB /D ZLIB_STATICLIB /D Z_SOLO /D HAVE_LIBCRYPTO /D OPENSSL /D HAVE_OPENSSL /D HAVE_OPENSSL_DTLS_SRTP /D HAVE_OPENSSL_DTLS /D HAVE_OPENSSL_DTLSv1_2_method /D _WINDLL /D _MBCS /EHa /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"x64\\" /Fd"x64\\vc143.pdb" /external:W4 /TP /wd4505 /wd6553 /wd6340 /wd6246 /wd6011 /wd6387 /FU"C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\mscorlib.dll" /analyze- /FC /errorReport:prompt /clr:nostdlib freeswitch_managed.cpp mod_managed.cpp
-         freeswitch_managed.cpp
-         mod_managed.cpp
-         Generating Code...
-         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.39.33519\bin\HostX64\x64\CL.exe /c /IC:\Development\GitHub\GERRAudio\SIPServer\\src\include /I"C:\Development\GitHub\GERRAudio\SIPServer\libs\curl-7.88.0\include" /I"C:\Development\GitHub\GERRAudio\SIPServer\libs\zlib-1.2.11\include" /I"C:\Development\GitHub\GERRAudio\SIPServer\w32\..\libs\openssl-1.1.1t\include_x64" /I"C:\Development\GitHub\GERRAudio\SIPServer\w32\..\libs\openssl-1.1.1t\include" /AI"C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\\" /AI"C:\Program Files (x86)\Windows Kits\10\References" /AI"C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\Facades\\" /Zi /clr /nologo /W4 /WX- /diagnostics:column /O2 /Oi /GL /D NDEBUG /D WIN32 /D _WINDOWS /D _USRDLL /D MOD_EXPORTS /D HAVE_CURL /D CURL_STATICLIB /D HAVE_ZLIB /D ZLIB_STATICLIB /D Z_SOLO /D HAVE_LIBCRYPTO /D OPENSSL /D HAVE_OPENSSL /D HAVE_OPENSSL_DTLS_SRTP /D HAVE_OPENSSL_DTLS /D HAVE_OPENSSL_DTLSv1_2_method /D _WINDLL /D _MBCS /EHa /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"x64\\" /Fd"x64\\vc143.pdb" /external:W4 /TP /wd4505 /wd4244 /wd4505 /wd6553 /wd6340 /wd6246 /wd6011 /wd6387 /FU"C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\mscorlib.dll" /analyze- /FC /errorReport:prompt /clr:nostdlib freeswitch_wrap.cxx
-         freeswitch_wrap.cxx
-         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.39.33519\bin\HostX64\x64\CL.exe /c /IC:\Development\GitHub\GERRAudio\SIPServer\\src\include /I"C:\Development\GitHub\GERRAudio\SIPServer\libs\curl-7.88.0\include" /I"C:\Development\GitHub\GERRAudio\SIPServer\libs\zlib-1.2.11\include" /I"C:\Development\GitHub\GERRAudio\SIPServer\w32\..\libs\openssl-1.1.1t\include_x64" /I"C:\Development\GitHub\GERRAudio\SIPServer\w32\..\libs\openssl-1.1.1t\include" /AI"C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\\" /AI"C:\Program Files (x86)\Windows Kits\10\References" /AI"C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\Facades\\" /Zi /clr /nologo /W4 /WX- /diagnostics:column /O2 /Oi /GL /D NDEBUG /D WIN32 /D _WINDOWS /D _USRDLL /D MOD_EXPORTS /D HAVE_CURL /D CURL_STATICLIB /D HAVE_ZLIB /D ZLIB_STATICLIB /D Z_SOLO /D HAVE_LIBCRYPTO /D OPENSSL /D HAVE_OPENSSL /D HAVE_OPENSSL_DTLS_SRTP /D HAVE_OPENSSL_DTLS /D HAVE_OPENSSL_DTLSv1_2_method /D _WINDLL /D _MBCS /EHa /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"x64\\" /Fd"x64\\vc143.pdb" /external:W4 /TP /wd4505 /wd6553 /wd6340 /wd6246 /wd6011 /wd6387 /FU"C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\mscorlib.dll" /analyze- /FC /errorReport:prompt /clr:nostdlib "x64\\.NETFramework,Version=v4.7.2.AssemblyAttributes.cpp"
-         .NETFramework,Version=v4.7.2.AssemblyAttributes.cpp
+         All outputs are up-to-date.
+         All outputs are up-to-date.
+         All outputs are up-to-date.
        Link:
-         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.39.33519\bin\HostX64\x64\link.exe /ERRORREPORT:PROMPT /OUT:"C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_managed.dll" /INCREMENTAL:NO /NOLOGO /LIBPATH:"C:\Development\GitHub\GERRAudio\SIPServer\libs\curl-7.88.0\binaries\x64\Release" /LIBPATH:"C:\Development\GitHub\GERRAudio\SIPServer\libs\zlib-1.2.11\binaries\x64\Release\lib" /LIBPATH:"C:\Development\GitHub\GERRAudio\SIPServer\w32\..\libs\openssl-1.1.1t\binaries\x64\Release\\" kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib Ws2_32.lib Iphlpapi.lib Winmm.lib curl.lib Wldap32.lib zlib.lib ws2_32.lib crypt32.lib libcrypto.lib libssl.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /PDB:"C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_managed.pdb" /OPT:REF /OPT:ICF /LTCG /LTCGOUT:"x64\\mod_managed.iobj" /TLBID:1 /DYNAMICBASE /FIXED:NO /NXCOMPAT /MACHINE:X64 /ignore:4248 /DLL x64\\freeswitch_managed.obj
-         x64\\freeswitch_wrap.obj
-         x64\\mod_managed.obj
-         "x64\\.NETFramework,Version=v4.7.2.AssemblyAttributes.obj"
-         C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\FreeSwitchCore.lib
-            Creating library C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_managed.lib and object C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_managed.exp
-         LINK : /LTCG specified but no code generation required; remove /LTCG from the link command line to improve linker performance
+         All outputs are up-to-date.
          mod_managed.2017.vcxproj -> C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_managed.dll
-       TlogCleanup:
-         Removing the following items from tlogs as they were removed from the project or build: C:\Development\GitHub\GERRAudio\SIPServer-fork\src\mod\languages\mod_managed\freeswitch_managed.cpp
+       MetaGen:
+       Skipping target "MetaGen" because all output files are up-to-date with respect to the input files.
        FinalizeBuildStatus:
          Deleting file "x64\\mod_managed.tlog\unsuccessfulbuild".
          Touching "x64\\mod_managed.tlog\mod_managed.lastbuildstate".
@@ -42,4 +30,4 @@ Build succeeded.
     1 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:15.01
+Time Elapsed 00:00:00.42

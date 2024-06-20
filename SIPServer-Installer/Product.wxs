@@ -58,15 +58,21 @@
 			<ComponentGroupRef Id="HarvestedComponents"/>
 		</Feature>
 
-		<!-- VC redistributable install -->
+		<!-- VC redistributable install C:\Windows\System32-->
 		<DirectoryRef Id="TARGETDIR">
 			<Merge Id="VCRedist"
 				   SourceFile="C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Redist\MSVC\14.16.27012\MergeModules\Microsoft_VC141_CRT_x64.msm"
 				   DiskId="1" Language="0"/>
+			<!--Merge Id="VCRedist140"
+					SourceFile="C:\Program Files (x86)\Common Files\Merge Modules\Microsoft_VC140_CRT_x64.msm"
+					DiskId="1" Language="0"/-->
 		</DirectoryRef>
+
 		<Feature Id="VCRedist" Title="Visual C++ x64 Runtime" AllowAdvertise="no" Display="hidden" Level="1">
 			<MergeRef Id="VCRedist"/>
+			<!--MergeRef Id="VCRedist140"/-->
 		</Feature>
+
 
 
 		<!-- UI stuff -->
@@ -79,7 +85,7 @@
 				Control="Finish"
 				Event="DoAction"
 				Value="LaunchReadme"
-				Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT INSTALLED'/>
+				Condition='(WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1)  and NOT INSTALLED'/>
 		</UI>
 
 		<Binary Id="readme.txt" SourceFile="$(IconsEtcPath)readme.txt" />
@@ -103,7 +109,7 @@
 		<Property Id="UDPADR" Value="10.8.90.10"/>
 
 		<UI Id="CustomUI_IP">
-			<Dialog Id="IPDlg" Title="!(loc.InstallDirDlg_Title)" Width="370" Height="270" NoMinimize="no">
+			<Dialog Id="IPDlg" Title="!(loc.InstallDirDlg_Title)" Width="370" Height="270" NoMinimize="no" >
 
 				<Control Id="TCPLabel" Type="Text" X="75" Y="113"	Width="150"	Height="15" TabSkip="no" Text="&amp;Server TCP IP:" />
 				<Control Id="TCPEdit" Type="Edit"  X="75" Y="125"	Width="100"	Height="18" Property="TCPADR"   ToolTip="TCP address of SIP server"   />
@@ -134,7 +140,7 @@
 
 
 			<InstallUISequence>
-				<Show After="ProgressDlg" Dialog="IPDlg" Condition="NOT INSTALLED" />
+				<Show After="ProgressDlg" Dialog="IPDlg" Condition="NOT INSTALLED"  />
 			</InstallUISequence>
 
 		</UI>
@@ -359,12 +365,21 @@
 		</DirectoryRef>
 
 
-
 		<!-- Files to install-->
 
 		<ComponentGroup  Id="HarvestedComponents" Directory="SIPServerDir">
 			<!--Special batch file utility-->
 			<!-- No Guid forces the batch to persist between installs-->
+			<Component Id="VCRuntime" Guid="E194CCDE-5D35-4284-AAC2-552A81C663E5">
+				<File Id="VCRuntime"
+					  Source="$(IconsEtcPath)\VCRUNTIME140.dll" KeyPath="yes"
+				/>
+			</Component>
+			<Component Id="VCRuntime1" Guid="88291E6E-2281-4F5C-805D-67A6644B5A83">
+				<File Id="VCRuntime1"
+					  Source="$(IconsEtcPath)\VCRUNTIME140_1.dll" KeyPath="yes"
+				/>
+			</Component>
 			<Component Id="RenBackupFile" Guid="4BFDE8BB-EF40-4755-AF9C-18221D1D3DC4">
 				<File Id="RenBackupScript"
 					  Source="$(IconsEtcPath)\RenBackup.bat" KeyPath="yes"
@@ -397,6 +412,8 @@
 				<!--Exclude Files ="$(ReleaseBuildDirectoryPath)\conf\**"/-->
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\cert\**"/>
 				<!--do not include the setup files -->
+				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\VCRUNTIME140.dll"/>
+				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\VCRUNTIME140_1.dll"/>
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\*.remove"/>
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\RenBackup.bat"/>
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\SetIP.bat"/>
@@ -472,7 +489,7 @@
 			Directory="MYAPPFOLDER"  Execute="deferred"
 					  Return="ignore"
 			/>
-
+ 
 		<CustomAction Id="Backup"
 			ExeCommand='cmd.exe /c echo Backing up... please do not close window. This may take some time depending on the size of the log files. &amp;&amp; XCOPY C:\inetpub\SIPServer C:\inetpub\SIPServerTemp /Y/C/H/E/J/K/O/Q/I >NUL 2>NUL'
 			Directory="MYAPPFOLDER" Execute="firstSequence"
