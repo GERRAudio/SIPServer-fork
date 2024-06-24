@@ -44,6 +44,8 @@ typedef struct
   int rtp_jitbuf_latency;
   gboolean txdrop;
   char *ts_context_name;
+  gboolean is_backup_sender;
+  int backup_sender_idle_wait_ms;
 } pipeline_data_t;
 
 struct g_stream
@@ -59,6 +61,10 @@ struct g_stream
   GstClock *clock;
   gint sample_rate;
   char *ts_ctx;
+  gboolean pause_backup_sender;
+  gboolean txdrop;
+  guint backup_sender_idle_timer;
+  int backup_sender_idle_wait_ms;
 };
 
 g_stream_t *create_pipeline (pipeline_data_t *data, event_callback_t * error_cb);
