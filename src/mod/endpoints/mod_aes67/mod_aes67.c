@@ -173,6 +173,10 @@ typedef struct _shared_audio_stream_t
   char ts_context_name[TS_CONTEXT_NAME_LEN];
   /* accept multiple listen only streams*/
   switch_bool_t multiple_listen;
+  /* Pause the Tx if an alternative sender found with same multicast address*/
+  switch_bool_t is_backup_sender;
+  /* Timeout in ms to wait for other sender packets arrival*/
+  int backup_sender_idle_wait_ms;
 } shared_audio_stream_t;
 
 typedef struct private_object private_t;
@@ -2194,6 +2198,9 @@ again:
     stream->rtp_jitbuf_latency = globals.rtp_jitbuf_latency;
     stream->txflow = TRUE;
 	stream->multiple_listen = FALSE;
+    stream->is_backup_sender = FALSE;
+    stream->backup_sender_idle_wait_ms = 1000;
+
     memset(stream->ts_context_name, 0, TS_CONTEXT_NAME_LEN);
     switch_snprintf (stream->name, sizeof (stream->name), "%s", stream_name);
     for (param = switch_xml_child (mystream, "param"); param;
@@ -2281,6 +2288,10 @@ again:
         strncpy(stream->ts_context_name, val, TS_CONTEXT_NAME_LEN-1);
 	    } else if (!strcasecmp(var, "allow-multiple-listen")) {
         stream->multiple_listen = atoi(val);
+      } else if (!strcasecmp(var, "is-backup-sender")) {
+        stream->is_backup_sender = atoi(val);
+      } else if (!strcasecmp(var, "backup-sender-idle-wait-ms")) {
+        stream->backup_sender_idle_wait_ms = atoi (val);
       }
     }
     if (stream->indev == NULL && stream->outdev == NULL) {
@@ -3001,6 +3012,8 @@ int open_shared_audio_stream (shared_audio_stream_t * shstream)
   data.rtp_jitbuf_latency = shstream->rtp_jitbuf_latency;
   data.txdrop = !shstream->txflow;
   data.ts_context_name = shstream->ts_context_name;
+  data.is_backup_sender = shstream->is_backup_sender;
+  data.backup_sender_idle_wait_ms = shstream->backup_sender_idle_wait_ms;
 
   shstream->stream = create_pipeline (&data, error_callback);
   return 0;
@@ -3340,6 +3353,10 @@ SWITCH_STANDARD_API(aes_cmd)
       if (STREAM_READER_TRYLOCK(astream)) {
           drop_output_buffers(FALSE, astream->stream);
           astream->txflow = TRUE;
+          // We still need txflow during the pipeline init to set valve's drop property
+          // the stream is initialized after the pipeline is created, so we need to preserve
+          // txflow somewhere until then
+          astream->stream->txdrop = FALSE;
           stream->write_function(stream, "Tx buffers flowing!\n");
 
           STREAM_READER_UNLOCK(astream);
@@ -3350,6 +3367,7 @@ SWITCH_STANDARD_API(aes_cmd)
       if (STREAM_READER_TRYLOCK(astream )) {
           drop_output_buffers(TRUE, astream->stream);
           astream->txflow = FALSE;
+          astream->stream->txdrop = TRUE;
           stream->write_function(stream, "Tx buffers dropping!\n");
 
           STREAM_READER_UNLOCK(astream);
