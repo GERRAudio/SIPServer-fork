@@ -421,6 +421,83 @@ exit:
   return ret;
 }
 
+static gboolean
+backup_sender_timeout_cb(gpointer userdata)
+{
+  g_stream_t *stream = (g_stream_t *)userdata;
+  GstElement *fakesink =  gst_bin_get_by_name (GST_BIN (stream->pipeline), "tx-monitor-fakesink");
+  if (fakesink) {
+    GstClock *clock = gst_element_get_clock (fakesink);
+
+    if (clock) {
+      //pipeline in PLAYING state
+      GstClockTime current_time = gst_clock_get_time(clock);
+	    GstClockTime delta;
+      GstBuffer *buffer = NULL;
+      GstClockTime timestamp;
+      GstSample *last_sample = NULL;
+      GstNetAddressMeta *meta;
+      GSocketAddress * sock_addr;
+      gchar *host;
+      GstClockTime max_delta = stream->backup_sender_idle_wait_ms * GST_MSECOND;
+
+      g_object_get(G_OBJECT(fakesink), "last-sample", &last_sample, NULL);
+
+      if (!last_sample)
+        return TRUE;
+
+      buffer = gst_sample_get_buffer(last_sample);
+      timestamp = GST_BUFFER_DTS_OR_PTS (buffer);
+      meta = gst_buffer_get_net_address_meta(buffer);
+
+      sock_addr = meta->addr;
+      host = g_inet_address_to_string (g_inet_socket_address_get_address
+            (G_INET_SOCKET_ADDRESS (sock_addr)));
+
+      /* If the buffer timestamp is after the previous callback or before the next callback
+        we know that new buffers are arriving and so pause our Tx */
+      delta = timestamp < current_time ? current_time - timestamp : timestamp - current_time;
+
+      if (delta < max_delta && FALSE == stream->pause_backup_sender) {
+        stream->pause_backup_sender = TRUE;
+
+        drop_output_buffers(TRUE, stream);
+        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+          "got buffer from %s. Paused the backup sender\n", host);
+      } else if (delta >= max_delta && TRUE == stream->pause_backup_sender) {
+        stream->pause_backup_sender = FALSE;
+
+        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+          "Time since last-sample from %s - %"GST_TIME_FORMAT". Resuming the backup sender\n", host, GST_TIME_ARGS(delta));
+
+        // Stop dropping Tx buffers only if the if 'txdrop' is FALSE,
+        // in other words if 'txflow' is set to ON by the user
+        if (FALSE == stream->txdrop)
+          drop_output_buffers(FALSE, stream);
+        else
+          switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "txflow is off, continuing to drop the buffers\n");
+	    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "got last-sample from %s\n", host);
+
+		    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "delta - %"GST_TIME_FORMAT"; current time - %"GST_TIME_FORMAT"; last-sample timestamp - %"GST_TIME_FORMAT"\n", GST_TIME_ARGS(delta), GST_TIME_ARGS(current_time), GST_TIME_ARGS(timestamp));
+      }
+
+      gst_sample_unref(last_sample);
+      gst_object_unref(clock);
+    } else {
+      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+          "Clock not available, pipeline is not PLAYING\n");
+    }
+
+    gst_object_unref (GST_OBJECT (fakesink));
+  } else {
+    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+          "Could not find fakesink the stream\n");
+  }
+
+  return TRUE;
+}
+
 g_stream_t *
 create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
 {
@@ -634,6 +711,13 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
     g_object_set (udpsink, "sync", TRUE, "async", FALSE, NULL);
     g_object_set (udpsink, "qos", TRUE, "qos-dscp", 34, NULL);
     g_object_set (udpsink, "processing-deadline", 0 * GST_MSECOND, NULL);
+    if (data->is_backup_sender) {
+#ifndef _WIN32
+      // Disable IP_MULTICAST_LOOP to avoid listening packets from same host
+      // For Linux this needs to be set on the sender's side
+      g_object_set(udpsink, "loop", FALSE, NULL);
+#endif
+    }
 
     if (!audiointerleave || !tx_valve || !tx_audioconv || !rtp_pay || !udpsink) {
       switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -651,6 +735,71 @@ create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
       goto error;
     }
   }
+
+  /* if this stream is configured to be a backup sender, we pause our Tx if we find another sender doing Tx
+    on the same multicast address and resume once the remote sender stops
+  */
+  if (data->is_backup_sender) {
+    GstElement *udpsrc, *fakesink;
+    GstCaps *caps;
+
+  /* create a dummy pipeline with `udpsrc ! fakesink` just to receive on udp and read the last-sampe from fakesink */
+#ifndef ENABLE_THREADSHARE
+    udpsrc = gst_element_factory_make ("udpsrc", "tx-monitor-udpsrc");
+#else
+    MAKE_TS_ELEMENT(udpsrc, "ts-udpsrc", "tx-monitor-udpsrc", ts_ctx);
+#endif
+
+    fakesink = gst_element_factory_make ("fakesink", "tx-monitor-fakesink");
+
+    if (data->tx_codec == L16) {
+      caps = gst_caps_new_simple ("application/x-rtp",
+          "clock-rate", G_TYPE_INT, data->sample_rate,
+          "channels", G_TYPE_INT, data->channels,
+          "channel-order", G_TYPE_STRING, "unpositioned",
+          "encoding-name", G_TYPE_STRING, "L16",
+          "media", G_TYPE_STRING, "audio", NULL);
+    } else {
+      caps = gst_caps_new_simple ("application/x-rtp",
+          "clock-rate", G_TYPE_INT, data->sample_rate,
+          "channels", G_TYPE_INT, data->channels,
+          "channel-order", G_TYPE_STRING, "unpositioned",
+          "encoding-name", G_TYPE_STRING, "L24",
+          "media", G_TYPE_STRING, "audio", NULL);
+    }
+
+    if (!udpsrc || !fakesink) {
+      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+        "Failed to create tx-monitor elements, cannot listen for primary sender\n");
+    } else {
+      g_object_set (udpsrc,
+        "address", data->tx_ip_addr, "port", data->tx_port,
+#ifdef _WIN32
+        // Disable IP_MULTICAST_LOOP to avoid listening packets from same host
+        // For Windows this needs to be set on the receiver's side
+         "loop", FALSE,
+#endif
+        "multicast-iface", data->rtp_iface, "caps", caps, NULL);
+
+      g_object_set(fakesink, "async", FALSE, NULL);
+
+      gst_bin_add_many (GST_BIN (pipeline), udpsrc, fakesink, NULL);
+      if (!gst_element_link_many (udpsrc, fakesink, NULL)) {
+        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+        "Failed to link tx-monitor elements, cannot listen for primary sender\n");
+      } else {
+        stream->pause_backup_sender = FALSE;
+        stream->backup_sender_idle_wait_ms = data->backup_sender_idle_wait_ms;
+
+        /* add a timer to check for remote sender's buffers every `backup_sender_idle_wait_ms` to resumek
+          our Tx as soon as possible once the remote Tx stops */
+        stream->backup_sender_idle_timer = g_timeout_add_full(G_PRIORITY_DEFAULT,
+          data->backup_sender_idle_wait_ms, backup_sender_timeout_cb, stream, NULL);
+      }
+    }
+    gst_caps_unref(caps);
+  }
+
   bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
   gst_bus_add_watch (bus, bus_callback, stream);
   gst_object_unref (bus);
@@ -748,6 +897,9 @@ stop_pipeline (g_stream_t * stream)
   Rx is operational and pipeline clock is not ptp*/
   if (stream->cb_rx_stats_id)
     g_source_remove(stream->cb_rx_stats_id);
+
+  if (stream->backup_sender_idle_timer)
+    g_source_remove(stream->backup_sender_idle_timer);
 
   bus = gst_pipeline_get_bus (GST_PIPELINE (stream->pipeline));
   gst_bus_remove_watch (bus);

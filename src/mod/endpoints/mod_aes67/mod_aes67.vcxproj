@@ -56,6 +56,7 @@
     <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\glib-2.0.props" />
     <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-app-1.0.props" />
     <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-net-1.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gio-2.0.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -64,6 +65,7 @@
     <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\glib-2.0.props" />
     <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-app-1.0.props" />
     <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-net-1.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gio-2.0.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -72,6 +74,7 @@
     <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\glib-2.0.props" />
     <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-app-1.0.props" />
     <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-net-1.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gio-2.0.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -80,6 +83,7 @@
     <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\glib-2.0.props" />
     <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-app-1.0.props" />
     <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gstreamer-net-1.0.props" />
+    <Import Project="C:\gstreamer\1.0\msvc_x86_64\share\vs\2010\libs\gio-2.0.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
