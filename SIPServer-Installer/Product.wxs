@@ -85,7 +85,7 @@
 				Control="Finish"
 				Event="DoAction"
 				Value="LaunchReadme"
-				Condition='(WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1)  and NOT INSTALLED'/>
+				Condition='(WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1)  and NOT Installed'/>
 		</UI>
 
 		<Binary Id="readme.txt" SourceFile="$(IconsEtcPath)readme.txt" />
@@ -101,7 +101,7 @@
 				Value="[ProductName] [ProductVersion] installation complete. Please start the SIPServer service (recommended) or run as an app from the start menu."
 				After="FindRelatedProducts"
 				Sequence="ui"
-          />
+     />
 
 
 		<!-- These should be left as-is, the installer can change them if required, but will search for these values to replace-->
@@ -109,15 +109,20 @@
 		<Property Id="UDPADR" Value="10.8.90.10"/>
 
 		<UI Id="CustomUI_IP">
-			<Dialog Id="IPDlg" Title="!(loc.InstallDirDlg_Title)" Width="370" Height="270" NoMinimize="no" >
 
+
+      <Dialog Id="IPDlg" Title="!(loc.InstallDirDlg_Title)" Width="370" Height="270" NoMinimize="no" >
+        
 				<Control Id="TCPLabel" Type="Text" X="75" Y="113"	Width="150"	Height="15" TabSkip="no" Text="&amp;Server TCP IP:" />
 				<Control Id="TCPEdit" Type="Edit"  X="75" Y="125"	Width="100"	Height="18" Property="TCPADR"   ToolTip="TCP address of SIP server"   />
 				<Control Id="UDPLabel" Type="Text" X="75" Y="150"	Width="150"	Height="15" TabSkip="no" Text="&amp;Server UDP IP:" />
 				<Control Id="UDPEdit" Type="Edit"  X="75" Y="162"	Width="100"	Height="18" Property="UDPADR"  ToolTip="UDP address of SIP server" />
 
 				<Control Id="InstallButton" Type="PushButton" Text="OK" Height="17" Width="56" X="130" Y="190">
-					<Publish Event="NewDialog" Value="ProgressDlg"></Publish>
+          <Publish Event="NewDialog" 
+            Value="ProgressDlg"
+            Condition='NOT Installed'>
+          </Publish>
 				</Control>
 
 				<Control Id="CancelButton" Type="PushButton" X="190" Y="190" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
@@ -140,7 +145,7 @@
 
 
 			<InstallUISequence>
-				<Show After="ProgressDlg" Dialog="IPDlg" Condition="NOT INSTALLED"  />
+				<Show After="ProgressDlg" Dialog="IPDlg" Condition="NOT Installed"  />
 			</InstallUISequence>
 
 		</UI>
@@ -177,7 +182,7 @@
 			<Custom Action="SetIP"			Before="InstallService"/>
 			<Custom Action="InstallService" Before="InstallFinalize"   />
 			<Custom Action="ConfigSvcSetup" After="InstallService"/>
-			<Custom Action="LaunchReadme"	After ="InstallFinalize" Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT INSTALLED'/>
+			<Custom Action="LaunchReadme"	After ="InstallFinalize" Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT Installed'/>
 		</InstallExecuteSequence>
 
 	</Package>

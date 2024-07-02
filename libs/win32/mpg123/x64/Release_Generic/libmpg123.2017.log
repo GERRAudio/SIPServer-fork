@@ -1,5 +1,5 @@
-﻿Build started 6/18/2024 1:20:42 PM.
-Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" on node 2 (Build target(s)).
+﻿Build started 6/26/2024 1:46:53 PM.
+Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" on node 4 (Build target(s)).
      1>PrepareForBuild:
          Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
        InitializeBuildStatus:
@@ -22,6 +22,7 @@ Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAu
          layer3.c
          libmpg123.c
          msvc.c
+     1>C:\Development\GitHub\GERRAudio\SIPServer\libs\libmpg123\ports\MSVC++\msvc.c(24,34): warning C4113: 'int (__cdecl *)(int,void *,unsigned int)' differs in parameter lists from 'ssize_t (__cdecl *)(int,void *,size_t)'
          ntom.c
          optimize.c
          parse.c
@@ -33,7 +34,6 @@ Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAu
          synth_real.c
          synth_s32.c
          tabinit.c
-     1>C:\Development\GitHub\GERRAudio\SIPServer\libs\libmpg123\ports\MSVC++\msvc.c(24,34): warning C4113: 'int (__cdecl *)(int,void *,unsigned int)' differs in parameter lists from 'ssize_t (__cdecl *)(int,void *,size_t)'
        Lib:
          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.39.33519\bin\HostX64\x64\Lib.exe /OUT:"x64\Release_Generic\libmpg123.lib" /NOLOGO /MACHINE:X64 /LTCG x64\Release_Generic\compat.obj
          x64\Release_Generic\dct64.obj
@@ -61,8 +61,6 @@ Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAu
          x64\Release_Generic\synth_s32.obj
          x64\Release_Generic\tabinit.obj
          libmpg123.2017.vcxproj -> C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\x64\Release_Generic\libmpg123.lib
-       TlogCleanup:
-         Removing the following items from tlogs as they were removed from the project or build: C:\Development\GitHub\GERRAudio\SIPServer-fork\libs\libmpg123\src\libmpg123\compat.c
        FinalizeBuildStatus:
          Deleting file "x64\Release_Generic\libmpg123.tlog\unsuccessfulbuild".
          Touching "x64\Release_Generic\libmpg123.tlog\libmpg123.lastbuildstate".
@@ -77,4 +75,4 @@ Build succeeded.
     1 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:24.48
+Time Elapsed 00:00:06.58
