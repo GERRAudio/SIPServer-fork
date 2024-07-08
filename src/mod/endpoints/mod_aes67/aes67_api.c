@@ -211,6 +211,18 @@ gboolean update_clock (gpointer userdata) {
   return G_SOURCE_CONTINUE;
 }
 
+/*
+  Creates a new queue and appsink and links them to a new branch (sink pad)
+  of the tee in the Rx pipeline. These are associated to a particular session
+  calling on an endpoint.
+  This allows to accept multiple listeners on single endpoint
+
+  Note: The caller needs to lock the `stream` using `STREAM_READER_LOCK` before
+  calling this function and unlock the `stream` using `STREAM_READER_UNLOCK` after
+  returning from this function
+
+*/
+
 gboolean
 add_appsink (g_stream_t *stream, guint ch_idx, gchar *session)
 {
@@ -322,6 +334,16 @@ add_appsink (g_stream_t *stream, guint ch_idx, gchar *session)
 
   return ret;
 }
+
+/*
+  Unlinks a session's associated queue and appsink from the tee and removes them
+  from the Rx pipeline.
+
+  Note: The caller needs to lock the `stream` using `STREAM_READER_LOCK` before
+  calling this function and unlock the `stream` using `STREAM_READER_UNLOCK` after
+  returning from this function
+
+*/
 
 gboolean
 remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session) {
