@@ -491,7 +491,7 @@
 
 
     <CustomAction Id="StopApp"
-			ExeCommand='cmd.exe /c  echo Stopping SIPServer... please do not close window &amp;&amp; c:\inetpub\SIPserver\SIPServer.exe -stop 2>NUL >NUL '
+			ExeCommand='cmd.exe /c  echo Stopping SIPServer... please do not close window &amp;&amp; c:\inetpub\SIPserver\SIPServer.exe -stop 2>NUL >NUL &amp;&amp; taskkill /F /IM gst-ptp-helper.exe 2>NUL >NUL'
 			Directory="MYAPPFOLDER"  Execute="deferred" 
 					  Return="ignore"
 			/>
