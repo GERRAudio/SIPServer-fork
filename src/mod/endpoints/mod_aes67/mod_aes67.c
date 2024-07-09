@@ -437,20 +437,21 @@ channel_on_routing (switch_core_session_t * session)
       }
       switch_mutex_unlock (globals.pvt_lock);
 
-	  switch_mutex_lock (tech_pvt->audio_endpoint->mutex);
 	  if (tech_pvt->audio_endpoint && tech_pvt->audio_endpoint->in_stream) {
-		  audio_endpoint_t *audio_endp = tech_pvt->audio_endpoint;
 		  char session_id[SESSION_ID_LEN];
 		  switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(session));
+
+		  switch_mutex_lock (tech_pvt->audio_endpoint->mutex);
 		  STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
-      if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream,
-          tech_pvt->audio_endpoint->inchan, session_id)) {
-			  tech_pvt->audio_endpoint->active_listen_sessions++;
-      }
+
+		  if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream,
+			   tech_pvt->audio_endpoint->inchan, session_id)) {
+			   tech_pvt->audio_endpoint->active_listen_sessions++;
+		  }
 
 		  STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
+		  switch_mutex_unlock (tech_pvt->audio_endpoint->mutex);
 	  }
-	  switch_mutex_unlock (tech_pvt->audio_endpoint->mutex);
 
       switch_yield (1000000);
     } else {
@@ -886,10 +887,20 @@ channel_on_hangup (switch_core_session_t * session)
 
   if (tech_pvt->audio_endpoint) {
     audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;
+    char session_id[SESSION_ID_LEN];
 
     switch_mutex_lock (endpoint->mutex);
 
-    tech_pvt->audio_endpoint = NULL;
+    switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(tech_pvt->session));
+
+    STREAM_READER_LOCK(endpoint->in_stream);
+
+    if (remove_appsink(endpoint->in_stream->stream,
+        endpoint->inchan, session_id)) {
+        endpoint->active_listen_sessions--;
+    }
+
+    STREAM_READER_UNLOCK(endpoint->in_stream);
 
     if (endpoint->active_listen_sessions == 0) {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "releasing inchan \n");
@@ -902,6 +913,7 @@ channel_on_hangup (switch_core_session_t * session)
     switch_core_codec_destroy(&tech_pvt->write_codec);
 
     switch_mutex_unlock (endpoint->mutex);
+    tech_pvt->audio_endpoint = NULL;
   }
 
   switch_mutex_lock (globals.gst_mutex);
@@ -933,24 +945,6 @@ channel_kill_channel (switch_core_session_t * session, int sig)
     case SWITCH_SIG_KILL:
       switch_set_flag_locked (tech_pvt, TFLAG_HUP);
       switch_channel_hangup (channel, SWITCH_CAUSE_NORMAL_CLEARING);
-
-      switch_mutex_lock (tech_pvt->audio_endpoint->mutex);
-
-      if (tech_pvt->audio_endpoint && tech_pvt->audio_endpoint->in_stream) {
-        audio_endpoint_t *audio_endp = tech_pvt->audio_endpoint;
-		  char session_id[SESSION_ID_LEN];
-        switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(tech_pvt->session));
-
-        STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
-        if(remove_appsink(audio_endp->in_stream->stream,
-            audio_endp->inchan, session_id))
-            audio_endp->active_listen_sessions--;
-
-        STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
-      }
-
-      switch_mutex_unlock (tech_pvt->audio_endpoint->mutex);
-
       break;
     default:
       break;
@@ -976,17 +970,19 @@ channel_on_exchange_media (switch_core_session_t * session)
   switch_assert (tech_pvt != NULL);
 
   if (tech_pvt->audio_endpoint && tech_pvt->audio_endpoint->in_stream) {
-    audio_endpoint_t *audio_endp = tech_pvt->audio_endpoint;
     char session_id[SESSION_ID_LEN];
     switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(session));
 
+    switch_mutex_lock (tech_pvt->audio_endpoint->mutex);
     STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
+
     if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream,
         tech_pvt->audio_endpoint->inchan, session_id)) {
         tech_pvt->audio_endpoint->active_listen_sessions++;
     }
 
     STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
+    switch_mutex_unlock (tech_pvt->audio_endpoint->mutex);
   }
 
   switch_log_printf (SWITCH_CHANNEL_SESSION_LOG (session), SWITCH_LOG_DEBUG,
@@ -1931,18 +1927,23 @@ link_rx_stream (shared_audio_stream_t *stream)
     switch_core_hash_this(hi, &var, NULL, &val);
     tech_pvt = val;
 
-    if (tech_pvt->audio_endpoint->in_stream == stream) {
-
+    if (tech_pvt->audio_endpoint && (tech_pvt->audio_endpoint->in_stream == stream)) {
       switch_channel_t *ch = switch_core_session_get_channel(tech_pvt->session);
       switch_channel_callstate_t state = switch_channel_get_callstate(ch);
       char session_id[SESSION_ID_LEN];
       switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(tech_pvt->session));
+
+      switch_mutex_lock (tech_pvt->audio_endpoint->mutex);
+      // stream lock aleady done before calling link_rx_stream
+
       if (state == CCS_ACTIVE) {
         if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream,
             tech_pvt->audio_endpoint->inchan, session_id)) {
 			    tech_pvt->audio_endpoint->active_listen_sessions++;
         }
       }
+
+      switch_mutex_unlock (tech_pvt->audio_endpoint->mutex);
     }
   }
 }
