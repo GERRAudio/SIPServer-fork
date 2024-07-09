@@ -182,7 +182,7 @@ BuildLog.htm
 !/src/mod/endpoints/mod_gsmopen/gsmlib/gsmlib-1.10-patched-13ubuntu/win32/
 *.suo
 *.sdf
-/x64/*
+/x64/
 ipch/
 
 
