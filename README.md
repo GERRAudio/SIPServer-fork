@@ -1,3 +1,8 @@
+# Backup fork and running config of SIPServer
+- todo: .gitignore to be modified to allow some generated and config files to be maintained here.
+- todo: security sensitive files to be stored in a separate repo folder (currently there are none here)
+
+
 # FreeSWITCH
 
 FreeSWITCH is a Software Defined Telecom Stack enabling the digital transformation from proprietary telecom switches to a versatile software implementation that runs on any commodity hardware. From a Raspberry PI to a multi-core server, FreeSWITCH can unlock the telecommunications potential of any device. Combined with our hosted cloud platform, SignalWire, FreeSWITCH can interconnect with the outside world and scale to any size.

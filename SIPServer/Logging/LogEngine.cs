@@ -1,5 +1,4 @@
 ﻿using FreeSWITCH.Native;
-using SIPServerEmbedded.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,7 +20,7 @@ namespace SIPServer.Logging
             DateTime unixEpochTime = DateTime.UnixEpoch.AddMicroseconds(time);
 
 
-            Serilog.Log.Write(LogLevelConversion.ToSerilog(level),nodeReference.data);
+            //  Console.WriteLine(nodeReference.data);
             //  Console.WriteLine(unixEpochTime);
 
         }
