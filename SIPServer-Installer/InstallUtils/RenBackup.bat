@@ -12,6 +12,6 @@ SET /A sSEC=%%E 2>NUL
 SET /A sYEAR=%%F 2>NUL
 )
 
-REN C:\inetpub\SIPServerTemp SIPServer_%sYEAR%-%sMON%-%sDAY%_%sHOUR%.%sMIN%.%sSEC% 2>NUL >NUL
+REN %1\SIPServerTemp SIPServer_%sYEAR%-%sMON%-%sDAY%_%sHOUR%.%sMIN%.%sSEC% 2>NUL >NUL
 
 ECHO Done.

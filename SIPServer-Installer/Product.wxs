@@ -5,14 +5,14 @@
 	 xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
 	 >
   <!-- GERRAudio Distribution 2024
-		 Installs SIPServer in the C:\inetpub\SIPServer folder, creates if necessary.
+		 Installs SIPServer by deault in C:\SIPServer folder, creates if necessary.
+     This can be overriden by user.
+     The gstreamer dependency is installed in the ../Media directory if not present
 		 SIPServer.exe is created as an auto service but is not started 
 		 since conf and cert directories may not be completely configured yet
 		 Start menu shortcuts for SIPServer and the remote console are created if manual startup is desired for testing.
-
-		 the gstreamer dependency is installed in the ../Media directory if not present
 		 
-		 A date-stamped backup is made of any existing installation 
+		 A date-stamped backup is made of any existing SIPServer installation 
 		 including all subdirectories, whether manually copied or not (full copy)
 		 
 		 The IconsEtcPath contains the GERRAudio graphics and the
@@ -20,17 +20,17 @@
 		 Change the SIPServerVersion define for every release.
 		 Version downgrades are permitted.
 		 		 
-		 The cert directory is not installed for security
-		 - TODO auto version increments
+		 The cert directory is NOT installed for security
+
 		 - TODO stop gstreamer (in case)
-		 - TODO get rid of wssm one day
+		 - TODO get rid of wssm (service start) utility 
 	-->
 
-  <?define ReleaseBuildDirectoryPath = "..\..\SIPServer\x64\Release\" ?>
-  <?define GSTMediaDirectoryPath = "..\..\SIPServer\x64\Media\" ?>
-  <?define IconsEtcPath= ".\InstallUtils\" ?>
-  <?define SIPServerVersion=1.10.12.1?>
-  <?define DestinationFolder="C:\inetpub\SIPServer\"?>
+  <?define ReleaseBuildDirectoryPath = "..\..\SIPServer\x64\Release\" ?>    <!-- where to harvest SIPServer files from -->
+  <?define GSTMediaDirectoryPath = "..\..\SIPServer\x64\Media\" ?>          <!-- where to harvest gstreamer files from -->
+  <?define IconsEtcPath= ".\InstallUtils\" ?>                               <!-- where to harvest utility installer files from -->
+  
+  <?define SIPServerVersion=1.10.12.1?>                                     <!-- TODO auto version increments -->
 
   <Package Name="IP Telephony Server &#13;&#10;SIPServer v$(SIPServerVersion)"
 			 Language="1033"
@@ -50,7 +50,6 @@
       <ComponentGroupRef Id="HarvestedComponents"/>
       <ComponentGroupRef Id="GSTHarvestedComponents"/>
     </Feature>
-
 
     <Feature Id="ProductFeature" Title="Main Product" Level="1">
       <ComponentRef Id="ApplicationShortcut" />
@@ -73,14 +72,13 @@
       <!--MergeRef Id="VCRedist140"/-->
     </Feature>
 
-
-
-    <!-- UI stuff -->
+    <!--  UI stuff  -->
     <UIRef Id="CustomUI_IP" />
+    
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Display important setup information" />
 
     <UI>
-      <ui:WixUI Id="WixUI_Minimal"/>
+      <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="APPROOT"/>
       <Publish Dialog="ExitDialog"
 				Control="Finish"
 				Event="DoAction"
@@ -92,8 +90,7 @@
     <Property Id="WixShellExecBinaryId" Value="readme.txt" />
     <CustomAction Id="LaunchReadme" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
 					  DllEntry="WixShellExecBinary" Execute="immediate" Return="ignore"
-					  />
-
+		/>
 
     <UIRef Id="WixUI_ErrorProgressText" />
     <SetProperty
@@ -102,52 +99,41 @@
 				After="FindRelatedProducts"
 				Sequence="ui"
      />
-
-
-    <!-- These should be left as-is, the installer can change them if required, but will search for these specific values to replace in vars.xml-->
+      
+    <!-- Custom install path -->
+    <Property Id="APPROOT" Value="C:\"/>     <!-- default is not in Program Files -->
+   
+    <!-- Custom IP: These should be left as-is, the installer can change them if required, but will search for these specific values to replace in vars.xml-->
     <Property Id="TCPADR" Value="10.8.91.10"/>
     <Property Id="UDPADR" Value="10.8.90.10"/>
-
+      
     <UI Id="CustomUI_IP">
-
-
       <Dialog Id="IPDlg" Title="!(loc.InstallDirDlg_Title)" Width="370" Height="270" NoMinimize="no" >
-
         <Control Id="TCPLabel" Type="Text" X="75" Y="113"	Width="150"	Height="15" TabSkip="no" Text="&amp;Server TCP IP:" />
         <Control Id="TCPEdit" Type="Edit"  X="75" Y="125"	Width="100"	Height="18" Property="TCPADR"   ToolTip="TCP address of SIP server"   />
         <Control Id="UDPLabel" Type="Text" X="75" Y="150"	Width="150"	Height="15" TabSkip="no" Text="&amp;Server UDP IP:" />
         <Control Id="UDPEdit" Type="Edit"  X="75" Y="162"	Width="100"	Height="18" Property="UDPADR"  ToolTip="UDP address of SIP server" />
-
         <Control Id="InstallButton" Type="PushButton" Text="OK" Height="17" Width="56" X="130" Y="190">
-          <Publish Event="NewDialog"
-            Value="ProgressDlg"
-            Condition='NOT Installed'>
+          <Publish Event="NewDialog"   Value="ProgressDlg" Condition='NOT Installed' >
           </Publish>
         </Control>
-
         <Control Id="CancelButton" Type="PushButton" X="190" Y="190" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
           <Publish Event="SpawnDialog" Value="CancelDlg" Condition="1" />
         </Control>
-
         <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes"
-						 Text ="Click OK to finalise product installation" />
-
+						 Text ="Click OK to set addresses" />
         <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes"
 						Text="IP Configuration" />
-
         <Control Id="HeaderText" Type="Text" X="35" Y="65" Width="1000" Height="50" NoPrefix="yes"
 						 Text="{\WixUI_Font_Bigger}Please enter the TCP and UDP (streaming) server addresses:" />
-
         <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
         <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
       </Dialog>
 
-
       <InstallUISequence>
-        <Show After="ProgressDlg" Dialog="IPDlg" Condition="NOT Installed"  />
+        <Show After="ProgressDlg" Dialog="IPDlg" Condition="NOT Installed"   />
       </InstallUISequence>
-
     </UI>
 
     <WixVariable
@@ -162,8 +148,6 @@
 		  Id="WixUIBannerBmp"
 		  Value="$(IconsEtcPath)\GerrAudioBanner.png"
 		/>
-
-
 
     <InstallUISequence>
       <Show Dialog="MsiRMFilesInUse"   Condition="0" Overridable="yes" Sequence="1" />
@@ -184,21 +168,20 @@
       <Custom Action="ConfigSvcSetup" After="InstallService"/>
       <Custom Action="LaunchReadme"	After ="InstallFinalize" Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT Installed'/>
     </InstallExecuteSequence>
-
   </Package>
 
   <Fragment>
     <Directory  Name="." ComponentGuidGenerationSeed="5950CB39-0D52-4158-A4B1-4BC5AAE9A2C4">
-      <Directory Id="INETPUB" Name="inetpub">
-        <Directory Id ="WWWROOT" Name="wwwroot"/>
-        <Directory Id="SIPServerDir" Name="SIPServer"/>
-        <Directory Id="MediaDir" Name="Media"/>
-        <Directory Id="ProgramMenuFolder">
-          <Directory Id="MYAPPFOLDER" Name="GerrAudio"/>
+        <Directory Id="APPROOT">
+            <Directory Id="MYAPPFOLDER" Name="SIPServer"/>
+            <Directory Id="MEDIADIR" Name="Media"/>
         </Directory>
-      </Directory>
-    </Directory>
 
+        <Directory Id="ProgramMenuFolder">
+           <Directory Id="MYSTARTFOLDER" Name="GerrAudio"/>
+        </Directory>
+
+    </Directory>
 
     <Icon Id="GerrIcon.ico" SourceFile="$(IconsEtcPath)\GerrAudio.ico"/>
     <Icon Id="GerrIconW.ico" SourceFile="$(IconsEtcPath)\GerrAudioW.ico"/>
@@ -210,33 +193,32 @@
         <Shortcut Id="ServiceStartDesktopShortcut"
 						Name="Start SIPServer Service"
 						Description="SIPServer Service Start"
-						Target='[SIPServerDir]nssm.exe'
+						Target='[MYAPPFOLDER]nssm.exe'
 						Arguments ='start SIPServer'
-						WorkingDirectory="SIPServerDir"
+						WorkingDirectory="MYAPPFOLDER"
 						Icon="GerrIconW.ico"/>
 
         <Shortcut Id="ServiceStopDesktopShortcut"
 						Name="Stop SIPServer Service"
 						Description="SIPServer Service Stop"
-						Target='[SIPServerDir]nssm.exe'
+						Target='[MYAPPFOLDER]nssm.exe'
 						Arguments ='stop SIPServer'
-						WorkingDirectory="SIPServerDir"
+						WorkingDirectory="MYAPPFOLDER"
 						Icon="GerrIcon.ico"/>
 
         <Shortcut Id="CLIApplicationDesktopShortcut"
 						Name="Command Line Interface (CLI)"
 						Description="SIPServer Command Line Interface (CLI)"
-						Target="[SIPServerDir]EngineCommandLine.exe"
-						WorkingDirectory="SIPServerDir"
+						Target="[MYAPPFOLDER]EngineCommandLine.exe"
+						WorkingDirectory="MYAPPFOLDER"
 						Icon="GerrIconW.ico"/>
 
         <Shortcut Id="ServiceQueryDesktopShortcut"
             Name="Service Status"
             Description="SIPServer Service Query Status"
-            Target="[SIPServerDir]SvcQuery.bat"
-            WorkingDirectory="SIPServerDir"
+            Target="[MYAPPFOLDER]SvcQuery.bat"
+            WorkingDirectory="MYAPPFOLDER"
             Icon="GerrIcon.ico"/>
-
 
         <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPServerIDT" Name="installed1" Type="integer" Value="1" KeyPath="yes"/>
         <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPServerDT" Name="installed1" Type="string" Value="SIPServer"  />
@@ -252,47 +234,47 @@
 
     <!--Start menu shortcuts-->
     <!-- order of shortcuts in start menu is alphabetical by name-->
-    <DirectoryRef Id="MYAPPFOLDER">
+    <DirectoryRef Id="MYSTARTFOLDER">
       <Component Id="ApplicationShortcut" Guid="F5E4852D-0A23-4BBF-8E43-99B9D9C80837">
         <Shortcut Id="ServiceStartMenuShortcut"
 								  Name="1 - Start SIP Service"
 								  Description="Start the SIPServer service"
-								  Target='[SIPServerDir]nssm.exe'
+								  Target='[MYAPPFOLDER]nssm.exe'
 								  Arguments ='start SIPServer'
-								  WorkingDirectory="SIPServerDir"
+								  WorkingDirectory="MYAPPFOLDER"
 								  Icon="GerrIconW.ico"/>
 
         <Shortcut Id="ServiceStopMenuShortcut"
 								  Name="2 - Stop SIP Service"
 								  Description="Stop the SIPServer service"
-								  Target='[SIPServerDir]nssm.exe'
+								  Target='[MYAPPFOLDER]nssm.exe'
 								  Arguments ='stop SIPServer'
-								  WorkingDirectory="SIPServerDir"
+								  WorkingDirectory="MYAPPFOLDER"
 								  Icon="GerrIcon.ico"/>
 
         <Shortcut Id="CLIApplicationStartMenuShortcut"
 					        Name="3 - Command Line Interface (CLI)"
 					        Description="Command Line Interface (CLI) to access the service"
-					        Target="[SIPServerDir]EngineCommandLine.exe"
-					        WorkingDirectory="SIPServerDir"
+					        Target="[MYAPPFOLDER]EngineCommandLine.exe"
+					        WorkingDirectory="MYAPPFOLDER"
 					        Icon="GerrIconW.ico"/>
 
         <Shortcut Id="ServiceQueryStartMenuShortcut"
                   Name="4 - Service Status"
                   Description="SIPServer Service Query Status"
-                  Target="[SIPServerDir]SvcQuery.bat"
-                  WorkingDirectory="SIPServerDir"
+                  Target="[MYAPPFOLDER]SvcQuery.bat"
+                  WorkingDirectory="MYAPPFOLDER"
                   Icon="GerrIcon.ico"/>
 
         <!-- this shortcut starts the console in case it is needed for debugging -->
         <Shortcut Id="ApplicationStartMenuShortcut"
 					        Name="5 - SIPServer Console"
 					        Description="SIPServer Console"
-					        Target="[SIPServerDir]SIPServer.exe"
-					        WorkingDirectory="SIPServerDir"
+					        Target="[MYAPPFOLDER]SIPServer.exe"
+					        WorkingDirectory="MYAPPFOLDER"
 					        Icon="GerrIcon.ico"/>
 
-        <RemoveFolder Id="UninstallShortcut" Directory="MYAPPFOLDER" On="uninstall"/>
+        <RemoveFolder Id="UninstallShortcut" Directory="MYSTARTFOLDER" On="uninstall"/>
 
         <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcStartI" Name="installed3" Type="integer" Value="1" />
         <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcStart" Name="installed3" Type="string" Value="ServerSvcStart"  />
@@ -367,14 +349,13 @@
 						System ="no"
 						Value ="%GSTREAMER_1_0_ROOT_MSVC_X86_64%bin\"/>
 			-->
-
       </Component>
     </DirectoryRef>
 
 
     <!-- Files to install-->
 
-    <ComponentGroup  Id="HarvestedComponents" Directory="SIPServerDir">
+    <ComponentGroup  Id="HarvestedComponents" Directory="MYAPPFOLDER">
       <!--Special batch file utility-->
       <!-- No Guid forces the batch to persist between installs-->
       <Component Id="VCRuntime" Guid="E194CCDE-5D35-4284-AAC2-552A81C663E5">
@@ -455,7 +436,7 @@
       </Files>
     </ComponentGroup>
 
-    <ComponentGroup  Id="GSTHarvestedComponents" Directory="MediaDir">
+    <ComponentGroup  Id="GSTHarvestedComponents" Directory="MEDIADIR">
 
       <Files   Include="$(GSTMediaDirectoryPath)\**">
         <!--TODO - check if we can exclude dev files-->
@@ -488,10 +469,8 @@
 
 
     <!-- stop service (try both ways) and backup prev version -->
-
-
     <CustomAction Id="StopApp"
-			ExeCommand='cmd.exe /c  echo Stopping SIPServer... please do not close window &amp;&amp; c:\inetpub\SIPserver\SIPServer.exe -stop 2>NUL >NUL &amp;&amp; taskkill /F /IM gst-ptp-helper.exe 2>NUL >NUL'
+			ExeCommand='cmd.exe /c  echo Stopping SIPServer... please do not close window &amp;&amp; [MYAPPFOLDER]\SIPServer.exe -stop 2>NUL >NUL &amp;&amp; taskkill /F /IM gst-ptp-helper.exe 2>NUL >NUL'
 			Directory="MYAPPFOLDER"  Execute="deferred" 
 					  Return="ignore"
 			/>
@@ -509,25 +488,24 @@
 			/>
 
     <CustomAction Id="Backup"
-			ExeCommand='cmd.exe /c echo Backing up... please do not close window. This may take some time depending on the size of the log files. &amp;&amp; XCOPY C:\inetpub\SIPServer C:\inetpub\SIPServerTemp /Y/C/H/E/J/K/O/Q/I >NUL 2>NUL'
-			Directory="MYAPPFOLDER" Execute="firstSequence"
+			ExeCommand='cmd.exe /c echo Backing up... please do not close window. This may take some time depending on the size of the log files. &amp;&amp; XCOPY [MYAPPFOLDER] [APPROOT]\SIPServerTemp /Y/C/H/E/J/K/O/Q/I >NUL 2>NUL'
+			Directory="APPROOT" Execute="firstSequence"
 					  Return="ignore"
 		/>
 
     <CustomAction Id="Rename"
-			ExeCommand='cmd.exe /c $(DestinationFolder)\RenBackup.bat '
-			Directory="MYAPPFOLDER" Execute="deferred"
+			ExeCommand='cmd.exe /c [MYAPPFOLDER]\RenBackup.bat [APPROOT] '
+			Directory="APPROOT" Execute="deferred"
 					  Return="ignore"
 		/>
 
     <CustomAction Id="SetIP"
-			ExeCommand='cmd.exe /c $(DestinationFolder)\SetIP.bat [TCPADR] [UDPADR]'
+			ExeCommand='cmd.exe /c [MYAPPFOLDER]\SetIP.bat [TCPADR] [UDPADR] [MYAPPFOLDER]'
 			Directory="MYAPPFOLDER" Execute="deferred"
 					  Return="ignore"
 		/>
-
     <CustomAction Id="InstallService"
-			ExeCommand='$(DestinationFolder)\nssm install SIPServer "C:\inetpub\SIPServer\SIPServer.exe"'
+			ExeCommand='[MYAPPFOLDER]\nssm install SIPServer "[MYAPPFOLDER]\SIPServer.exe"'
 			Directory="MYAPPFOLDER" Execute="deferred"
 			Impersonate="yes"
 				  Return="ignore"
