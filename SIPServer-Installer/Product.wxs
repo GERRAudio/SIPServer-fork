@@ -74,11 +74,14 @@
 
     <!--  UI stuff  -->
     <UIRef Id="CustomUI_IP" />
-    
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Display important setup information" />
 
     <UI>
-      <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="APPROOT"/>
+      <ui:WixUI 
+        Id="WixUI_InstallDir_WithIP" 
+        InstallDirectory="APPROOT"
+        />
+
       <Publish Dialog="ExitDialog"
 				Control="Finish"
 				Event="DoAction"
@@ -86,6 +89,8 @@
 				Condition='(WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1)  and NOT Installed'/>
     </UI>
 
+
+    
     <Binary Id="readme.txt" SourceFile="$(IconsEtcPath)readme.txt" />
     <Property Id="WixShellExecBinaryId" Value="readme.txt" />
     <CustomAction Id="LaunchReadme" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
@@ -100,41 +105,13 @@
 				Sequence="ui"
      />
       
+       
     <!-- Custom install path -->
     <Property Id="APPROOT" Value="C:\"/>     <!-- default is not in Program Files -->
    
     <!-- Custom IP: These should be left as-is, the installer can change them if required, but will search for these specific values to replace in vars.xml-->
     <Property Id="TCPADR" Value="10.8.91.10"/>
     <Property Id="UDPADR" Value="10.8.90.10"/>
-      
-    <UI Id="CustomUI_IP">
-      <Dialog Id="IPDlg" Title="!(loc.InstallDirDlg_Title)" Width="370" Height="270" NoMinimize="no" >
-        <Control Id="TCPLabel" Type="Text" X="75" Y="113"	Width="150"	Height="15" TabSkip="no" Text="&amp;Server TCP IP:" />
-        <Control Id="TCPEdit" Type="Edit"  X="75" Y="125"	Width="100"	Height="18" Property="TCPADR"   ToolTip="TCP address of SIP server"   />
-        <Control Id="UDPLabel" Type="Text" X="75" Y="150"	Width="150"	Height="15" TabSkip="no" Text="&amp;Server UDP IP:" />
-        <Control Id="UDPEdit" Type="Edit"  X="75" Y="162"	Width="100"	Height="18" Property="UDPADR"  ToolTip="UDP address of SIP server" />
-        <Control Id="InstallButton" Type="PushButton" Text="OK" Height="17" Width="56" X="130" Y="190">
-          <Publish Event="NewDialog"   Value="ProgressDlg" Condition='NOT Installed' >
-          </Publish>
-        </Control>
-        <Control Id="CancelButton" Type="PushButton" X="190" Y="190" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
-          <Publish Event="SpawnDialog" Value="CancelDlg" Condition="1" />
-        </Control>
-        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes"
-						 Text ="Click OK to set addresses" />
-        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes"
-						Text="IP Configuration" />
-        <Control Id="HeaderText" Type="Text" X="35" Y="65" Width="1000" Height="50" NoPrefix="yes"
-						 Text="{\WixUI_Font_Bigger}Please enter the TCP and UDP (streaming) server addresses:" />
-        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
-        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
-        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
-      </Dialog>
-
-      <InstallUISequence>
-        <Show After="ProgressDlg" Dialog="IPDlg" Condition="NOT Installed"   />
-      </InstallUISequence>
-    </UI>
 
     <WixVariable
 			 Id="WixUILicenseRtf"
