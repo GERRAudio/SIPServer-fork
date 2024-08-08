@@ -30,7 +30,7 @@
   <?define GSTMediaDirectoryPath = "..\..\SIPServer\x64\Media\" ?>          <!-- where to harvest gstreamer files from -->
   <?define IconsEtcPath= ".\InstallUtils\" ?>                               <!-- where to harvest utility installer files from -->
   
-  <?define SIPServerVersion=1.10.12.1?>                                     <!-- TODO auto version increments -->
+  <?define SIPServerVersion=1.10.12.2?>                                     <!-- TODO auto version increments -->
 
   <Package Name="IP Telephony Server &#13;&#10;SIPServer v$(SIPServerVersion)"
 			 Language="1033"
