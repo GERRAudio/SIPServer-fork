@@ -2,6 +2,6 @@
 <!-- Overrides for text prompts and displays in UI dialogs-->
 <WixLocalization Culture="en-us" xmlns="http://wixtoolset.org/schemas/v4/wxl">
     <String Id="WelcomeDlgTitle" Value="{\WixUI_Font_Bigger}Welcome to the [ProductName] [ProductVersion] Setup Wizard"/>
-    <String Id="VerifyReadyDlgInstallText"  Value="Please stop the SIPServer service if it is running. Click Install to begin the installation. Click Back to review or change any of your installation settings. Click Cancel to exit the wizard." />
+    <String Id="VerifyReadyDlgInstallText"  Value="Please stop the SIP Server service if it is running. Click Install to begin the installation. Click Back to review or change any of your installation settings. Click Cancel to exit the wizard." />
 </WixLocalization>
 

@@ -34,7 +34,7 @@
   <!-- where to harvest utility installer files from -->
   <?define IconsEtcPath= ".\InstallUtils\" ?>
   
-  <?define SIPServerVersion=1.10.12.2?>
+  <?define SIPServerVersion=1.10.12.3?>
   <!-- TODO auto version increments -->
 
   <Package Name="IP Telephony Server &#13;&#10;SIPServer v$(SIPServerVersion)"
@@ -457,13 +457,13 @@
       />
 
     <CustomAction Id="StopSvc"
-      ExeCommand='cmd.exe /c echo Stopping service... please do not close window &amp;&amp; sc stop SIPServer 2>NUL >NUL'
+      ExeCommand='cmd.exe /c echo Stopping service... please do not close window &amp;&amp; sc stop SIPServer 2>NUL >NUL &amp;&amp; sc stop "SIP Server" 2>NUL >NUL'
       Directory="MYAPPFOLDER"  Execute="deferred"
             Return="ignore"
       />
 
     <CustomAction Id="DeleteSvc"
-      ExeCommand='cmd.exe /c echo Uninstalling service... please do not close window &amp;&amp; sc delete SIPServer 2>NUL >NUL'
+      ExeCommand='cmd.exe /c echo Uninstalling service... please do not close window &amp;&amp; sc delete SIPServer 2>NUL >NUL  sc delete "SIP Server" 2>NUL >NUL'
       Directory="MYAPPFOLDER"  Execute="deferred"
             Return="ignore"
       />
