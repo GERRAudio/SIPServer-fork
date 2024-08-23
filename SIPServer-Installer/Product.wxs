@@ -103,7 +103,7 @@
     <UIRef Id="WixUI_ErrorProgressText" />
     <SetProperty
         Id="WIXUI_EXITDIALOGOPTIONALTEXT"
-        Value="[ProductName] [ProductVersion] installation complete. Please start the SIPServer service (recommended) or run as an app from the start menu."
+        Value="[ProductName] installation complete. Please start the SIPServer service (recommended) or run as an app from the start menu."
         After="FindRelatedProducts"
         Sequence="ui"
      />
