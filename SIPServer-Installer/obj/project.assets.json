@@ -2,43 +2,43 @@
   "version": 3,
   "targets": {
     "native,Version=v0.0": {
-      "WixToolset.Dependency.wixext/5.0.0": {
+      "WixToolset.Dependency.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Dependency.wixext.targets": {}
         }
       },
-      "WixToolset.Firewall.wixext/5.0.0": {
+      "WixToolset.Firewall.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Firewall.wixext.targets": {}
         }
       },
-      "WixToolset.Heat/5.0.0": {
+      "WixToolset.Heat/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Heat.targets": {}
         }
       },
-      "WixToolset.Iis.wixext/5.0.0": {
+      "WixToolset.Iis.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Iis.wixext.targets": {}
         }
       },
-      "WixToolset.UI.wixext/5.0.0": {
+      "WixToolset.UI.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.UI.wixext.targets": {}
         }
       },
-      "WixToolset.Util.wixext/5.0.0": {
+      "WixToolset.Util.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Util.wixext.targets": {}
         }
       },
-      "WixToolset.VisualStudio.wixext/5.0.0": {
+      "WixToolset.VisualStudio.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.VisualStudio.wixext.targets": {}
@@ -46,43 +46,43 @@
       }
     },
     "native,Version=v0.0/win": {
-      "WixToolset.Dependency.wixext/5.0.0": {
+      "WixToolset.Dependency.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Dependency.wixext.targets": {}
         }
       },
-      "WixToolset.Firewall.wixext/5.0.0": {
+      "WixToolset.Firewall.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Firewall.wixext.targets": {}
         }
       },
-      "WixToolset.Heat/5.0.0": {
+      "WixToolset.Heat/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Heat.targets": {}
         }
       },
-      "WixToolset.Iis.wixext/5.0.0": {
+      "WixToolset.Iis.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Iis.wixext.targets": {}
         }
       },
-      "WixToolset.UI.wixext/5.0.0": {
+      "WixToolset.UI.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.UI.wixext.targets": {}
         }
       },
-      "WixToolset.Util.wixext/5.0.0": {
+      "WixToolset.Util.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Util.wixext.targets": {}
         }
       },
-      "WixToolset.VisualStudio.wixext/5.0.0": {
+      "WixToolset.VisualStudio.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.VisualStudio.wixext.targets": {}
@@ -90,43 +90,43 @@
       }
     },
     "native,Version=v0.0/win-arm64": {
-      "WixToolset.Dependency.wixext/5.0.0": {
+      "WixToolset.Dependency.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Dependency.wixext.targets": {}
         }
       },
-      "WixToolset.Firewall.wixext/5.0.0": {
+      "WixToolset.Firewall.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Firewall.wixext.targets": {}
         }
       },
-      "WixToolset.Heat/5.0.0": {
+      "WixToolset.Heat/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Heat.targets": {}
         }
       },
-      "WixToolset.Iis.wixext/5.0.0": {
+      "WixToolset.Iis.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Iis.wixext.targets": {}
         }
       },
-      "WixToolset.UI.wixext/5.0.0": {
+      "WixToolset.UI.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.UI.wixext.targets": {}
         }
       },
-      "WixToolset.Util.wixext/5.0.0": {
+      "WixToolset.Util.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Util.wixext.targets": {}
         }
       },
-      "WixToolset.VisualStudio.wixext/5.0.0": {
+      "WixToolset.VisualStudio.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.VisualStudio.wixext.targets": {}
@@ -134,43 +134,43 @@
       }
     },
     "native,Version=v0.0/win-x64": {
-      "WixToolset.Dependency.wixext/5.0.0": {
+      "WixToolset.Dependency.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Dependency.wixext.targets": {}
         }
       },
-      "WixToolset.Firewall.wixext/5.0.0": {
+      "WixToolset.Firewall.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Firewall.wixext.targets": {}
         }
       },
-      "WixToolset.Heat/5.0.0": {
+      "WixToolset.Heat/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Heat.targets": {}
         }
       },
-      "WixToolset.Iis.wixext/5.0.0": {
+      "WixToolset.Iis.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Iis.wixext.targets": {}
         }
       },
-      "WixToolset.UI.wixext/5.0.0": {
+      "WixToolset.UI.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.UI.wixext.targets": {}
         }
       },
-      "WixToolset.Util.wixext/5.0.0": {
+      "WixToolset.Util.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Util.wixext.targets": {}
         }
       },
-      "WixToolset.VisualStudio.wixext/5.0.0": {
+      "WixToolset.VisualStudio.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.VisualStudio.wixext.targets": {}
@@ -178,43 +178,43 @@
       }
     },
     "native,Version=v0.0/win-x86": {
-      "WixToolset.Dependency.wixext/5.0.0": {
+      "WixToolset.Dependency.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Dependency.wixext.targets": {}
         }
       },
-      "WixToolset.Firewall.wixext/5.0.0": {
+      "WixToolset.Firewall.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Firewall.wixext.targets": {}
         }
       },
-      "WixToolset.Heat/5.0.0": {
+      "WixToolset.Heat/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Heat.targets": {}
         }
       },
-      "WixToolset.Iis.wixext/5.0.0": {
+      "WixToolset.Iis.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Iis.wixext.targets": {}
         }
       },
-      "WixToolset.UI.wixext/5.0.0": {
+      "WixToolset.UI.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.UI.wixext.targets": {}
         }
       },
-      "WixToolset.Util.wixext/5.0.0": {
+      "WixToolset.Util.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.Util.wixext.targets": {}
         }
       },
-      "WixToolset.VisualStudio.wixext/5.0.0": {
+      "WixToolset.VisualStudio.wixext/5.0.1": {
         "type": "package",
         "build": {
           "build/WixToolset.VisualStudio.wixext.targets": {}
@@ -223,38 +223,38 @@
     }
   },
   "libraries": {
-    "WixToolset.Dependency.wixext/5.0.0": {
-      "sha512": "8SlExC21IP3pwpfMcrfQiSYnGYfnXifelabR0EljU9i+ffO60kBqL1S3J1bX0iwGG/IZ/xl/RKbwRtj5YDIsxg==",
+    "WixToolset.Dependency.wixext/5.0.1": {
+      "sha512": "bt/cxnulpCMKLy1ytre8nxgA/ID3/WxYZVmLkjVXYCeq+05mKCX0RbbkkRIRtUl7STmA5OPKfeleTwAMupiauQ==",
       "type": "package",
-      "path": "wixtoolset.dependency.wixext/5.0.0",
+      "path": "wixtoolset.dependency.wixext/5.0.1",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "build/WixToolset.Dependency.wixext.targets",
         "wix.png",
         "wixext5/WixToolset.Dependency.wixext.dll",
-        "wixtoolset.dependency.wixext.5.0.0.nupkg.sha512",
+        "wixtoolset.dependency.wixext.5.0.1.nupkg.sha512",
         "wixtoolset.dependency.wixext.nuspec"
       ]
     },
-    "WixToolset.Firewall.wixext/5.0.0": {
-      "sha512": "ImdAKuoOkZcqPiIXmrcprM8Y1azA17EXZdUecpDD/V5jJcY+Ir4EtRLIWjYNno8FgUXRFyFskmAV13Us2SIInA==",
+    "WixToolset.Firewall.wixext/5.0.1": {
+      "sha512": "c2ubWDTZNj5rvBo/JyOVqHhABZR5TAykXfreKw5jw+Gd0KBRsDFvUzzGGgKD05LITds4vFuDihzjAW32xgxoyQ==",
       "type": "package",
-      "path": "wixtoolset.firewall.wixext/5.0.0",
+      "path": "wixtoolset.firewall.wixext/5.0.1",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "build/WixToolset.Firewall.wixext.targets",
         "wix.png",
         "wixext5/WixToolset.Firewall.wixext.dll",
-        "wixtoolset.firewall.wixext.5.0.0.nupkg.sha512",
+        "wixtoolset.firewall.wixext.5.0.1.nupkg.sha512",
         "wixtoolset.firewall.wixext.nuspec"
       ]
     },
-    "WixToolset.Heat/5.0.0": {
-      "sha512": "7xrTqQ3BUnA/Ax+XpQ3FBCo+IxuI1un3oaubmlSBQXS5+PDhv4yCRd/6N5lqwrMxgXC2JbAbEeTC2WUVK5OtJQ==",
+    "WixToolset.Heat/5.0.1": {
+      "sha512": "IWQ7H+CnuoTVc5Kpvz+zPcr0G3U/OQSPDyJzyNadxibF055ZATJ5hJloaoxxVzOQ36V/NCUqQAc11Pc2iFJwyw==",
       "type": "package",
-      "path": "wixtoolset.heat/5.0.0",
+      "path": "wixtoolset.heat/5.0.1",
       "hasTools": true,
       "files": [
         ".nupkg.metadata",
@@ -317,76 +317,76 @@
         "tools/net6.0/runtimes/win/lib/netcoreapp2.0/System.Diagnostics.PerformanceCounter.dll",
         "tools/net6.0/runtimes/win/lib/netcoreapp2.0/System.DirectoryServices.dll",
         "wix.png",
-        "wixtoolset.heat.5.0.0.nupkg.sha512",
+        "wixtoolset.heat.5.0.1.nupkg.sha512",
         "wixtoolset.heat.nuspec"
       ]
     },
-    "WixToolset.Iis.wixext/5.0.0": {
-      "sha512": "c0Ba8RGxfCZDzPO2Y1AJ/cNhA6LbIfNntWmvqZIC4xX5zWFOpEnXHvNLvq+05vo8qwf3E9Fu4du00dLlV3T+0w==",
+    "WixToolset.Iis.wixext/5.0.1": {
+      "sha512": "8BpYDkLKtY4ojkgV8WmR/IClpHycUiNlzFNjV0q3aVceLHVT6LhMHOd3GlJ9sTTqY4cU46XFzNdVR8VexckjJA==",
       "type": "package",
-      "path": "wixtoolset.iis.wixext/5.0.0",
+      "path": "wixtoolset.iis.wixext/5.0.1",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "build/WixToolset.Iis.wixext.targets",
         "wix.png",
         "wixext5/WixToolset.Iis.wixext.dll",
-        "wixtoolset.iis.wixext.5.0.0.nupkg.sha512",
+        "wixtoolset.iis.wixext.5.0.1.nupkg.sha512",
         "wixtoolset.iis.wixext.nuspec"
       ]
     },
-    "WixToolset.UI.wixext/5.0.0": {
-      "sha512": "bSXUeHrfylVOeoklBb3mSlmMmiIVmQnEakCLeEtQoUundgWY3LOlVr7yjLu/3RBkMCiYdGmaNhg7MHwS2iQDsA==",
+    "WixToolset.UI.wixext/5.0.1": {
+      "sha512": "5QOjucYewg+fQ6obndgfpLFVqfX/3UlqAq+aNCmmAb8Gjl81uNxUdo47QF0tnryKyU2OLkiq09tXC0rKsz4d4A==",
       "type": "package",
-      "path": "wixtoolset.ui.wixext/5.0.0",
+      "path": "wixtoolset.ui.wixext/5.0.1",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "build/WixToolset.UI.wixext.targets",
         "wix.png",
         "wixext5/WixToolset.UI.wixext.dll",
-        "wixtoolset.ui.wixext.5.0.0.nupkg.sha512",
+        "wixtoolset.ui.wixext.5.0.1.nupkg.sha512",
         "wixtoolset.ui.wixext.nuspec"
       ]
     },
-    "WixToolset.Util.wixext/5.0.0": {
-      "sha512": "7lLwyrf+2cTuPju0swTWtRNYesnOMxXhGugMnGGNEPDB4g/+BCUsub2RDYAxnBnbnND7QmPwZnneLrTIQOdAbg==",
+    "WixToolset.Util.wixext/5.0.1": {
+      "sha512": "7DxjepwZ4vuLfy2scstHWaKRgYmDSpj7YAV31lrxnU5a4U6Au2p9t4YpnXrNeq8FFYuZivg5vEc/zuz5tfigug==",
       "type": "package",
-      "path": "wixtoolset.util.wixext/5.0.0",
+      "path": "wixtoolset.util.wixext/5.0.1",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "build/WixToolset.Util.wixext.targets",
         "wix.png",
         "wixext5/WixToolset.Util.wixext.dll",
-        "wixtoolset.util.wixext.5.0.0.nupkg.sha512",
+        "wixtoolset.util.wixext.5.0.1.nupkg.sha512",
         "wixtoolset.util.wixext.nuspec"
       ]
     },
-    "WixToolset.VisualStudio.wixext/5.0.0": {
-      "sha512": "PU00Np3AVaBbEr8HgAn3MMmDnnwxNp1N3gyCQhugvMx5GOXo3V5iQN5zE4laRzu7yFzFGyJ+NjOb3u88l/ANig==",
+    "WixToolset.VisualStudio.wixext/5.0.1": {
+      "sha512": "e/dsK/b1xq5IfQayoyOhlv/FVIhXgvicfO5ReDpTEgvkrr6Xa8EXZaiwmYPmW3PjqO77f0wK9jFg/VlFE03nEA==",
       "type": "package",
-      "path": "wixtoolset.visualstudio.wixext/5.0.0",
+      "path": "wixtoolset.visualstudio.wixext/5.0.1",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
         "build/WixToolset.VisualStudio.wixext.targets",
         "wix.png",
         "wixext5/WixToolset.VisualStudio.wixext.dll",
-        "wixtoolset.visualstudio.wixext.5.0.0.nupkg.sha512",
+        "wixtoolset.visualstudio.wixext.5.0.1.nupkg.sha512",
         "wixtoolset.visualstudio.wixext.nuspec"
       ]
     }
   },
   "projectFileDependencyGroups": {
     "native,Version=v0.0": [
-      "WixToolset.Dependency.wixext >= 5.0.0",
-      "WixToolset.Firewall.wixext >= 5.0.0",
-      "WixToolset.Heat >= 5.0.0",
-      "WixToolset.Iis.wixext >= 5.0.0",
-      "WixToolset.UI.wixext >= 5.0.0",
-      "WixToolset.Util.wixext >= 5.0.0",
-      "WixToolset.VisualStudio.wixext >= 5.0.0"
+      "WixToolset.Dependency.wixext >= 5.0.1",
+      "WixToolset.Firewall.wixext >= 5.0.1",
+      "WixToolset.Heat >= 5.0.1",
+      "WixToolset.Iis.wixext >= 5.0.1",
+      "WixToolset.UI.wixext >= 5.0.1",
+      "WixToolset.Util.wixext >= 5.0.1",
+      "WixToolset.VisualStudio.wixext >= 5.0.1"
     ]
   },
   "packageFolders": {
@@ -435,31 +435,31 @@
         "dependencies": {
           "WixToolset.Dependency.wixext": {
             "target": "Package",
-            "version": "[5.0.0, )"
+            "version": "[5.0.1, )"
           },
           "WixToolset.Firewall.wixext": {
             "target": "Package",
-            "version": "[5.0.0, )"
+            "version": "[5.0.1, )"
           },
           "WixToolset.Heat": {
             "target": "Package",
-            "version": "[5.0.0, )"
+            "version": "[5.0.1, )"
           },
           "WixToolset.Iis.wixext": {
             "target": "Package",
-            "version": "[5.0.0, )"
+            "version": "[5.0.1, )"
           },
           "WixToolset.UI.wixext": {
             "target": "Package",
-            "version": "[5.0.0, )"
+            "version": "[5.0.1, )"
           },
           "WixToolset.Util.wixext": {
             "target": "Package",
-            "version": "[5.0.0, )"
+            "version": "[5.0.1, )"
           },
           "WixToolset.VisualStudio.wixext": {
             "target": "Package",
-            "version": "[5.0.0, )"
+            "version": "[5.0.1, )"
           }
         }
       }

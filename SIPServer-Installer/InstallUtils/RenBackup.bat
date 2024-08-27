@@ -1,7 +1,8 @@
 @echo off
+
 echo Finalizing backup... Please do not close this window.
 sc failure SIPServer reset=259100 actions=restart/10000
-CD c:\
+CD %1
 FOR /F "skip=1 tokens=1-6" %%A IN ('WMIC Path Win32_LocalTime Get Day^,Hour^,Minute^,Month^,Second^,Year /Format:table') DO (
 
 SET /A sDAY=%%A 2>NUL

@@ -44,8 +44,10 @@
        Manufacturer="GERRAudio Distribution"
        UpgradeCode="f2444410-fef7-43d3-a673-cdeea14fa68e"
        InstallerVersion="301"
+       Scope="perMachine"
        >
-
+      <!-- -->
+    
     <MajorUpgrade  AllowDowngrades="yes"/>
     <Property Id="MSIUSEREALADMINDETECTION" Value="1" />
     <MediaTemplate EmbedCab="yes" />
@@ -139,17 +141,21 @@
     </AdminUISequence>
 
     <InstallExecuteSequence>
-      <Custom Action="StopApp"		After="InstallInitialize"  />
-      <Custom Action="StopSvc"		After="StopApp"  />
-      <Custom Action="DeleteSvc"		After="StopSvc"  />
-      <Custom Action="Backup"			After="DeleteSvc"	/>
-      <Custom Action="Rename"			After="Backup"/>
-      <Custom Action="SetIP"			Before="InstallService"/>
-      <Custom Action="InstallService" Before="InstallFinalize"   />
-      <Custom Action="ConfigSvcSetup" After="InstallService"/>
-      <Custom Action="LaunchReadme"	After ="InstallFinalize" Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT Installed'/>
+      <Custom Action="StopApp"		      After="InstallInitialize"  />
+      <Custom Action="StopSvc"		      After="StopApp"  />
+      <Custom Action="DeleteSvc"	      After="StopSvc"  />
+      <Custom Action="Backup"			      After="DeleteSvc"
+              Condition ='UPGRADINGPRODUCTCODE AND REMOVE~="ALL" AND NOT REINSTALL="ALL"'/>
+      <Custom Action="Rename"			      After="Backup"/>
+      <Custom Action="SetIP"			      Before="InstallService"/>
+      <Custom Action="InstallService"   Before="InstallFinalize"   />
+      <Custom Action="ConfigSvcSetup"   After="InstallService"/>
+      <Custom Action="LaunchReadme"	    After ="InstallFinalize" Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT Installed'/>
     </InstallExecuteSequence>
   </Package>
+
+
+
 
   <Fragment>
     <Directory  Name="." ComponentGuidGenerationSeed="5950CB39-0D52-4158-A4B1-4BC5AAE9A2C4">
@@ -157,15 +163,13 @@
         <Directory Id="MYAPPFOLDER" Name="SIPServer"/>
         <Directory Id="MEDIADIR" Name="Media"/>
       </Directory>
-
       <Directory Id="ProgramMenuFolder">
         <Directory Id="MYSTARTFOLDER" Name="GerrAudio"/>
       </Directory>
-
     </Directory>
 
-    <Icon Id="GerrIcon.ico" SourceFile="$(IconsEtcPath)\GerrAudio.ico"/>
-    <Icon Id="GerrIconW.ico" SourceFile="$(IconsEtcPath)\GerrAudioW.ico"/>
+    <Icon Id="GerrIcon.ico"   SourceFile="$(IconsEtcPath)\GerrAudio.ico"/>
+    <Icon Id="GerrIconW.ico"  SourceFile="$(IconsEtcPath)\GerrAudioW.ico"/>
 
     <DirectoryRef Id="DesktopFolder">
       <!--Desktop shortcut-->
@@ -174,18 +178,20 @@
         <Shortcut Id="ServiceStartDesktopShortcut"
             Name="Start SIPServer Service"
             Description="SIPServer Service Start"
-            Target='[MYAPPFOLDER]nssm.exe'
-            Arguments ='start SIPServer'
+            Target="[MYAPPFOLDER]SvcStart.bat"
             WorkingDirectory="MYAPPFOLDER"
-            Icon="GerrIconW.ico"/>
+            Icon="GerrIconW.ico">
+          <!--ShortcutProperty  Key="System.AppUserModel.RunAsAdmin" Value="1" /-->
+        </Shortcut>
 
         <Shortcut Id="ServiceStopDesktopShortcut"
             Name="Stop SIPServer Service"
             Description="SIPServer Service Stop"
-            Target='[MYAPPFOLDER]nssm.exe'
-            Arguments ='stop SIPServer'
+            Target="[MYAPPFOLDER]SvcStop.bat"
             WorkingDirectory="MYAPPFOLDER"
-            Icon="GerrIcon.ico"/>
+            Icon="GerrIcon.ico">
+          <!--ShortcutProperty  Key="System.AppUserModel.RunAsAdmin" Value="1" /-->
+        </Shortcut>
 
         <Shortcut Id="CLIApplicationDesktopShortcut"
             Name="Command Line Interface (CLI)"
@@ -220,18 +226,23 @@
         <Shortcut Id="ServiceStartMenuShortcut"
                   Name="1 - Start SIP Service"
                   Description="Start the SIPServer service"
-                  Target='[MYAPPFOLDER]nssm.exe'
-                  Arguments ='start SIPServer'
+                  Target="[MYAPPFOLDER]SvcStart.bat"
                   WorkingDirectory="MYAPPFOLDER"
-                  Icon="GerrIconW.ico"/>
+                  Icon="GerrIconW.ico"
+                  >
+          <!--ShortcutProperty  Key="System.AppUserModel.RunAsAdmin" Value="1" /-->
+        </Shortcut>
+
 
         <Shortcut Id="ServiceStopMenuShortcut"
                   Name="2 - Stop SIP Service"
                   Description="Stop the SIPServer service"
-                  Target='[MYAPPFOLDER]nssm.exe'
-                  Arguments ='stop SIPServer'
+                  Target="[MYAPPFOLDER]SvcStop.bat"
                   WorkingDirectory="MYAPPFOLDER"
-                  Icon="GerrIcon.ico"/>
+                  Icon="GerrIcon.ico">
+          <!--ShortcutProperty  Key="System.AppUserModel.RunAsAdmin" Value="1" /-->
+        </Shortcut>
+
 
         <Shortcut Id="CLIApplicationStartMenuShortcut"
                   Name="3 - Command Line Interface (CLI)"
@@ -272,56 +283,6 @@
         <!-- usr env var(s) -->
         <!-- keep for reference, no longer required, handled by aes67 module...
         
-        <Environment Id ="GSTR0SYS"
-            Name="GSTREAMER_1_0_ROOT_MSVC_X86_64"
-            Permanent ="yes"
-            Action ="set"
-            System ="yes"
-            Value ="C:\gstreamer\1.0\msvc_x86_64\"/>
-        <Environment Id ="GSTR0USR"
-            Name="GSTREAMER_1_0_ROOT_MSVC_X86_64"
-            Permanent ="yes"
-            Action ="set"
-            System ="no"
-            Value ="C:\gstreamer\1.0\msvc_x86_64\"/>
-
-        <Environment Id ="GSTR1SYS"
-            Name="Path"
-            Part ="last"
-            Permanent ="yes"
-            Action ="set"
-            System ="yes"
-            Value ="C:\GSTREAMER\1.0\msvc_x86_64\"/>
-        <Environment Id ="GSTR1USR"
-            Name="Path"
-            Part ="last"
-            Permanent ="yes"
-            Action ="set"
-            System ="no"
-            Value ="C:\GSTREAMER\1.0\msvc_x86_64\"/>
-
-        <Environment Id ="GSTR2SYS"
-            Name="Path"
-            Part ="last"
-            Permanent ="yes"
-            Action ="set"
-            System ="yes"
-            Value ="%GSTREAMER_1_0_ROOT_MINGW_X86_64%bin\"/>
-        <Environment Id ="GSTR2USR"
-            Name="Path"
-            Part ="last"
-            Permanent ="yes"
-            Action ="set"
-            System ="no"
-            Value ="%GSTREAMER_1_0_ROOT_MINGW_X86_64%bin\"/>
-
-        <Environment Id ="GSTR3SYS"
-            Name="Path"
-            Part ="last"
-            Permanent ="yes"
-            Action ="set"
-            System ="yes"
-            Value ="%GSTREAMER_1_0_ROOT_MSVC_X86_64%bin\"/>
         <Environment Id ="GSTR3USR"
             Name="Path"
             Part ="last"
@@ -333,9 +294,7 @@
       </Component>
     </DirectoryRef>
 
-
     <!-- Files to install-->
-
     <ComponentGroup  Id="HarvestedComponents" Directory="MYAPPFOLDER">
       <!--Special batch file utility-->
       <!-- No Guid forces the batch to persist between installs-->
@@ -357,6 +316,16 @@
       <Component Id="SvcQuery" Guid="A5D8FF09-DB6F-4AC2-B3FA-18E588128018">
         <File Id="SvcQueryScript"
             Source="$(IconsEtcPath)\SvcQuery.bat" KeyPath="yes"
+        />
+      </Component>
+      <Component Id="SvcStart" Guid="45342FAC-4BA4-49E4-BA31-74BE1ACE4BDC">
+        <File Id="SvcStartScript"
+            Source="$(IconsEtcPath)\SvcStart.bat" KeyPath="yes"
+        />
+      </Component>
+      <Component Id="SvcStop" Guid="D51BA800-BFB9-44BB-AF34-946F0BF7A5C8">
+        <File Id="SvcStopScript"
+            Source="$(IconsEtcPath)\SvcStop.bat" KeyPath="yes"
         />
       </Component>
       <Component Id="SetIP" Guid="5E8F3974-81B1-4984-BBCA-A42FE2D252C9">
@@ -388,6 +357,8 @@
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\*.remove"/>
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\RenBackup.bat"/>
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\SvcQuery.bat"/>
+        <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\SvcStop.bat"/>
+        <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\SvcStart.bat"/>
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\SetIP.bat"/>
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\grep.exe"/>
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\nssm.exe"/>
@@ -453,49 +424,58 @@
     <CustomAction Id="StopApp"
       ExeCommand='cmd.exe /c  echo Stopping SIPServer... please do not close window &amp;&amp; [MYAPPFOLDER]\SIPServer.exe -stop 2>NUL >NUL &amp;&amp; taskkill /F /IM gst-ptp-helper.exe 2>NUL >NUL'
       Directory="MYAPPFOLDER"  Execute="deferred"
-            Return="ignore"
+      Return="ignore"
+      Impersonate="no"                  
       />
 
     <CustomAction Id="StopSvc"
       ExeCommand='cmd.exe /c echo Stopping service... please do not close window &amp;&amp; sc stop SIPServer 2>NUL >NUL &amp;&amp; sc stop "SIP Server" 2>NUL >NUL'
       Directory="MYAPPFOLDER"  Execute="deferred"
-            Return="ignore"
+      Return="ignore"
+      Impersonate="no"
       />
 
     <CustomAction Id="DeleteSvc"
       ExeCommand='cmd.exe /c echo Uninstalling service... please do not close window &amp;&amp; sc delete SIPServer 2>NUL >NUL  sc delete "SIP Server" 2>NUL >NUL'
       Directory="MYAPPFOLDER"  Execute="deferred"
-            Return="ignore"
+      Return="ignore"
+      Impersonate="no"
       />
 
     <CustomAction Id="Backup"
       ExeCommand='cmd.exe /c echo Backing up... please do not close window. This may take some time depending on the size of the log files. &amp;&amp; XCOPY [MYAPPFOLDER] [APPROOT]\SIPServerTemp /Y/C/H/E/J/K/O/Q/I >NUL 2>NUL'
-      Directory="APPROOT" Execute="firstSequence"
-            Return="ignore"
+      Directory="APPROOT" Execute="deferred"
+      Return="ignore"
+      Impersonate="no"                  
     />
 
     <CustomAction Id="Rename"
       ExeCommand='cmd.exe /c [MYAPPFOLDER]\RenBackup.bat [APPROOT] '
       Directory="APPROOT" Execute="deferred"
-            Return="ignore"
+      Return="ignore"
+      Impersonate="no"                  
     />
 
     <CustomAction Id="SetIP"
       ExeCommand='cmd.exe /c [MYAPPFOLDER]\SetIP.bat [TCPADR] [UDPADR] [MYAPPFOLDER]'
       Directory="MYAPPFOLDER" Execute="deferred"
-            Return="ignore"
+      Return="ignore"
+      Impersonate="no"
     />
+    <!--Impersonate below was yes-->
     <CustomAction Id="InstallService"
       ExeCommand='[MYAPPFOLDER]\nssm install SIPServer "[MYAPPFOLDER]\SIPServer.exe"'
       Directory="MYAPPFOLDER" Execute="deferred"
-      Impersonate="yes"
-          Return="ignore"
-            
+      Impersonate="no" 
+      Return="ignore"
     />
+    
+    
     <CustomAction Id="ConfigSvcSetup"
       ExeCommand='cmd.exe /c echo Configuring service... please do not close window &amp;&amp; sc failure SIPServer reset=259100 actions=restart/10000 2>NUL >NUL'
       Directory="MYAPPFOLDER"  Execute="deferred"
-        Return="ignore"
+      Return="ignore"
+      Impersonate="no"                  
     />
   </Fragment>
 </Wix>
