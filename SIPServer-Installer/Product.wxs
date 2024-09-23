@@ -34,19 +34,21 @@
   <!-- where to harvest utility installer files from -->
   <?define IconsEtcPath= ".\InstallUtils\" ?>
   
-  <?define SIPServerVersion=1.10.12.3?>
+  <?define SIPServerVersion=1.10.12?>
+  <?define MSIVersion=1.3?>   <!-- Update for new releases of this installer -->
   <!-- TODO auto version increments -->
 
-  <Package Name="IP Telephony Server &#13;&#10;SIPServer v$(SIPServerVersion)"
+  <Package Name="IP Telephony &#13;&#10;SIPServer v$(SIPServerVersion)-msi v$(MSIVersion)"
        Language="1033"
 
        Version='$(SIPServerVersion)'
        Manufacturer="GERRAudio Distribution"
        UpgradeCode="f2444410-fef7-43d3-a673-cdeea14fa68e"
-       InstallerVersion="301"
+
        Scope="perMachine"
        >
-      <!-- -->
+       <!--InstallerVersion="301"-->
+
     
     <MajorUpgrade  AllowDowngrades="yes"/>
     <Property Id="MSIUSEREALADMINDETECTION" Value="1" />
