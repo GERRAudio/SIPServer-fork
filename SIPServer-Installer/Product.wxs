@@ -37,7 +37,7 @@
   <?define SIPServerVersion=1.10.12?>
   <?define MSIVersion=1.4?>   <!-- Update for new releases of this installer -->
   <!-- TODO auto version increments -->
-  <!-- updated the confs to include CUCM,  for external Bruce phone system, examples, and skinny confs -->
+  <!-- updated the confs to include CUCM,  for external Bruce phone system, renamed examples, and skinny confs -->
 
   <Package Name="IP Telephony &#13;&#10;SIPServer v$(SIPServerVersion)-msi v$(MSIVersion)"
        Language="1033"
