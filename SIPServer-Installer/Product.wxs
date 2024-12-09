@@ -35,9 +35,10 @@
   <?define IconsEtcPath= ".\InstallUtils\" ?>
   
   <?define SIPServerVersion=1.10.12?>
-  <?define MSIVersion=1.4?>   <!-- Update for new releases of this installer -->
+  <?define MSIVersion=1.5?>   <!-- Update for new releases of this installer -->
   <!-- TODO auto version increments -->
   <!-- updated the confs to include CUCM,  for external Bruce phone system, renamed examples, and skinny confs -->
+  <!-- new icons -->
 
   <Package Name="IP Telephony &#13;&#10;SIPServer v$(SIPServerVersion)-msi v$(MSIVersion)"
        Language="1033"
@@ -173,6 +174,11 @@
 
     <Icon Id="GerrIcon.ico"   SourceFile="$(IconsEtcPath)\GerrAudio.ico"/>
     <Icon Id="GerrIconW.ico"  SourceFile="$(IconsEtcPath)\GerrAudioW.ico"/>
+    <Icon Id="GerrStartSvc.ico"  SourceFile="$(IconsEtcPath)\GerrStartSvc.ico"/>
+    <Icon Id="GerrStopSvc.ico"  SourceFile="$(IconsEtcPath)\GerrStopSvc.ico"/>
+    <Icon Id="GerrStatus.ico"  SourceFile="$(IconsEtcPath)\GerrStatus.ico"/>
+    <Icon Id="GerrRestartSvc.ico"  SourceFile="$(IconsEtcPath)\GerrRestartSvc.ico"/>
+    <Icon Id="GerrCLI.ico"  SourceFile="$(IconsEtcPath)\GerrCLI.ico"/>
 
     <DirectoryRef Id="DesktopFolder">
       <!--Desktop shortcut-->
@@ -183,7 +189,7 @@
             Description="SIPServer Service Start"
             Target="[MYAPPFOLDER]SvcStart.bat"
             WorkingDirectory="MYAPPFOLDER"
-            Icon="GerrIconW.ico">
+            Icon="GerrStartSvc.ico">
           <!--ShortcutProperty  Key="System.AppUserModel.RunAsAdmin" Value="1" /-->
         </Shortcut>
 
@@ -192,7 +198,7 @@
             Description="SIPServer Service Stop"
             Target="[MYAPPFOLDER]SvcStop.bat"
             WorkingDirectory="MYAPPFOLDER"
-            Icon="GerrIcon.ico">
+            Icon="GerrStopSvc.ico">
           <!--ShortcutProperty  Key="System.AppUserModel.RunAsAdmin" Value="1" /-->
         </Shortcut>
 
@@ -201,14 +207,21 @@
             Description="SIPServer Command Line Interface (CLI)"
             Target="[MYAPPFOLDER]EngineCommandLine.exe"
             WorkingDirectory="MYAPPFOLDER"
-            Icon="GerrIconW.ico"/>
+            Icon="GerrCLI.ico"/>
 
         <Shortcut Id="ServiceQueryDesktopShortcut"
             Name="Service Status"
             Description="SIPServer Service Query Status"
             Target="[MYAPPFOLDER]SvcQuery.bat"
             WorkingDirectory="MYAPPFOLDER"
-            Icon="GerrIcon.ico"/>
+            Icon="GerrStatus.ico"/>
+
+        <Shortcut Id="ServiceRestartDesktopShortcut"
+            Name="Service Restart"
+            Description="SIPServer Service Restart"
+            Target="[MYAPPFOLDER]SvcRestart.bat"
+            WorkingDirectory="MYAPPFOLDER"
+            Icon="GerrRestartSvc.ico"/>
 
         <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPServerIDT" Name="installed1" Type="integer" Value="1" KeyPath="yes"/>
         <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPServerDT" Name="installed1" Type="string" Value="SIPServer"  />
@@ -218,6 +231,8 @@
         <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcStartDT" Name="installed3" Type="string" Value="ServerSvcStart"  />
         <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcStopIDT" Name="installed4" Type="integer" Value="1" />
         <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcStopDT" Name="installed4" Type="string" Value="ServerSvcStop"  />
+        <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcRestartIDT" Name="installed5" Type="string" Value="1"  />
+        <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcRestartDT" Name="installed5" Type="string" Value="ServerSvcRestart"  />
 
       </Component>
     </DirectoryRef>
@@ -231,7 +246,7 @@
                   Description="Start the SIPServer service"
                   Target="[MYAPPFOLDER]SvcStart.bat"
                   WorkingDirectory="MYAPPFOLDER"
-                  Icon="GerrIconW.ico"
+                  Icon="GerrStartSvc.ico"
                   >
           <!--ShortcutProperty  Key="System.AppUserModel.RunAsAdmin" Value="1" /-->
         </Shortcut>
@@ -242,7 +257,7 @@
                   Description="Stop the SIPServer service"
                   Target="[MYAPPFOLDER]SvcStop.bat"
                   WorkingDirectory="MYAPPFOLDER"
-                  Icon="GerrIcon.ico">
+                  Icon="GerrStopSvc.ico">
           <!--ShortcutProperty  Key="System.AppUserModel.RunAsAdmin" Value="1" /-->
         </Shortcut>
 
@@ -252,14 +267,14 @@
                   Description="Command Line Interface (CLI) to access the service"
                   Target="[MYAPPFOLDER]EngineCommandLine.exe"
                   WorkingDirectory="MYAPPFOLDER"
-                  Icon="GerrIconW.ico"/>
+                  Icon="GerrCLI.ico"/>
 
         <Shortcut Id="ServiceQueryStartMenuShortcut"
                   Name="4 - Service Status"
                   Description="SIPServer Service Query Status"
                   Target="[MYAPPFOLDER]SvcQuery.bat"
                   WorkingDirectory="MYAPPFOLDER"
-                  Icon="GerrIcon.ico"/>
+                  Icon="GerrStatus.ico"/>
 
         <!-- this shortcut starts the console in case it is needed for debugging -->
         <Shortcut Id="ApplicationStartMenuShortcut"
@@ -268,6 +283,14 @@
                   Target="[MYAPPFOLDER]SIPServer.exe"
                   WorkingDirectory="MYAPPFOLDER"
                   Icon="GerrIcon.ico"/>
+
+        <!-- this shortcut restarts server -->
+        <Shortcut Id="ApplicationRestartMenuShortcut"
+                  Name="6 - SIPServer Restart"
+                  Description="SIPServer Restart"
+                  Target="[MYAPPFOLDER]SvcRestart.bat"
+                  WorkingDirectory="MYAPPFOLDER"
+                  Icon="GerrRestartSvc.ico"/>
 
         <RemoveFolder Id="UninstallShortcut" Directory="MYSTARTFOLDER" On="uninstall"/>
 
@@ -279,6 +302,8 @@
         <RegistryValue Root="HKCU" Key="Software\GerrAudio\fs_cli" Name="installed2" Type="string" Value="SIPServer-CLI"  />
         <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPServerI" Name="installed1" Type="integer" Value="1" KeyPath="yes"/>
         <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPServer" Name="installed1" Type="string" Value="SIPServer"  />
+        <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcReStartI" Name="installed5" Type="integer" Value="1" />
+        <RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcReStart" Name="installed5" Type="string" Value="ServerSvcReStart"  />
 
 
         <!--Environment variables to set or modify NO LONGER REQUIRED -->
@@ -331,6 +356,11 @@
             Source="$(IconsEtcPath)\SvcStop.bat" KeyPath="yes"
         />
       </Component>
+      <Component Id="SvcReStart" Guid="72FF811B-3CC5-44B3-9A31-25842925CAEA">
+        <File Id="SvcReStartScript"
+            Source="$(IconsEtcPath)\SvcReStart.bat" KeyPath="yes"
+        />
+      </Component>
       <Component Id="SetIP" Guid="5E8F3974-81B1-4984-BBCA-A42FE2D252C9">
         <File Id="SetIPScript"
             Source="$(IconsEtcPath)\SetIP.bat" KeyPath="yes"
@@ -362,6 +392,7 @@
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\SvcQuery.bat"/>
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\SvcStop.bat"/>
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\SvcStart.bat"/>
+        <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\SvcReStart.bat"/>
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\SetIP.bat"/>
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\grep.exe"/>
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\nssm.exe"/>
