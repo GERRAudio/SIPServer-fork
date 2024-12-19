@@ -1879,7 +1879,7 @@ emit_ptp_gm_change (gboolean synced)
 			globals.ptp_gm_mac_addr);
 
     switch_event_fire(&event);
-	switch_event_destroy(&event); // Add this line
+	switch_event_destroy(&event); // Add this line (mem leak?)
   }
 }
 
@@ -2103,7 +2103,7 @@ init_ptp (int domain, char *iface)
   }
 
   switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Creating ptp clock client\n");
-  clock = gst_ptp_clock_new ("ptp-clock", domain);
+  clock = gst_ptp_clock_new ("ptp-clock", domain);  //mem leak??
   if (!gst_clock_wait_for_sync (GST_CLOCK (clock), timeout)) {
     switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Timed out waiting for the clock to sync\n");
     g_signal_connect(G_OBJECT(clock), "synced", G_CALLBACK(clock_synced_cb), NULL);
@@ -2739,7 +2739,7 @@ load_config (void)
       switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,"Switching to Synthetic PTP \n");
       globals.synthetic_ptp = 1;
 
-      // Make sure old clock is freed
+      // Make sure old clock is freed - memleak fix
 	  if (globals.clock) {
 		  gst_object_unref(globals.clock);
 		  globals.clock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "clock-type", GST_CLOCK_TYPE_REALTIME, NULL);
