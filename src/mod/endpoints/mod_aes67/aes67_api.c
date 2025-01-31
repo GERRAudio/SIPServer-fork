@@ -141,7 +141,7 @@ request_pt_map(GstElement *jitterbuffer, guint pt, gpointer user_data)
 static void
 destroy_caps(void *data, GClosure G_GNUC_UNUSED *closure)
 {
-  gst_caps_unref(data);
+  gst_caps_unref(GST_OBJECT(data));
 }
 #endif
 
@@ -149,18 +149,18 @@ static void
 deinterleave_pad_added (GstElement * deinterleave, GstPad * pad,
     gpointer userdata)
 {
-  GstElement *pipeline =
-      GST_ELEMENT (gst_element_get_parent (deinterleave)), *tee;
-  GstPad *tee_sink_pad;
+  GstElement *pipeline = GST_ELEMENT(gst_element_get_parent(deinterleave));
+  GstElement *tee=NULL;
+  GstPad *tee_sink_pad =NULL;
   gchar name[ELEMENT_NAME_SIZE];
-  gchar *pad_name;
+  gchar *pad_name = NULL;  
   guint ch_idx;
 
   pad_name = gst_pad_get_name (pad);
   sscanf (pad_name, "src_%u", &ch_idx);
 
   NAME_ELEMENT (name, "tee", ch_idx);
-  tee = gst_bin_get_by_name (GST_BIN (pipeline), name);
+  tee = gst_bin_get_by_name (GST_BIN (pipeline), name);  //no allocation
   g_assert_nonnull (tee);
 
   tee_sink_pad = gst_element_get_static_pad (tee, "sink");
@@ -172,9 +172,10 @@ deinterleave_pad_added (GstElement * deinterleave, GstPad * pad,
 
   dump_pipeline(GST_PIPELINE(pipeline), pad_name);
 
-  gst_object_unref (tee_sink_pad);
-  gst_object_unref(tee);
-  gst_object_unref(pipeline);
+  // these need to be unconditionally deref'd
+  gst_object_unref (GST_OBJECT(tee_sink_pad));
+  gst_object_unref(GST_OBJECT(tee));
+  gst_object_unref(GST_OBJECT(pipeline));
   g_free (pad_name);
 }
 
@@ -207,8 +208,8 @@ gboolean update_clock (gpointer userdata) {
     }
   }
 
-  if (stats!=NULL) gst_structure_free(GST_OBJECT(stats));
-  if (rtpdepay!=NULL) gst_object_unref (GST_OBJECT(rtpdepay));
+  if (stats!=NULL)      gst_structure_free(stats);
+  if (rtpdepay!=NULL)   gst_object_unref (GST_OBJECT(rtpdepay));
 
   return G_SOURCE_CONTINUE;
 }
@@ -230,11 +231,13 @@ add_appsink (g_stream_t *stream, guint ch_idx, gchar *session)
 {
   gchar name[ELEMENT_NAME_SIZE];
   gchar dot_name[ELEMENT_NAME_SIZE+10];
+
   GstPad* tee_src_pad = NULL;
   GstPad* queue_sink_pad = NULL;
   GstElement* tee = NULL;
   GstElement* queue = NULL;
   GstElement* appsink = NULL;
+
   gboolean ret = FALSE;
 
   NAME_ELEMENT(name, "tee", ch_idx);
@@ -323,16 +326,17 @@ add_appsink (g_stream_t *stream, guint ch_idx, gchar *session)
   ret = TRUE;
   goto exit;
 
+
   error:
-    if (NULL != appsink) gst_object_unref(GST_OBJECT(appsink));
-    if (NULL != queue)  gst_object_unref(GST_OBJECT(queue));
-    if (NULL != tee)  gst_object_unref(GST_OBJECT(tee));
+	if (NULL != appsink) gst_object_unref(GST_OBJECT(appsink));
+	if (NULL != queue) gst_object_unref(GST_OBJECT(queue));
+	if (NULL != tee) gst_object_unref(GST_OBJECT(tee));
 
-  exit:
-    if (NULL != tee_src_pad)  gst_object_unref(GST_OBJECT(tee_src_pad));
-    if (NULL != queue_sink_pad)	  gst_object_unref(GST_OBJECT(queue_sink_pad));
+exit:
+	if (NULL != tee_src_pad) gst_object_unref(GST_OBJECT(tee_src_pad));
+	if (NULL != queue_sink_pad) gst_object_unref(GST_OBJECT(queue_sink_pad));
 
-  return ret;
+    return ret;
   }
 
 /*
@@ -355,6 +359,7 @@ remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session) {
   GstElement *tee = NULL;
   GstPad *tee_src_pad = NULL;
   GstPad *queue_sink_pad = NULL;
+
   gboolean ret = FALSE;
 
   /*
@@ -475,7 +480,7 @@ backup_sender_timeout_cb(gpointer userdata)
       // no memory allocated
       buffer = gst_sample_get_buffer(last_sample); 
       timestamp = GST_BUFFER_DTS_OR_PTS (buffer);
-      meta = gst_buffer_get_net_address_meta(buffer);
+      meta = gst_buffer_get_net_address_meta(buffer); 
       //
 
       sock_addr = meta->addr;
@@ -524,7 +529,7 @@ backup_sender_timeout_cb(gpointer userdata)
 
 exit:
 	if (last_sample!=NULL) gst_sample_unref(last_sample);
-	if (clock!=NULL) gst_object_unref(clock);
+	if (clock!=NULL) gst_object_unref(GST_OBJECT(clock));
 	if (fakesink != NULL) gst_object_unref(GST_OBJECT(fakesink));
     if (host != NULL) g_free(host);
 
@@ -796,6 +801,7 @@ ddirRX_exit:;
           "Failed to link elements");
 		goto ddirTX_error;
     }
+
 	goto ddirTX_exit;
 
 ddirTX_error:
@@ -882,11 +888,14 @@ ddirTX_error:
 bksnd_error:
     if (udpsrc !=NULL) gst_caps_unref(GST_OBJECT(udpsrc));
 	if (fakesink != NULL) gst_caps_unref(GST_OBJECT(fakesink));
+	if (caps!=NULL) gst_caps_unref(GST_OBJECT(caps));
 	goto error;
 
 bksnd_exit:
-	if (caps!=NULL) gst_caps_unref(GST_OBJECT(caps));
+	gst_caps_unref(GST_OBJECT(caps));
   }
+
+
 
   bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
   gst_bus_add_watch (bus, bus_callback, stream);
@@ -935,12 +944,12 @@ error:
 
     if (pipeline !=NULL) gst_object_unref(GST_OBJECT(pipeline));
 	if (rtp_pay != NULL) gst_object_unref(GST_OBJECT(rtp_pay));
-    if (stream!=NULL) g_free (GST_OBJECT(stream));
+    //if (stream != NULL) g_free (GST_OBJECT(stream));
+	if (stream != NULL) gst_object_unref(GST_OBJECT(stream));    
 
-  return NULL;
+    return NULL;
 exit:
     return stream;
-
 }
 
 void
@@ -951,6 +960,7 @@ use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 
   /* cb_rx_stats_id will be non zero only when
   Rx is operational and pipeline clock is not ptp*/
+
   if (stream->cb_rx_stats_id) {
     g_source_remove(stream->cb_rx_stats_id);
     stream->cb_rx_stats_id = 0;
@@ -1006,7 +1016,8 @@ stop_pipeline (g_stream_t * stream)
 	gst_object_unref (GST_OBJECT(stream->clock));
   teardown_mainloop (stream->mainloop);
   g_thread_join (stream->thread);
-  g_free (stream);
+  //g_free (stream);
+  if (stream != NULL) gst_object_unref(GST_OBJECT(stream)); 
   switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
       "Pipeline and mainloop cleaned up\n");
 }
@@ -1034,11 +1045,11 @@ push_buffer (g_stream_t *stream, unsigned char *payload, guint len,
   GstState cur_state = GST_STATE_NULL, pending_state;
   GstBuffer *buf =NULL;
   GstMapInfo info;
-  GstFlowReturn ret;
+  gboolean result=FALSE;
+
   gchar name[ELEMENT_NAME_SIZE];
   GstElement *appsrc = NULL;
   GstPipeline *pipeline = stream->pipeline;
-  gboolean res = FALSE;
 
   NAME_ELEMENT (name, "appsrc", ch_idx);
   appsrc = gst_bin_get_by_name (GST_BIN (pipeline), name);
@@ -1048,17 +1059,17 @@ push_buffer (g_stream_t *stream, unsigned char *payload, guint len,
   if (appsrc == NULL) {
     switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
         "Failed to find appsrc in the pipeline\n");
-    return FALSE;
+	  goto done;
   }
 
   if (!g_atomic_int_get(&stream->clock_sync)) {
-    ret = TRUE;
+    result = TRUE;
     goto done;
   }
 
   gst_element_get_state (GST_ELEMENT (pipeline), &cur_state, &pending_state, 0);
   if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) {
-    ret = TRUE;
+    result = TRUE;
     goto done;
   }
 
@@ -1077,6 +1088,7 @@ push_buffer (g_stream_t *stream, unsigned char *payload, guint len,
   memcpy (info.data, payload, len);
   gst_buffer_unmap (buf, &info);
 
+  GstFlowReturn ret;
   g_signal_emit_by_name (appsrc, "push-buffer", buf, &ret);
   // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pushed buffer\n");
 
@@ -1087,12 +1099,12 @@ push_buffer (g_stream_t *stream, unsigned char *payload, guint len,
     goto done;
   }
 
-  res = TRUE;
+
 
 done:
   gst_object_unref (GST_OBJECT (appsrc));
   if (buf!=NULL) gst_object_unref(GST_OBJECT(buf));
-  return res;
+  return result;
 }
 
 
@@ -1173,7 +1185,7 @@ pull_buffers (g_stream_t * stream, unsigned char *payload, guint needed_bytes,
       total_bytes += info.size;
     }
     gst_buffer_unmap (buf, &info);
-    gst_sample_unref (GST_OBJECT(sample));
+    if (sample!=NULL) gst_sample_unref (sample);
 
     // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got %d\n", total_bytes);
   }
@@ -1196,8 +1208,8 @@ pull_buffers (g_stream_t * stream, unsigned char *payload, guint needed_bytes,
   // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Leftover %lu\n", stream->leftover_bytes[ch_idx]);
 
 out:
-  gst_object_unref(appsink);
-  if (buf!=NULL)gst_object_unref(GST_OBJECT(buf));
+  if (appsink !=NULL) gst_object_unref(GST_OBJECT(appsink));
+  if (buf!=NULL) gst_object_unref(GST_OBJECT(buf));
   if (sample != NULL) gst_object_unref(GST_OBJECT(sample));
   return total_bytes;
 }
@@ -1218,7 +1230,7 @@ drop_input_buffers (gboolean drop, g_stream_t * stream, guint32 ch_idx)
   g_object_set (valve, "drop", drop, NULL);
   g_snprintf (name, STR_SIZE, "drop-ch%d-%d", ch_idx, drop);
   dump_pipeline(stream->pipeline, name);
-  gst_object_unref(GST_OBJECT(valve));
+  if (valve!=NULL) gst_object_unref(GST_OBJECT(valve));
 }
 
 gchar *
@@ -1242,7 +1254,7 @@ void drop_output_buffers (gboolean drop, g_stream_t *stream)
   GstElement *tx_valve=NULL;
   gchar name[ELEMENT_NAME_SIZE];
 
-  tx_valve = gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-valve");
+  tx_valve = gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-valve"); //no allocation
   if (tx_valve == NULL) {
     switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
         "Failed to get valve element in the pipeline\n");
