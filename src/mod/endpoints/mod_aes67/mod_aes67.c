@@ -648,7 +648,7 @@ destroy_actual_stream (audio_stream_t * stream)
   }
 
   stop_pipeline (stream->stream);
-  stream->stream = NULL;
+  stream->stream = NULL; // do we need to de-allocate stream->stream here?
 
   if (stream->write_timer.timer_interface) {
     switch_core_timer_destroy (&stream->write_timer);
@@ -2058,6 +2058,7 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void* data)
 
   globals.ptp_synced = synced;
   // Update the global for event emission
+
   g_object_get(ptp_clock, "grandmaster-clock-id", &globals.ptp_gm_id, NULL);
   emit_ptp_gm_change(synced);
 
@@ -2065,7 +2066,7 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void* data)
     return;
 
   if (globals.clock) {
-    gst_object_unref(globals.clock);
+    gst_object_unref(GST_OBJECT(globals.clock));
     globals.clock = gst_object_ref(ptp_clock);
   }
   globals.synthetic_ptp = 0;
@@ -2735,20 +2736,21 @@ load_config (void)
 
   if (globals.ptp_domain >= 0) {
     void *ptp_clock = init_ptp (globals.ptp_domain, globals.ptp_iface);
+
     if (NULL == ptp_clock) {
       switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,"Switching to Synthetic PTP \n");
       globals.synthetic_ptp = 1;
 
       // Make sure old clock is freed - memleak fix
 	  if (globals.clock) {
-		  gst_object_unref(globals.clock);
+		  gst_object_unref(GST_OBJECT(globals.clock));
 		  globals.clock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "clock-type", GST_CLOCK_TYPE_REALTIME, NULL);
 	  }
 
     } else {
       /* using PTP clock, clean up the default GST_CLOCK_TYPE_REALTIME clock */
-      gst_object_unref (globals.clock);
-      globals.clock = ptp_clock;
+      if (globals.clock!=NULL) gst_object_unref (GST_OBJECT(globals.clock));
+      globals.clock = ptp_clock;            //check mem leak or crazy deallocation of ptp_clock being pointed to here
     }
   }
 
@@ -2820,7 +2822,7 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION (mod_aes67_shutdown)
   gst_ptp_deinit ();
 
   if (globals.clock)
-    gst_object_unref (globals.clock);
+    gst_object_unref (GST_OBJECT(globals.clock));
 
   switch_core_hash_destroy (&globals.call_hash);
   switch_core_hash_destroy (&globals.sh_streams);
