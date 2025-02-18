@@ -1,0 +1,41 @@
+<configuration name="verto.conf" description="HTML5 Verto Endpoint">
+
+  <settings>
+     <!-- <param name="debug" value="5"/> -->
+    <param name="enable-presence" value="false"/>
+    <param name="detach-timeout-sec" value="20"/>
+    <!-- seconds to wait before hanging up a disconnected channel -->
+    <!-- <param name="detach-timeout-sec" value="120"/> -->
+    <!-- enable broadcasting all FreeSWITCH events in Verto -->
+    <!-- <param name="enable-fs-events" value="false"/> -->
+    <!-- enable broadcasting FreeSWITCH presence events in Verto -->
+    <!-- <param name="enable-presence" value="true"/> -->
+  </settings>
+
+  <profiles>
+   <profile name="mine">
+      <param name="bind-local" value="0.0.0.0:8081"/>
+      <param name="bind-local" value="0.0.0.0:8082" secure="true"/>
+      <param name="secure-combined" value="$${certs_dir}/wss.pem"/>
+      <param name="secure-chain" value="$${certs_dir}/wss.pem"/>
+      <param name="userauth" value="true"/>
+      <param name="context" value="public"/>
+      <param name="dialplan" value="XML"/>
+      <param name="mcast-ip" value="239.1.1.1"/>
+      <param name="mcast-port" value="1337"/>
+      <param name="local-network" value="localnet.auto"/>
+      
+      <param name="rtp-ip" value="$${setIPv4}"/>
+      <param name="ext-rtp-ip" value="$${setIPv4}"/>
+      <param name="outbound-codec-string" value="pcma,pcmu"/>
+      <param name="inbound-codec-string" value="pcma,pcmu"/>
+      <param name="timer-name" value="soft"/>
+	  <param name="apply-candidate-acl" value="localnet.auto"/>
+	  <param name="apply-candidate-acl" value="wan_v4.auto"/>
+	  <param name="apply-candidate-acl" value="rfc1918.auto"/>
+	  <param name="apply-candidate-acl" value="any_v4.auto"/>
+      <!-- <param name="force-register-domain" value="$${domain}"/> -->
+    </profile>
+  
+  </profiles>
+</configuration>
