@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<include>
+	<context name="default">
+
+		<!-- Drop conference access when it's the All Call -->
+		<extension name="stop_all_call">
+			<condition field="destination_number" expression="^${ProtectedAllCall}$">
+				<action application="playback" data="misc\8000\invalid_extension.wav"/>
+				<action application="sleep" data="2000"/>
+				<action application="hangup" data="USER_BUSY"/>
+			</condition>
+		</extension>
+		
+		<!-- default route for all dialed-into conferences (Phone Calls), 4 or 5 digits -->
+		<extension name="all_dial_in_conferences">
+			<condition field="destination_number" expression="^(${FirstNumber}\d{3,4})$">
+				<action application="log" data="INFO - Default/dial in conferences - dest conf:${destination_number} Caller ID: + ${caller_id_number}"/>
+				<action application="answer"/>
+				<action application="managed" data="CommunicatorConnector ConferenceChecker + ${destination_number} FROM_DIALPLAN"/>
+				<action application="set" data="api_hangup_hook=managed CommunicatorConnector ConferenceChecker - ${destination_number}"/>
+        <!-- no hangup option : nomoh added -->
+				<action application="conference" data="${destination_number}@default+flags{nomoh}"/>
+			</condition>
+		</extension>
+		
+		<!-- Generated conference from 9000 to 9998 from Communicator for pin-validated dial-ins -->
+		<extension name="non-whitelisted-people-with-correct-PIN">
+			<condition field="destination_number" expression="^(9\d{3})$">
+				<action application="set" data="api_hangup_hook=managed CommunicatorConnector ConferenceChecker - $1"/>
+				<action application="playback" data="ConnectedToSystem.wav"/>
+				<action application="playback" data="conference\8000\conf-conference_will_start_shortly.wav"/>
+				<action application="conference_set_auto_outcall" data="aes67/endpoints/Announce"/>
+				<action application="conference" data="$1"/>
+			</condition>
+		</extension>
+
+		<!-- Add Eclipse interface into existing SIP Server conference (dynamically assigned Dante) -->
+		<extension name="dante_dial_conference">
+			<condition field="destination_number" expression="^99999(\d+)$">
+				<action application="set" data="continue_on_fail=true"/>
+				<action application="answer"/>
+				<action application="log" data="INFO Dante Port is '${interface}'"/>
+				<action application="managed" data="CommunicatorConnector AddDanteToCall $1"/>
+				<action application="set" data="api_hangup_hook=managed CommunicatorConnector RemoveDanteFromCall $1 ${interface}"/>
+				<action application="conference" data="$1+flags{noperpetual}"/>
+				<action application="transfer" data="${destination_number}"/>
+			</condition>
+		</extension>
+		
+		<!-- Verto Operators calling into Dante / AES67 -->
+		<extension name="dante_connect">
+			<condition field="destination_number" expression="^[0-9]$">
+				<action application="managed" data="CommunicatorConnector OperatorChecker ${destination_number} ${uuid}"/>
+				<action application="sleep" data="1000"/>
+				<action application="set" data="rtp_jitter_buffer_plc=true"/>
+				<param name="use-jb-lookahead" value="1"/>
+				<action application="jitterbuffer" data="40"/>
+				<action application="answer"/>
+				<action application="bridge" data="aes67/endpoints/Operator_${destination_number}"/>
+			</condition>
+		</extension>
+
+		<!-- Hang up users who fail to give correct PIN after three attempts -->
+		<extension name="conference_failed_pin">
+			<condition field="destination_number" expression="^9999$">
+				<action application="playback" data="ThatConferenceNumIsIncorrect.wav"/>
+				<action application="sleep" data="1000"/>
+			</condition>
+		</extension>
+		
+		<!-- Endless loop of audio to reassure beltpack users after they hit "Call" -->
+		<extension name="Tone_Stream_For_Beltpacks">
+			<condition field="destination_number" expression="^99998$">
+				<action application="answer"/>
+				<action application="set" data="api_hangup_hook=managed CommunicatorConnector LostToneStreamForBeltpacks - $1"/>
+				<action application="loop_playback" data="theoperatorhasbeencalledbeep.wav"/>
+			</condition>
+		</extension>
+		
+		<!-- Icecast Broadcast method to send PortAudio input to multiple conferences - deprecated -->
+		<extension name="Broadcast_Announce">
+			<condition field="destination_number" expression="^99991$">
+				<action application="answer"/>
+				<action application="set" data="api_hangup_hook=managed CommunicatorConnector LostBroadcastAnnounce - $1"/>
+				<action application="record" data="shout://source:pass@127.0.0.1:8000/stream.ogg"/>
+			</condition>
+		</extension>
+		
+	</context>
+</include>

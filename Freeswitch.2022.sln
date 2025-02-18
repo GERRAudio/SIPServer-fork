@@ -569,6 +569,45 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SIPWebServer", "SIPWebServe
 EndProject
 Project("{B7DD6F7E-DEF8-4E67-B5B7-07EF123DB6F0}") = "SIPServer_Installer", "SIPServer-Installer\SIPServer_Installer.wixproj", "{1662343F-6250-409D-A734-6F856F409888}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Bruce", "Bruce", "{3C09B58D-7791-49B0-9814-EDB022D26833}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "conf", "conf", "{C8FF8DCB-F5F7-49BA-B445-B522207DFB2E}"
+	ProjectSection(SolutionItems) = preProject
+		conf\Bruce\conf\README.md = conf\Bruce\conf\README.md
+		conf\Bruce\conf\vars.xml = conf\Bruce\conf\vars.xml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "autoload_configs", "autoload_configs", "{0644AC71-76A5-4DC5-BEFD-25F515CA97CE}"
+	ProjectSection(SolutionItems) = preProject
+		conf\Bruce\conf\autoload_configs\aes67.conf.xml = conf\Bruce\conf\autoload_configs\aes67.conf.xml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dialplan", "dialplan", "{93DAB5BC-D36F-4CEF-9E37-71324B0198C2}"
+	ProjectSection(SolutionItems) = preProject
+		conf\Bruce\conf\dialplan\default.xml = conf\Bruce\conf\dialplan\default.xml
+		conf\Bruce\conf\dialplan\public.xml = conf\Bruce\conf\dialplan\public.xml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "sip_profiles", "sip_profiles", "{8BF7FD8A-43FF-4194-A1A1-0721B59526F7}"
+	ProjectSection(SolutionItems) = preProject
+		conf\Bruce\sip_profiles\external.xml = conf\Bruce\sip_profiles\external.xml
+		conf\Bruce\sip_profiles\internal.xml = conf\Bruce\sip_profiles\internal.xml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "external", "external", "{1733C2B3-F87E-401F-A2CB-49847B0EA34B}"
+	ProjectSection(SolutionItems) = preProject
+		conf\Bruce\sip_profiles\external\CUCM.xml = conf\Bruce\sip_profiles\external\CUCM.xml
+		conf\Bruce\sip_profiles\external\Remote.xml = conf\Bruce\sip_profiles\external\Remote.xml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "mod", "mod", "{5DAEE21C-6B03-4E6B-81D5-A03927B6222F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "managed", "managed", "{E08A6E29-084A-462B-84FE-DDCB198D7618}"
+	ProjectSection(SolutionItems) = preProject
+		src\mod\managed\CommunicatorConnector.csx = src\mod\managed\CommunicatorConnector.csx
+		src\mod\managed\SAPAnnouncer.csx = src\mod\managed\SAPAnnouncer.csx
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		All|Any CPU = All|Any CPU
@@ -10930,6 +10969,13 @@ Global
 		{11C9BC3D-45E9-46E3-BE84-B8CEE4685E44} = {E72B5BCB-6462-4D23-B419-3AF1A4AC3D78}
 		{15A41D3F-1D84-42B0-960D-8C567172C5C4} = {E72B5BCB-6462-4D23-B419-3AF1A4AC3D78}
 		{11C9CC3D-45E9-46E3-BE84-B8CEE4685E44} = {E72B5BCB-6462-4D23-B419-3AF1A4AC3D78}
+		{3C09B58D-7791-49B0-9814-EDB022D26833} = {57D119DC-484F-420F-B9E9-8589FD9A8DF8}
+		{C8FF8DCB-F5F7-49BA-B445-B522207DFB2E} = {3C09B58D-7791-49B0-9814-EDB022D26833}
+		{0644AC71-76A5-4DC5-BEFD-25F515CA97CE} = {C8FF8DCB-F5F7-49BA-B445-B522207DFB2E}
+		{93DAB5BC-D36F-4CEF-9E37-71324B0198C2} = {C8FF8DCB-F5F7-49BA-B445-B522207DFB2E}
+		{8BF7FD8A-43FF-4194-A1A1-0721B59526F7} = {3C09B58D-7791-49B0-9814-EDB022D26833}
+		{1733C2B3-F87E-401F-A2CB-49847B0EA34B} = {8BF7FD8A-43FF-4194-A1A1-0721B59526F7}
+		{E08A6E29-084A-462B-84FE-DDCB198D7618} = {5DAEE21C-6B03-4E6B-81D5-A03927B6222F}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {09840DE7-9208-45AA-9667-1A71EE93BD1E}
