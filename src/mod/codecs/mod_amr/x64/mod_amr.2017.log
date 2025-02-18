@@ -1,5 +1,5 @@
-﻿Build started 6/26/2024 1:52:09 PM.
-Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\codecs\mod_amr\mod_amr.2017.vcxproj" on node 4 (Build target(s)).
+﻿Build started 2/18/2025 12:11:03 PM.
+Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\codecs\mod_amr\mod_amr.2017.vcxproj" on node 5 (Build target(s)).
      1>PrepareForBuild:
          Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
        InitializeBuildStatus:

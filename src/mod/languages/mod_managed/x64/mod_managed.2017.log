@@ -1,4 +1,4 @@
-﻿Build started 6/26/2024 1:51:57 PM.
+﻿Build started 2/18/2025 12:10:50 PM.
 Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" on node 5 (Build target(s)).
      1>PrepareForBuild:
          Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
@@ -40,4 +40,4 @@ Build succeeded.
     1 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:09.96
+Time Elapsed 00:00:09.80
