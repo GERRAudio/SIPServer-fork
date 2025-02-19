@@ -203,6 +203,9 @@
       <TargetMachine>MachineX64</TargetMachine>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy  $(SolutionDir)conf\Bruce\conf\  $(SolutionDir)\x64\ReleaseTest\  /y/s</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\src\switch.c" />

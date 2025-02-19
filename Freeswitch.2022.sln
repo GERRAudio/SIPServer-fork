@@ -591,24 +591,24 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dialplan", "dialplan", "{93
 		conf\Bruce\conf\dialplan\public.xml = conf\Bruce\conf\dialplan\public.xml
 	EndProjectSection
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "sip_profiles", "sip_profiles", "{8BF7FD8A-43FF-4194-A1A1-0721B59526F7}"
-	ProjectSection(SolutionItems) = preProject
-		conf\Bruce\sip_profiles\external.xml = conf\Bruce\sip_profiles\external.xml
-		conf\Bruce\sip_profiles\internal.xml = conf\Bruce\sip_profiles\internal.xml
-	EndProjectSection
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "external", "external", "{1733C2B3-F87E-401F-A2CB-49847B0EA34B}"
-	ProjectSection(SolutionItems) = preProject
-		conf\Bruce\sip_profiles\external\CUCM.xml = conf\Bruce\sip_profiles\external\CUCM.xml
-		conf\Bruce\sip_profiles\external\Remote.xml = conf\Bruce\sip_profiles\external\Remote.xml
-	EndProjectSection
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "mod", "mod", "{5DAEE21C-6B03-4E6B-81D5-A03927B6222F}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "managed", "managed", "{E08A6E29-084A-462B-84FE-DDCB198D7618}"
 	ProjectSection(SolutionItems) = preProject
 		src\mod\managed\CommunicatorConnector.csx = src\mod\managed\CommunicatorConnector.csx
 		src\mod\managed\SAPAnnouncer.csx = src\mod\managed\SAPAnnouncer.csx
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "sip_profiles", "sip_profiles", "{F0299164-A342-49AD-8620-1E33A3E8C23C}"
+	ProjectSection(SolutionItems) = preProject
+		conf\Bruce\conf\sip_profiles\external.xml = conf\Bruce\conf\sip_profiles\external.xml
+		conf\Bruce\conf\sip_profiles\internal.xml = conf\Bruce\conf\sip_profiles\internal.xml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "external", "external", "{B45EB22F-987D-40B8-B3F0-8C933B87317A}"
+	ProjectSection(SolutionItems) = preProject
+		conf\Bruce\conf\sip_profiles\external\CUCM.xml = conf\Bruce\conf\sip_profiles\external\CUCM.xml
+		conf\Bruce\conf\sip_profiles\external\Remote.xml = conf\Bruce\conf\sip_profiles\external\Remote.xml
 	EndProjectSection
 EndProject
 Global
@@ -10976,9 +10976,9 @@ Global
 		{C8FF8DCB-F5F7-49BA-B445-B522207DFB2E} = {3C09B58D-7791-49B0-9814-EDB022D26833}
 		{0644AC71-76A5-4DC5-BEFD-25F515CA97CE} = {C8FF8DCB-F5F7-49BA-B445-B522207DFB2E}
 		{93DAB5BC-D36F-4CEF-9E37-71324B0198C2} = {C8FF8DCB-F5F7-49BA-B445-B522207DFB2E}
-		{8BF7FD8A-43FF-4194-A1A1-0721B59526F7} = {3C09B58D-7791-49B0-9814-EDB022D26833}
-		{1733C2B3-F87E-401F-A2CB-49847B0EA34B} = {8BF7FD8A-43FF-4194-A1A1-0721B59526F7}
 		{E08A6E29-084A-462B-84FE-DDCB198D7618} = {5DAEE21C-6B03-4E6B-81D5-A03927B6222F}
+		{F0299164-A342-49AD-8620-1E33A3E8C23C} = {C8FF8DCB-F5F7-49BA-B445-B522207DFB2E}
+		{B45EB22F-987D-40B8-B3F0-8C933B87317A} = {F0299164-A342-49AD-8620-1E33A3E8C23C}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {09840DE7-9208-45AA-9667-1A71EE93BD1E}
