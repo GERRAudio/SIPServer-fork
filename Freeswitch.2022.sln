@@ -570,6 +570,9 @@ EndProject
 Project("{B7DD6F7E-DEF8-4E67-B5B7-07EF123DB6F0}") = "SIPServer_Installer", "SIPServer-Installer\SIPServer_Installer.wixproj", "{1662343F-6250-409D-A734-6F856F409888}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Bruce", "Bruce", "{3C09B58D-7791-49B0-9814-EDB022D26833}"
+	ProjectSection(SolutionItems) = preProject
+		conf\Bruce\Dante-AES67-presets.xml = conf\Bruce\Dante-AES67-presets.xml
+	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "conf", "conf", "{C8FF8DCB-F5F7-49BA-B445-B522207DFB2E}"
 	ProjectSection(SolutionItems) = preProject
