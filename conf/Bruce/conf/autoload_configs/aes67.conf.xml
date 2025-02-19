@@ -18,7 +18,7 @@
 		<!-- Rx params for the in gstreamer pipeline -->
 		<param name="rx-port" value="5004" />
 		<param name="ptp-domain" value="0" iface="$${mcastIP_Name}"/>
-		<param name="synthetic-ptp" value="0" /> 
+		<param name="synthetic-ptp" value="0" />  
 		<param name="rtp-ts-offset" value="4"/>  <!--try various - 1, 2, 3-->
 		<param name="ptime-ms" value="1"/>
 		<param name="rtp-iface" value="$${mcastIP_Name}"/>
