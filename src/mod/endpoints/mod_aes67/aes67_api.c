@@ -956,12 +956,12 @@ bksnd_exit:
 error:
     if (pipeline !=NULL) gst_object_unref(GST_OBJECT(pipeline));
 	if (rtp_pay != NULL) gst_object_unref(GST_OBJECT(rtp_pay));
-    //if (stream != NULL) g_free (GST_OBJECT(stream));
+    //if (stream != NULL) g_free (stream);
 	if (stream != NULL) {
 		if (stream->clock != NULL) {
 			gst_object_unref(stream->clock); // Fix: Added missing unref
 		}
-		g_free(GST_OBJECT(stream));
+		g_free(stream);
 	}
 	return NULL;
 exit:
