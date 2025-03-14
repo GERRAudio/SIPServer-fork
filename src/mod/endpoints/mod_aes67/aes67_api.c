@@ -1125,7 +1125,7 @@ done:
 
 error:
   gst_object_unref (GST_OBJECT (appsrc));
-  if (buf!=NULL) gst_buffer_unref(buf);
+	if (buf != NULL) gst_object_unref(GST_OBJECT(buf));
   return ret;
 }
 
@@ -1232,8 +1232,7 @@ pull_buffers (g_stream_t * stream, unsigned char *payload, guint needed_bytes,
 
 out:
   if (appsink !=NULL) gst_object_unref(GST_OBJECT(appsink));
-  if (buf!=NULL) gst_buffer_unref(buf);
-  if (sample != NULL) gst_sample_unref(sample);
+  if (buf != NULL) gst_object_unref(GST_OBJECT(buf));
   return total_bytes;
 }
 
