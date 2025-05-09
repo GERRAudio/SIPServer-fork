@@ -1,5 +1,5 @@
-﻿Build started 6/26/2024 1:46:53 PM.
-Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" on node 4 (Build target(s)).
+﻿Build started 5/9/2025 2:20:14 PM.
+Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" on node 5 (Build target(s)).
      1>PrepareForBuild:
          Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
        InitializeBuildStatus:
@@ -22,8 +22,8 @@ Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAu
          layer3.c
          libmpg123.c
          msvc.c
-     1>C:\Development\GitHub\GERRAudio\SIPServer\libs\libmpg123\ports\MSVC++\msvc.c(24,34): warning C4113: 'int (__cdecl *)(int,void *,unsigned int)' differs in parameter lists from 'ssize_t (__cdecl *)(int,void *,size_t)'
          ntom.c
+     1>C:\Development\GitHub\GERRAudio\SIPServer\libs\libmpg123\ports\MSVC++\msvc.c(24,34): warning C4113: 'int (__cdecl *)(int,void *,unsigned int)' differs in parameter lists from 'ssize_t (__cdecl *)(int,void *,size_t)'
          optimize.c
          parse.c
          readers.c
@@ -75,4 +75,4 @@ Build succeeded.
     1 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:06.58
+Time Elapsed 00:00:09.62
