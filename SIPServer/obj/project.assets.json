@@ -145,11 +145,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer\\SIPServer\\SIPServerEmbedded.csproj",
+      "projectUniqueName": "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\SIPServer\\SIPServerEmbedded.csproj",
       "projectName": "SIPServerEmbedded",
-      "projectPath": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer\\SIPServer\\SIPServerEmbedded.csproj",
+      "projectPath": "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\SIPServer\\SIPServerEmbedded.csproj",
       "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-      "outputPath": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer\\SIPServer\\obj\\",
+      "outputPath": "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\SIPServer\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -170,11 +170,11 @@
         "net8.0-windows7.0": {
           "targetAlias": "net8.0-windows",
           "projectReferences": {
-            "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj": {
-              "projectPath": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj"
+            "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj": {
+              "projectPath": "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj"
             },
-            "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj": {
-              "projectPath": "C:\\Development\\GitHub\\Forked-NetworkedAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj"
+            "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj": {
+              "projectPath": "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj"
             }
           }
         }
