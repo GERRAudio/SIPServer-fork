@@ -4,6 +4,8 @@
 #include <gst/audio/audio-channels.h>
 #include <gst/net/net.h>
 #include "aes67_api.h"
+#include "aes67_alloc.h"            //allocation tracker wrappers
+G_alloc_counts g_alloc_counts;      //global counters for allocation
 
 #define ELEMENT_NAME_SIZE 30 + SESSION_ID_LEN
 #define STR_SIZE 15

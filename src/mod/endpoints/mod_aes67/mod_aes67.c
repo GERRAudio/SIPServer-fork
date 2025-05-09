@@ -44,6 +44,7 @@
 #include <string.h>
 #include "aes67_api.h"
 #include <gst/net/net.h>
+#include "aes67_counters.h" 
 
 #define MY_EVENT_RINGING "aes67::ringing"
 #define MY_EVENT_MAKE_CALL "aes67::makecall"
@@ -3279,6 +3280,7 @@ SWITCH_STANDARD_API(aes_cmd)
   "aes67 txflow <stream> <on|off>\n"
   "aes67 reloadconf\n"
   "aes67 dump <stream> <dotfile name>\n"
+  "aes67 allocs"
   "--------------------------------------------------------------------------------\n";
   if (zstr(cmd)) {
     stream->write_function(stream, "%s", usage_string);
@@ -3417,6 +3419,8 @@ SWITCH_STANDARD_API(aes_cmd)
       dump_pipeline(astream->stream->pipeline, argv[2]);
     else
       dump_pipeline(astream->stream->pipeline, "clidump");
+  } else if (!strcasecmp(argv[0], "allocs")) {
+	  stream->write_function(stream, "bufs: %d", g_alloc_counts.bufs);
   }
 
   done:
