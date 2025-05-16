@@ -194,7 +194,9 @@
     <ClCompile Include="mod_aes67.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="aes67_alloc.h" />
     <ClInclude Include="aes67_api.h" />
+    <ClInclude Include="aes67_counters.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\libs\win32\apr\libapr.2017.vcxproj">
