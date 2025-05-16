@@ -1,22 +1,22 @@
 #include <switch.h>
-
+#include "aes67_api.h"
 #include <gst/app/gstappsink.h>
 #include <gst/audio/audio-channels.h>
 #include <gst/net/net.h>
-#include "aes67_api.h"
+#include "aes67_alloc.h" //allocation tracker wrappers
+G_alloc_counts g_alloc_counts; // counters for allocation
 
 #define ELEMENT_NAME_SIZE 30 + SESSION_ID_LEN
 #define STR_SIZE 15
-#define NAME_ELEMENT(name, element, ch_idx) \
-    g_snprintf(name, ELEMENT_NAME_SIZE, "%s-ch%u", element, ch_idx)
+#define NAME_ELEMENT(name, element, ch_idx) g_snprintf(name, ELEMENT_NAME_SIZE, "%s-ch%u", element, ch_idx)
 
-#define NAME_SESSION_ELEMENT(name, element, ch_idx, sess_id) \
-  do { \
-    if (sess_id != NULL) \
-      g_snprintf(name, ELEMENT_NAME_SIZE, "%s-ch%u-sess%s", element, ch_idx, sess_id); \
-    else \
-      g_snprintf(name, ELEMENT_NAME_SIZE, "%s-ch%u", element, ch_idx); \
-  } while (0)
+#define NAME_SESSION_ELEMENT(name, element, ch_idx, sess_id)                                                           \
+	do {                                                                                                               \
+		if (sess_id != NULL)                                                                                           \
+			g_snprintf(name, ELEMENT_NAME_SIZE, "%s-ch%u-sess%s", element, ch_idx, sess_id);                           \
+		else                                                                                                           \
+			g_snprintf(name, ELEMENT_NAME_SIZE, "%s-ch%u", element, ch_idx);                                           \
+	} while (0)
 
 #define RTP_DEPAY "rx-depay"
 
@@ -30,186 +30,200 @@
 #define DEFAULT_CONTEXT_NAME "ts"
 #define DEFAULT_CONTEXT_WAIT 10 // ms
 
-#define MAKE_TS_ELEMENT(var, factory, name, context) \
-  do { \
-    var = gst_element_factory_make (factory, name); \
-    g_object_set(var, "context-wait", DEFAULT_CONTEXT_WAIT, \
-        "context", context, NULL); \
-  } while (0)
+#define MAKE_TS_ELEMENT(var, factory, name, context)                                                                   \
+	do {                                                                                                               \
+		var = AL_gst_element_factory_make(factory, name);                                                              \
+		g_object_set(var, "context-wait", DEFAULT_CONTEXT_WAIT, "context", context, NULL);                             \
+	} while (0)
 
 typedef struct channel_remap channel_remap_t;
 
 struct channel_remap {
-  int channels;
-  // map[input channel index] = output channel index;
-  int map[MAX_IO_CHANNELS];
+	int channels;
+	// map[input channel index] = output channel index;
+	int map[MAX_IO_CHANNELS];
 };
 
 // Based on gst_rtp_channel_orders in gstrtpchannels.c
 channel_remap_t channel_remaps[] = {
-  {
-    .channels = 5,
-    .map = { 0, 1, 4, 2, 3 },
-  },
+	{
+		.channels = 5,
+		.map = {0, 1, 4, 2, 3},
+	},
 };
 
-void
-dump_pipeline (GstPipeline *pipe, const char *name)
+void dump_pipeline(GstPipeline *pipe, const char *name)
 {
-  char *tmp = g_strdup_printf("%s-%s", gst_element_get_name(pipe), name);
+	char *tmp = g_strdup_printf("%s-%s", gst_element_get_name(pipe), name);
+	AL_cnt_chars(tmp);
+	GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(pipe), GST_DEBUG_GRAPH_SHOW_ALL, tmp);
 
-  GST_DEBUG_BIN_TO_DOT_FILE (GST_BIN (pipe),
-      GST_DEBUG_GRAPH_SHOW_ALL, tmp);
-
-  g_free(tmp);
+	DA_g_free(tmp);
 }
 
-static gboolean
-bus_callback (GstBus * bus, GstMessage * msg, gpointer data)
+static gboolean bus_callback(GstBus *bus, GstMessage *msg, gpointer data)
 {
 
-  g_stream_t *stream = (g_stream_t *) data;
-  GstElement *pipeline = (GstElement *) stream->pipeline;
-  switch (GST_MESSAGE_TYPE (msg)) {
+	g_stream_t *stream = (g_stream_t *)data;
+	GstElement *pipeline = (GstElement *)stream->pipeline;
+	switch (GST_MESSAGE_TYPE(msg)) {
 
-    case GST_MESSAGE_EOS:
-      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-          "End of stream\n");
-      gst_element_set_state (pipeline, GST_STATE_NULL);
-      break;
+	case GST_MESSAGE_EOS:
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "End of stream\n");
+		gst_element_set_state(pipeline, GST_STATE_NULL);
+		break;
 
-    case GST_MESSAGE_ERROR:{
-      gchar *debug;
-      GError *error;
+	case GST_MESSAGE_ERROR: {
+		gchar *debug = NULL;
+		GError *error = NULL;
 
-      gst_message_parse_error (msg, &error, &debug);
-      g_free (debug);
+		gst_message_parse_error(msg, &error, &debug);
+		AL_cnt_errs(error);		
+		AL_cnt_chars(debug);		
+		DA_g_free(debug);
+		debug = NULL;
 
-      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error: %s\n",
-          error->message);
-      if (stream->error_cb)
-        stream->error_cb (error->message, stream);
-      g_error_free (error);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Error: %s\n", error->message);
+		if (stream->error_cb) 
+			stream->error_cb(error->message, stream);
+		DA_g_error_free(error);
 
-      gst_element_set_state (pipeline, GST_STATE_NULL);
-      break;
-    }
-    case GST_MESSAGE_STATE_CHANGED:{
-      GstState old, new, pending;
-      GstPipeline *pipe = stream->pipeline;
-      gst_message_parse_state_changed (msg, &old, &new, &pending);
-      if (msg->src == (GstObject *) pipe) {
-        gchar *old_state, *new_state, *transition;
-        guint len = 0;
-        old_state = g_strdup (gst_element_state_get_name (old));
-        new_state = g_strdup (gst_element_state_get_name (new));
-        len = strlen (old_state) + strlen (new_state) + strlen ("_to_") + 5;
-        transition = g_malloc0 (len);
-        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-            "Pipeline %s changed state from %s to %s\n",
-            GST_OBJECT_NAME (msg->src), old_state, new_state);
-        g_snprintf (transition, len, "%s_to_%s", old_state, new_state);
-        dump_pipeline(pipe, transition);
-        g_free (old_state);
-        g_free (new_state);
-        g_free (transition);
-      }
-      break;
-    }
-    default:
-      break;
-  }
+		gst_element_set_state(pipeline, GST_STATE_NULL);
+		break;
+	}
+	case GST_MESSAGE_STATE_CHANGED: {
+		GstState old, new, pending;
+		GstPipeline *pipe = stream->pipeline;
+		gst_message_parse_state_changed(msg, &old, &new, &pending);
+		if (msg->src == (GstObject *)pipe) {
+			gchar *old_state = NULL;
+			gchar *new_state = NULL;
+			gchar *transition = NULL;
+			guint len = 0;
+			old_state = AL_g_strdup(gst_element_state_get_name(old));
+			new_state = AL_g_strdup(gst_element_state_get_name(new));
+			len = strlen(old_state) + strlen(new_state) + strlen("_to_") + 5;
+			transition = AL_g_malloc0(len);
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pipeline %s changed state from %s to %s\n",
+							  GST_OBJECT_NAME(msg->src), old_state, new_state);
+			g_snprintf(transition, len, "%s_to_%s", old_state, new_state);
+			dump_pipeline(pipe, transition);
+			DA_g_free(old_state);
+			old_state = NULL;
+			DA_g_free(new_state);
+			new_state = NULL;
+			DA_g_free(transition);
+			transition = NULL;
+		}
+		break;
+	}
+	default:
+		break;
+	}
 
-  return TRUE;
-
+	return TRUE;
 }
 
 #ifdef ENABLE_THREADSHARE
-static GstCaps *
-request_pt_map(GstElement *jitterbuffer, guint pt, gpointer user_data)
+static GstCaps *request_pt_map(GstElement *jitterbuffer, guint pt, gpointer user_data)
 {
-  GstCaps *caps = GST_CAPS(user_data), *ret;
+	GstCaps *caps = GST_CAPS(user_data);
+	GstCaps *ret = NULL;
 
-  ret = gst_caps_copy(caps);
-  gst_caps_set_simple(ret, "payload", G_TYPE_INT, pt, NULL);
+	ret = gst_caps_copy(caps);
+	gst_caps_set_simple(ret, "payload", G_TYPE_INT, pt, NULL);
 
-  return ret;
+	return ret;
 }
 
-static void
-destroy_caps(void *data, GClosure G_GNUC_UNUSED *closure)
+static void destroy_caps(void *data, GClosure G_GNUC_UNUSED *closure)
 {
-  if (data !=NULL) gst_caps_unref(GST_CAPS(data));
+	if (data != NULL) {
+		DA_gst_caps_unref(GST_CAPS(data));
+	}
 }
 #endif
 
-static void
-deinterleave_pad_added (GstElement * deinterleave, GstPad * pad,
-    gpointer userdata)
+static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpointer userdata)
 {
-  GstElement *pipeline = GST_ELEMENT(gst_element_get_parent(deinterleave));
-  GstElement *tee=NULL;
-  GstPad *tee_sink_pad =NULL;
-  gchar name[ELEMENT_NAME_SIZE];
-  gchar *pad_name = NULL;  
-  guint ch_idx;
+	GstElement *pipeline = GST_ELEMENT(AL_gst_element_get_parent(deinterleave));
+	GstElement *tee = NULL;
+	GstPad *tee_sink_pad = NULL;
+	gchar name[ELEMENT_NAME_SIZE];
+	gchar *pad_name = NULL;
+	guint ch_idx;
 
-  pad_name = gst_pad_get_name (pad);
-  sscanf (pad_name, "src_%u", &ch_idx);
+	pad_name = gst_pad_get_name(pad);
+	AL_cnt_chars(pad_name);		
+	if(sscanf(pad_name, "src_%u", &ch_idx) != 1)
+	{
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pad name format unexpected: %s", pad_name);
+		goto error;
+	}
 
-  NAME_ELEMENT (name, "tee", ch_idx);
-  tee = gst_bin_get_by_name (GST_BIN (pipeline), name);  //no allocation
-  g_assert_nonnull (tee);
+	NAME_ELEMENT(name, "tee", ch_idx);
+	tee = AL_gst_bin_get_by_name(GST_BIN(pipeline), name); 
+	//g_assert_nonnull(tee);		//warning, will abort! - changed to below check
+	if (!tee) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Tee element not found for %s", name);
+		goto error;
+	}
 
-  tee_sink_pad = gst_element_get_static_pad (tee, "sink");
+	tee_sink_pad = AL_gst_element_get_static_pad(tee, "sink");
 
-  if (gst_pad_link (pad, tee_sink_pad) != GST_PAD_LINK_OK) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to link deinterleave %s pad in the rx pipeline", pad_name);
-  }
+	if (gst_pad_link(pad, tee_sink_pad) != GST_PAD_LINK_OK) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link deinterleave %s pad in the rx pipeline",
+						  pad_name);
+	}
 
-  dump_pipeline(GST_PIPELINE(pipeline), pad_name);
+error:
+	dump_pipeline(GST_PIPELINE(pipeline), pad_name);
 
-  // these need to be unconditionally deref'd
-  gst_object_unref (GST_OBJECT(tee_sink_pad));
-  gst_object_unref(GST_OBJECT(tee));
-  gst_object_unref(GST_OBJECT(pipeline));
-  g_free (pad_name);
+	// these need to be unconditionally deref'd
+	DA_gst_object_unref(GST_OBJECT(tee_sink_pad));
+	DA_gst_object_unref(GST_OBJECT(tee));
+	DA_gst_object_unref(GST_OBJECT(pipeline));
+	DA_g_free(pad_name);	
 }
 
-gboolean update_clock (gpointer userdata) {
-  g_stream_t *stream = (g_stream_t *) userdata;
-  GstStructure *stats = NULL;
-  guint32 rtp_timestamp;
-  GstElement *pipeline;
-  GstClockTime internal, external;
-  gdouble r_sq;
-  GstElement *rtpdepay =NULL;
+gboolean update_clock(gpointer userdata)
+{
+	g_stream_t *stream = (g_stream_t *)userdata;
+	GstStructure *stats = NULL;
+	guint32 rtp_timestamp;
+	GstElement *pipeline = NULL;
+	GstClockTime internal, external;
+	gdouble r_sq;
+	GstElement *rtpdepay = NULL;
 
-  pipeline = (GstElement *) stream->pipeline;
-  rtpdepay = gst_bin_get_by_name (GST_BIN (pipeline), RTP_DEPAY);
+	pipeline = (GstElement *)stream->pipeline;
+	rtpdepay = AL_gst_bin_get_by_name(GST_BIN(pipeline), RTP_DEPAY);
+	if (!rtpdepay) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "rtpdepay not found in pipeline");
+		return G_SOURCE_CONTINUE;
+	}
 
-  g_object_get (G_OBJECT(rtpdepay), "stats", &stats, NULL);
+	g_object_get(G_OBJECT(rtpdepay), "stats", &stats, NULL);
+	AL_cnt_structs(stats);
 
-  if (gst_structure_get_uint(stats, "timestamp", &rtp_timestamp) ) {
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "rtp timestamp in rtpdepay %u\n", rtp_timestamp);
+	if (gst_structure_get_uint(stats, "timestamp", &rtp_timestamp)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "rtp timestamp in rtpdepay %u\n", rtp_timestamp);
 
-    internal = gst_clock_get_internal_time(stream->clock);
-    external = gst_util_uint64_scale (rtp_timestamp, GST_SECOND, stream->sample_rate);
+		internal = gst_clock_get_internal_time(stream->clock);
+		external = gst_util_uint64_scale(rtp_timestamp, GST_SECOND, stream->sample_rate);
 
-    if (gst_clock_add_observation(stream->clock, internal, external, &r_sq) &&
-        !g_atomic_int_get (&stream->clock_sync)) {
-      g_atomic_int_set(&stream->clock_sync, 1);
+		if (gst_clock_add_observation(stream->clock, internal, external, &r_sq) &&
+			!g_atomic_int_get(&stream->clock_sync)) {
+			g_atomic_int_set(&stream->clock_sync, 1);
 
-      gst_pipeline_use_clock (GST_PIPELINE (pipeline), stream->clock);
-      gst_pipeline_set_clock (GST_PIPELINE (pipeline), stream->clock);
-    }
-  }
+			gst_pipeline_use_clock(GST_PIPELINE(pipeline), stream->clock);
+			gst_pipeline_set_clock(GST_PIPELINE(pipeline), stream->clock);
+		}
+	}
 
-  if (stats!=NULL)      gst_structure_free(stats);
-  if (rtpdepay!=NULL)   gst_object_unref (GST_OBJECT(rtpdepay));
-
-  return G_SOURCE_CONTINUE;
+	DA_gst_structure_free(stats);
+	DA_gst_object_unref(GST_OBJECT(rtpdepay));
+	return G_SOURCE_CONTINUE;
 }
 
 /*
@@ -224,118 +238,124 @@ gboolean update_clock (gpointer userdata) {
 
 */
 
-gboolean
-add_appsink (g_stream_t *stream, guint ch_idx, gchar *session)
+gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 {
-  gchar name[ELEMENT_NAME_SIZE];
-  gchar dot_name[ELEMENT_NAME_SIZE+10];
+	gchar name[ELEMENT_NAME_SIZE];
+	gchar dot_name[ELEMENT_NAME_SIZE + 10];
 
-  GstPad* tee_src_pad = NULL;
-  GstPad* queue_sink_pad = NULL;
-  GstElement* tee = NULL;
-  GstElement* queue = NULL;
-  GstElement* appsink = NULL;
+	GstPad *tee_src_pad = NULL;
+	GstPad *queue_sink_pad = NULL;
+	GstElement *tee = NULL;
+	GstElement *queue = NULL;
+	GstElement *appsink = NULL;
 
-  gboolean ret = FALSE;
+	gboolean ret = FALSE;
 
-  NAME_ELEMENT(name, "tee", ch_idx);
-  tee = gst_bin_get_by_name (GST_BIN(stream->pipeline), name);
-  if (tee == NULL) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to get %s element in the pipeline\n", name);
-    goto error;
-  }
+	NAME_ELEMENT(name, "tee", ch_idx);
+	tee = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
+	if (tee == NULL) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get %s element in the pipeline\n", name);
+		goto error;
+	}
 
-  NAME_SESSION_ELEMENT(name, "queue", ch_idx, session);
-  if (NULL != (queue = gst_bin_get_by_name(GST_BIN (stream->pipeline), name))) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-        "%s already exists in the pipeline ch: %d, session %s", name, ch_idx, session);
-    goto error;
-  }
+	NAME_SESSION_ELEMENT(name, "queue", ch_idx, session);
+	if (NULL != (queue = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name))) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "%s already exists in the pipeline ch: %d, session %s",
+						  name, ch_idx, session);
+		goto error;
+	}
 #ifndef ENABLE_THREADSHARE
-      queue = gst_element_factory_make ("queue", name);
+	queue = AL_gst_element_factory_make("queue", name);
 #else
-      MAKE_TS_ELEMENT(queue, "ts-queue", name, stream->ts_ctx);
+	MAKE_TS_ELEMENT(queue, "ts-queue", name, stream->ts_ctx);
 #endif
 
-  NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
-  appsink = gst_element_factory_make ("appsink", name);
+	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
+	appsink = AL_gst_element_factory_make("appsink", name);
 
-  if (!queue || !appsink ) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to create appsink or queue element for ch: %d, session %s", ch_idx, session);
-    goto error;
-  }
+	if (!queue || !appsink) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+						  "Failed to create appsink or queue element for ch: %d, session %s", ch_idx, session);
+		goto error;
+	}
 
-  g_object_set (appsink, "emit-signals", FALSE, "sync", FALSE, "async", FALSE,
-      "drop", TRUE, "max-buffers", 1, "enable-last-sample", FALSE, NULL);
+	g_object_set(appsink, "emit-signals", FALSE, "sync", FALSE, "async", FALSE, "drop", TRUE, "max-buffers", 1,
+				 "enable-last-sample", FALSE, NULL);
 
-  if (!gst_bin_add(GST_BIN(stream->pipeline), appsink)) {
-	  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-			"Failed to add appsink to the pipeline ch: %d, session: %s", ch_idx, session);
-    goto error;
-  }
+	if (!gst_bin_add(GST_BIN(stream->pipeline), appsink)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+						  "Failed to add appsink to the pipeline ch: %d, session: %s", ch_idx, session);
+		goto error;
+	}
 
-  if(!gst_bin_add(GST_BIN(stream->pipeline), queue)) {
-	  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-			"Failed to add queue to the pipeline ch: %d, session: %s", ch_idx, session);
-    goto error;
-  }
+	if (!gst_bin_add(GST_BIN(stream->pipeline), queue)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+						  "Failed to add queue to the pipeline ch: %d, session: %s", ch_idx, session);
+		goto error;
+	}
 
-  if (!gst_element_link(queue, appsink)) {
-	  switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-						"Failed to link appsink and queue ch: %d, session: %s", ch_idx, session);
-    goto error;
-  }
+	if (!gst_element_link(queue, appsink)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link appsink and queue ch: %d, session: %s",
+						  ch_idx, session);
+		goto error;
+	}
 
-  if (NULL == (tee_src_pad = gst_element_request_pad_simple (tee, "src_%u"))) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to get src pad from the tee element ch: %d, session: %s", ch_idx, session);
-    goto error;
-  }
+	if (NULL == (tee_src_pad = AL_gst_element_request_pad_simple(tee, "src_%u"))) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+						  "Failed to get src pad from the tee element ch: %d, session: %s", ch_idx, session);
+		goto error;
+	}
 
-  if (NULL == (queue_sink_pad = gst_element_get_static_pad (queue, "sink"))) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to get sink pad from the queue element ch: %d, session: %s", ch_idx, session);
-    goto error;
-  }
+	if (NULL == (queue_sink_pad = AL_gst_element_get_static_pad(queue, "sink"))) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+						  "Failed to get sink pad from the queue element ch: %d, session: %s", ch_idx, session);
+		goto error;
+	}
 
-  if (!gst_element_sync_state_with_parent (queue)) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to sync queue state with pipeline. ch: %d, session: %s", ch_idx, session);
-    goto error;
-  }
+	if (!gst_element_sync_state_with_parent(queue)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+						  "Failed to sync queue state with pipeline. ch: %d, session: %s", ch_idx, session);
+		goto error;
+	}
 
-  if (!gst_element_sync_state_with_parent(appsink)) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to sync appsink state with pipeline. ch: %d, session: %s", ch_idx, session);
-    goto error;
-  }
+	if (!gst_element_sync_state_with_parent(appsink)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+						  "Failed to sync appsink state with pipeline. ch: %d, session: %s", ch_idx, session);
+		goto error;
+	}
 
-  if (GST_PAD_LINK_OK != (gst_pad_link(tee_src_pad, queue_sink_pad))) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to link the queue and tee. ch: %d, session: %s", ch_idx, session);
-    goto error;
-  }
+	if (GST_PAD_LINK_OK != (gst_pad_link(tee_src_pad, queue_sink_pad))) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link the queue and tee. ch: %d, session: %s",
+						  ch_idx, session);
+		goto error;
+	}
 
-  g_snprintf(dot_name, ELEMENT_NAME_SIZE+10, "%s-add", name);
-  dump_pipeline(GST_PIPELINE(stream->pipeline), dot_name);
-
-  ret = TRUE;
-  goto exit;
-
-
-error:
-	if (NULL != appsink) gst_object_unref(GST_OBJECT(appsink));
-	if (NULL != queue) gst_object_unref(GST_OBJECT(queue));
-	if (NULL != tee) gst_object_unref(GST_OBJECT(tee));
+	g_snprintf(dot_name, ELEMENT_NAME_SIZE + 10, "%s-add", name);
+	dump_pipeline(GST_PIPELINE(stream->pipeline), dot_name);
 
 exit:
-	if (NULL != tee_src_pad) gst_object_unref(tee_src_pad);
-	if (NULL != queue_sink_pad) gst_object_unref(queue_sink_pad);
+	ret = TRUE;
+	goto done;
 
-    return ret;
-  }
+error:
+	DA_gst_object_unref(GST_OBJECT(appsink));
+	DA_gst_object_unref(GST_OBJECT(queue));
+	DA_gst_object_unref(GST_OBJECT(tee));
+
+	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
+	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
+	return ret;
+
+done:
+	// to account for ones we do not dealloc above
+	if (appsink) DA_dec_objs(appsink);	
+	if (queue) DA_dec_objs(queue);	
+	if (tee) DA_dec_objs(tee);	
+
+	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
+	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
+	return ret;
+}
 
 /*
   Unlinks a session's associated queue and appsink from the tee and removes them
@@ -347,871 +367,858 @@ exit:
 
 */
 
-gboolean
-remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session) {
-  gchar name[ELEMENT_NAME_SIZE];
-  gchar dot_name[ELEMENT_NAME_SIZE + 10];
-
-  GstElement *queue = NULL;
-  GstElement *appsink = NULL;
-  GstElement *tee = NULL;
-  GstPad *tee_src_pad = NULL;
-  GstPad *queue_sink_pad = NULL;
-
-  gboolean ret = FALSE;
-
-  /*
-   * tee -> queue -> appsink
-   *
-   * We unlink the tee and queue first and then remove the queue and
-   * appsink.
-   */
-  NAME_SESSION_ELEMENT(name, "queue", ch_idx, session);
-  queue = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);
-  if (queue == NULL ) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to find %s in the pipeline\n", name);
-    goto error;
-  }
-
-  NAME_ELEMENT(name, "tee", ch_idx);
-  tee = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);
-  if (tee == NULL ) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to find %s in the pipeline\n", name);
-    goto error;
-  }
-
-  if (NULL == (queue_sink_pad = gst_element_get_static_pad (queue, "sink"))) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to get sink pad from the queue element ch: %d, session: %s", ch_idx, session);
-    goto error;
-  }
-
-  if (NULL == (tee_src_pad = gst_pad_get_peer (queue_sink_pad))) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to get src pad from the tee element ch: %d, session: %s", ch_idx, session);
-    goto error;
-  }
-
-  if (!gst_pad_unlink(tee_src_pad, queue_sink_pad)) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to unlink tee and queue ch: %d, session: %s", ch_idx, session);
-  }
-  gst_element_release_request_pad (tee, tee_src_pad);
-
-  gst_object_unref(tee_src_pad);
-  tee_src_pad = NULL;
-
-  gst_object_unref(queue_sink_pad);
-  queue_sink_pad = NULL;
-
-  NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
-  appsink = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);
-  if (appsink == NULL ) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to find %s in the pipeline\n", name);
-    goto error;
-  }
-
-  gst_element_unlink(queue, appsink);
-
-  if (!gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to remove queue from the pipeline ch: %d, session: %s", ch_idx, session);
-  }
-
-  if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to remove appsink from the pipeline ch: %d, session: %s", ch_idx, session);
-  }
-
-  gst_element_set_state(queue, GST_STATE_NULL);
-  gst_element_set_state(appsink, GST_STATE_NULL);
-
-  g_snprintf(dot_name, ELEMENT_NAME_SIZE+10, "%s-del", name);
-  dump_pipeline(GST_PIPELINE(stream->pipeline), dot_name);
-
-  ret = TRUE;
-
-exit:
-  ret = TRUE;
-error:
-  if (NULL != tee_src_pad)	gst_object_unref(GST_OBJECT(tee_src_pad));
-  if (NULL != queue_sink_pad)	gst_object_unref(GST_OBJECT(queue_sink_pad));
-  if (NULL != appsink)	gst_object_unref(GST_OBJECT(appsink));
-  if (NULL != queue)	gst_object_unref(GST_OBJECT(queue));
-  if (NULL != tee)	gst_object_unref(GST_OBJECT(tee));
-
-  return ret;
-}
-
-static gboolean
-backup_sender_timeout_cb(gpointer userdata)
+gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 {
-  gboolean ret = TRUE;
-  g_stream_t* stream = (g_stream_t *)userdata;
-  GstElement* fakesink =  gst_bin_get_by_name (GST_BIN (stream->pipeline), "tx-monitor-fakesink");
-  GstClock* clock = NULL;
-  GstBuffer* buffer = NULL;
-  GstSample* last_sample = NULL;
-  GstNetAddressMeta* meta = NULL;
+	gchar name[ELEMENT_NAME_SIZE];
+	gchar dot_name[ELEMENT_NAME_SIZE + 10];
 
-  GSocketAddress *sock_addr = NULL;
-  
-  gchar *host = NULL;
- 
-  if (fakesink) {
-    clock = gst_element_get_clock (fakesink);
+	GstElement *queue = NULL;
+	GstElement *appsink = NULL;
+	GstElement *tee = NULL;
+	GstPad *tee_src_pad = NULL;
+	GstPad *queue_sink_pad = NULL;
 
-    if (clock) {
-      //pipeline in PLAYING state
-      GstClockTime current_time = gst_clock_get_time(clock);
-	    GstClockTime delta;
-      GstBuffer *buffer = NULL;
-      GstClockTime timestamp;
-      GstSample *last_sample = NULL;
-      GstNetAddressMeta *meta;
-      GSocketAddress * sock_addr;
-      gchar *host;
-      GstClockTime max_delta = stream->backup_sender_idle_wait_ms * GST_MSECOND;
+	gboolean ret = FALSE;
 
-      g_object_get(G_OBJECT(fakesink), "last-sample", &last_sample, NULL);
-
-      if (!last_sample) 
-		  goto exit;
-
-      // no memory allocated
-      buffer = gst_sample_get_buffer(last_sample); 
-      timestamp = GST_BUFFER_DTS_OR_PTS (buffer);
-      meta = gst_buffer_get_net_address_meta(buffer); 
-      //
-
-      sock_addr = meta->addr;
-      host = g_inet_address_to_string (g_inet_socket_address_get_address    //allocates memory!!
-            (G_INET_SOCKET_ADDRESS (sock_addr)));
-
-      /* If the buffer timestamp is after the previous callback or before the next callback
-        we know that new buffers are arriving and so pause our Tx */
-      delta = timestamp < current_time ? current_time - timestamp : timestamp - current_time;
-
-      if (delta < max_delta && FALSE == stream->pause_backup_sender) {
-        stream->pause_backup_sender = TRUE;
-
-        drop_output_buffers(TRUE, stream);
-        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-          "got buffer from %s. Paused the backup sender\n", host);
-      } else if (delta >= max_delta && TRUE == stream->pause_backup_sender) {
-        stream->pause_backup_sender = FALSE;
-
-        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-          "Time since last-sample from %s - %"GST_TIME_FORMAT". Resuming the backup sender\n", host, GST_TIME_ARGS(delta));
-
-        // Stop dropping Tx buffers only if the if 'txdrop' is FALSE,
-        // in other words if 'txflow' is set to ON by the user
-        if (FALSE == stream->txdrop)
-          drop_output_buffers(FALSE, stream);
-        else
-          switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "txflow is off, continuing to drop the buffers\n");
-	    } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "got last-sample from %s\n", host);
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "delta - %"GST_TIME_FORMAT"; current time - %"GST_TIME_FORMAT"; last-sample timestamp - %"GST_TIME_FORMAT"\n", GST_TIME_ARGS(delta), GST_TIME_ARGS(current_time), GST_TIME_ARGS(timestamp));
-      }
-
-      gst_sample_unref(last_sample);
-	  last_sample = NULL;
-      gst_object_unref(clock);
-	  clock = NULL;
-    } else {
-      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-          "Clock not available, pipeline is not PLAYING\n");
-    }
-
-    gst_object_unref (GST_OBJECT (fakesink));
-	fakesink = NULL;
-  } else {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-          "Could not find fakesink the stream\n");
-  }
-
-exit:
-	if (last_sample!=NULL) gst_sample_unref(last_sample);
-	if (clock!=NULL) gst_object_unref(GST_OBJECT(clock));
-	if (fakesink != NULL) gst_object_unref(GST_OBJECT(fakesink));
-    if (host != NULL) g_free(host);
-
-    return ret;
-}
-
-
-g_stream_t *
-create_pipeline (pipeline_data_t *data, event_callback_t * error_cb)
-{
-  GstBus *bus = NULL;
-  GstElement *pipeline = NULL;
-  GstElement *rtp_pay = NULL;
-  GstElement *rtpdepay = NULL;
-  GstElement *rtpjitbuf = NULL;
-  char *pipeline_name;
-
-  g_stream_t *stream = g_new (g_stream_t, 1);
-
-  char fixed_name[25] = { "pipeline" };
-  char *ts_ctx = DEFAULT_CONTEXT_NAME;
-
-  if (data->name)
-    pipeline_name = data->name;
-  else
-    pipeline_name = fixed_name;
-
-  if (0 != strlen(data->ts_context_name))
-    ts_ctx = data->ts_context_name;
-
-  stream->ts_ctx = ts_ctx;
-  pipeline = gst_pipeline_new (pipeline_name);          //allocates memory!
-  if (!pipeline) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,"Failed to create the pipeline\n");
-	goto error;
-  }
-
-  if (data->direction & DIRECTION_RX) {
-	  GstElement *udp_source=NULL;
-	  GstElement *deinterleave = NULL;
-	  GstElement *rx_audioconv = NULL;
-	  GstElement *capsfilter = NULL;
-	  GstElement *split = NULL;
-	  GstElement *tee = NULL;
-
-	  GstCaps *udp_caps = NULL;
-	  GstCaps *rx_caps = NULL;
-
-#ifndef ENABLE_THREADSHARE
-    udp_source = gst_element_factory_make ("udpsrc", "rx-src");
-#else
-    MAKE_TS_ELEMENT(udp_source, "ts-udpsrc", "rx-src", ts_ctx);
-#endif
-    g_object_set(udp_source, "buffer-size", 1048576, NULL);
-
-    if (data->rx_codec == L16) {
-      rtpdepay = gst_element_factory_make ("rtpL16depay", RTP_DEPAY);
-      udp_caps = gst_caps_new_simple ("application/x-rtp",
-          "clock-rate", G_TYPE_INT, data->sample_rate,
-          "channels", G_TYPE_INT, data->channels,
-          "channel-order", G_TYPE_STRING, "unpositioned",
-          "encoding-name", G_TYPE_STRING, "L16",
-          "media", G_TYPE_STRING, "audio", NULL);
-    } else {
-      rtpdepay = gst_element_factory_make ("rtpL24depay", RTP_DEPAY);
-      udp_caps = gst_caps_new_simple ("application/x-rtp",
-          "clock-rate", G_TYPE_INT, data->sample_rate,
-          "channels", G_TYPE_INT, data->channels,
-          "channel-order", G_TYPE_STRING, "unpositioned",
-          "encoding-name", G_TYPE_STRING, "L24",
-          "media", G_TYPE_STRING, "audio", NULL);
-    }
-
-    rtpjitbuf = gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
-    g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map),
-        gst_caps_ref(udp_caps), destroy_caps, 0);
-
-    g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency,
-        "mode", 0 /* none */,
-        NULL);
-    rx_audioconv = gst_element_factory_make ("audioconvert", "rx-aconv");
-    g_object_set(rx_audioconv, "dithering", 0 /* none */, NULL);
-
-    capsfilter = gst_element_factory_make ("capsfilter", "rx-caps");
-
-    /*Always feed S16LE to the FS*/
-    rx_caps = gst_caps_new_simple ("audio/x-raw",
-        "channels", G_TYPE_INT, data->channels,
-        "format", G_TYPE_STRING, "S16LE",
-        "layout", G_TYPE_STRING, "interleaved", NULL);
-
-    g_object_set (capsfilter, "caps", rx_caps, NULL);
-	gst_caps_unref(rx_caps);
-	rx_caps = NULL;
-
-    split = gst_element_factory_make ("audiobuffersplit", "rx-split");
-    g_object_set (split, "output-buffer-duration", data->codec_ms, 1000, NULL);
-
-    deinterleave = gst_element_factory_make ("deinterleave", "rx-deinterleave");
-
-    for (guint ch = 0; ch < data->channels; ch++) {
-      gchar name[ELEMENT_NAME_SIZE];
-
-      NAME_ELEMENT(name, "tee", ch);
-      tee = gst_element_factory_make ("tee", name);
-
-      if (!tee) {
-        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to create tee element in rx pipeline\n");
-        continue;
-      }
-      g_object_set(tee, "allow-not-linked", TRUE, NULL);
-
-      gst_bin_add (GST_BIN(pipeline), tee);
-      // The deinterleave will be linked to the tee dynamically
-    }
-
-    g_signal_connect (deinterleave, "pad-added",
-        G_CALLBACK (deinterleave_pad_added), NULL);
-
-    g_object_set (udp_source, "address", data->rx_ip_addr, "port", data->rx_port,
-        "multicast-iface", data->rtp_iface,
-        "retrieve-sender-address", FALSE,
-        NULL);
-    g_object_set (udp_source, "caps", udp_caps, NULL);
-	gst_caps_unref(udp_caps);
-	udp_caps = NULL;
-
-    if (!udp_source || !rtpdepay || !rtpjitbuf || !rx_audioconv || !capsfilter
-        || !split || !deinterleave) {
-      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-          "Failed to create rx elements\n");
- 	goto ddirRX_error;
+	/*
+	 * tee -> queue -> appsink
+	 *
+	 * We unlink the tee and queue first and then remove the queue and
+	 * appsink.
+	 */
+	NAME_SESSION_ELEMENT(name, "queue", ch_idx, session);
+	queue = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
+	if (queue == NULL) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
+		goto error;
 	}
 
-    gst_bin_add_many (GST_BIN (pipeline), udp_source, rtpdepay, rtpjitbuf, rx_audioconv,
-        capsfilter, split, deinterleave, NULL);
+	NAME_ELEMENT(name, "tee", ch_idx);
+	tee = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
+	if (tee == NULL) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
+		goto error;
+	}
 
-    if (!gst_element_link_many (udp_source, rtpjitbuf, rtpdepay, split, rx_audioconv, capsfilter,
-            deinterleave, NULL)) {
-      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-          "Failed to link elements in the rx pipeline");
-      goto ddirRX_error;
-    }
-	
-    goto ddirRX_exit;
+	if (NULL == (queue_sink_pad = AL_gst_element_get_static_pad(queue, "sink"))) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+						  "Failed to get sink pad from the queue element ch: %d, session: %s", ch_idx, session);
+		goto error;
+	}
 
-ddirRX_error:
-	if (udp_source != NULL)   gst_object_unref(GST_OBJECT(udp_source));
-	if (deinterleave != NULL) gst_object_unref(GST_OBJECT(deinterleave));
-	if (rx_audioconv != NULL) gst_object_unref(GST_OBJECT(rx_audioconv));
-	if (capsfilter != NULL)   gst_object_unref(GST_OBJECT(capsfilter));
-	if (tee != NULL)          gst_object_unref(GST_OBJECT(tee));
-	if (split != NULL)        gst_object_unref(GST_OBJECT(split));
-    goto error;
-	
-ddirRX_exit:;
-  }
+	if (NULL == (tee_src_pad = AL_gst_pad_get_peer(queue_sink_pad))) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+						  "Failed to get src pad from the tee element ch: %d, session: %s", ch_idx, session);
+		goto error;
+	}
 
+	if (!gst_pad_unlink(tee_src_pad, queue_sink_pad)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to unlink tee and queue ch: %d, session: %s",
+						  ch_idx, session);
+	}
+	gst_element_release_request_pad(tee, tee_src_pad);
 
-  if (data->direction & DIRECTION_TX) {
-    GstElement *udpsink=NULL;
-	GstElement *tx_audioconv = NULL;
-	GstElement *audiointerleave = NULL;
-	GstElement *capsfilter = NULL;
-	GstElement *tx_valve = NULL	;
-    GstElement *appsrc = NULL;
-    GstCaps *caps = NULL;
+	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
+	tee_src_pad = NULL;
 
-    audiointerleave = gst_element_factory_make ("audiointerleave", "audiointerleave"); //allocates memory!
-    gst_bin_add (GST_BIN (pipeline), audiointerleave);
-    g_object_set(audiointerleave, "start-time-selection", GST_AGGREGATOR_START_TIME_SELECTION_FIRST, NULL);
-    g_object_set(audiointerleave, "output-buffer-duration", data->codec_ms * GST_MSECOND, NULL);
+	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
+	queue_sink_pad = NULL;
 
-    if (data->tx_codec == L16) {
-      rtp_pay = gst_element_factory_make ("rtpL16pay", "rtp-pay");
+	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
+	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
+	if (appsink == NULL) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
+		goto error;
+	}
 
-    } else {
-      rtp_pay = gst_element_factory_make ("rtpL24pay", "rtp-pay");
-    }
-    g_object_set(rtp_pay, "pt", data->rtp_payload_type, NULL);
-
-    if (data->ptime_ms != -1.0) {
-      g_object_set(rtp_pay, "max-ptime", (gint64) (data->ptime_ms * 1000000),
-          "min-ptime", (gint64) (data->ptime_ms * 1000000), NULL);
-    }
-
-    for (guint ch = 0; ch < data->channels; ch++) {
-      gchar name[ELEMENT_NAME_SIZE];
-      gchar pad_name[STR_SIZE];
-
-      NAME_ELEMENT (name, "appsrc", ch);
-      g_snprintf (pad_name, STR_SIZE, "sink_%u", ch);
-
-      appsrc = gst_element_factory_make ("appsrc", name);
-      if (!appsrc) {
-        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to create %s \n", name);
-        continue;
-      }
-
-      /*Always accept S16LE from the FS*/
-      caps = gst_caps_new_simple ("audio/x-raw",
-          "rate", G_TYPE_INT, data->sample_rate,
-          "channels", G_TYPE_INT, 1,
-          "format", G_TYPE_STRING, "S16LE",
-          "layout", G_TYPE_STRING, "interleaved",
-          "channel-mask", GST_TYPE_BITMASK, (guint64) 0, NULL);
-      g_object_set (appsrc, "format", GST_FORMAT_TIME, NULL);
-      g_object_set (appsrc, "do-timestamp", TRUE, NULL);
-      g_object_set (appsrc, "is-live", TRUE, NULL);
-      /* Second * 3 allows a little bit of headroom */
-      g_object_set (appsrc, "max-bytes", data->codec_ms * data->sample_rate * 2 * 3 / 1000,  NULL);
-
-      g_object_set (appsrc, "caps", caps, NULL);
-	  gst_caps_unref(caps);
-	  caps = NULL;
-      gst_bin_add (GST_BIN (pipeline), appsrc);
-
-      if (!gst_element_link_pads (appsrc, "src", audiointerleave, pad_name)) {
-        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "Failed to link pads of %s with audiointerleave\n", name);
-        goto ddirTX_error;
-
-      }
-    }
-
-    tx_valve = gst_element_factory_make ("valve", "tx-valve");
-    g_object_set (tx_valve, "drop", data->txdrop, NULL);
-
-    capsfilter = gst_element_factory_make ("capsfilter", "tx-capsf");
-
-    tx_audioconv = gst_element_factory_make ("audioconvert", "tx-audioconv");
-    g_object_set(tx_audioconv, "dithering", 0 /* none */, NULL);
-
-    udpsink = gst_element_factory_make ("udpsink", "tx-sink");
-
-    caps = gst_caps_new_simple ("audio/x-raw",
-        "rate", G_TYPE_INT, data->sample_rate,
-        "channels", G_TYPE_INT, data->channels,
-        "format", G_TYPE_STRING, "S16LE",
-        "layout", G_TYPE_STRING, "interleaved",
-        "channel-mask", GST_TYPE_BITMASK, (guint64) 0,
-        NULL);
-    g_object_set (capsfilter, "caps", caps, NULL);
-	gst_caps_unref(caps);
-	caps = NULL;
-
-    g_object_set (udpsink, "host", data->tx_ip_addr, "port", data->tx_port, "multicast-iface", data->rtp_iface, NULL);
-    g_object_set (udpsink, "sync", TRUE, "async", FALSE, NULL);
-    g_object_set (udpsink, "qos", TRUE, "qos-dscp", 34, NULL);
-    g_object_set (udpsink, "processing-deadline", 0 * GST_MSECOND, NULL);
-    if (data->is_backup_sender) {
-#ifndef _WIN32
-      // Disable IP_MULTICAST_LOOP to avoid listening packets from same host
-      // For Linux this needs to be set on the sender's side
-      g_object_set(udpsink, "loop", FALSE, NULL);
-#endif
-    }
-
-    if (!audiointerleave || !tx_valve || !tx_audioconv || !rtp_pay || !udpsink) {
-      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-          "Failed to create tx elements\n");
-	goto ddirTX_error;
-    }
-
-    gst_bin_add_many (GST_BIN (pipeline), tx_valve, capsfilter, tx_audioconv, rtp_pay,
-        udpsink, NULL);
-
-    if (!gst_element_link_many (audiointerleave, tx_valve, capsfilter, tx_audioconv,
-            rtp_pay, udpsink, NULL)) {
-      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-          "Failed to link elements");
-		goto ddirTX_error;
-    }
-
-	goto ddirTX_exit;
-
-ddirTX_error:
-	  if (udpsink != NULL) gst_object_unref(GST_OBJECT(udpsink));
-      if (tx_audioconv != NULL) gst_object_unref(GST_OBJECT(tx_audioconv));
-	  if (audiointerleave != NULL) gst_object_unref(GST_OBJECT(audiointerleave));
-	  if (capsfilter != NULL) gst_object_unref(GST_OBJECT(capsfilter));
-	  if (tx_valve != NULL) gst_object_unref(GST_OBJECT(tx_valve));
-	  if (appsrc != NULL) gst_object_unref(GST_OBJECT(appsrc));
-	  goto error;
+	gst_element_unlink(queue, appsink);
 
 
-  ddirTX_exit:;
-  }
+	gst_element_set_state(queue, GST_STATE_NULL);
+	gst_element_set_state(appsink, GST_STATE_NULL);
 
-  /* if this stream is configured to be a backup sender, we pause our Tx if we find another sender doing Tx
-    on the same multicast address and resume once the remote sender stops
-  */
-  if (data->is_backup_sender) {
-	  GstElement *udpsrc = NULL;
-	  GstElement *fakesink = NULL;
-	  GstCaps *caps = NULL;
-	  
+	if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+						  "Failed to remove appsink from the pipeline ch: %d, session: %s", ch_idx, session);
+	}
 
-  /* create a dummy pipeline with `udpsrc ! fakesink` just to receive on udp and read the last-sample from fakesink */
-#ifndef ENABLE_THREADSHARE
-    udpsrc = gst_element_factory_make ("udpsrc", "tx-monitor-udpsrc");
-#else
-    MAKE_TS_ELEMENT(udpsrc, "ts-udpsrc", "tx-monitor-udpsrc", ts_ctx);
-#endif
+	g_snprintf(dot_name, ELEMENT_NAME_SIZE + 10, "%s-del", name);
+	dump_pipeline(GST_PIPELINE(stream->pipeline), dot_name);			//for info only
 
-    fakesink = gst_element_factory_make ("fakesink", "tx-monitor-fakesink");
-
-    if (data->tx_codec == L16) {
-      caps = gst_caps_new_simple ("application/x-rtp",
-          "clock-rate", G_TYPE_INT, data->sample_rate,
-          "channels", G_TYPE_INT, data->channels,
-          "channel-order", G_TYPE_STRING, "unpositioned",
-          "encoding-name", G_TYPE_STRING, "L16",
-          "media", G_TYPE_STRING, "audio", NULL);
-    } else {
-      caps = gst_caps_new_simple ("application/x-rtp",
-          "clock-rate", G_TYPE_INT, data->sample_rate,
-          "channels", G_TYPE_INT, data->channels,
-          "channel-order", G_TYPE_STRING, "unpositioned",
-          "encoding-name", G_TYPE_STRING, "L24",
-          "media", G_TYPE_STRING, "audio", NULL);
-    }
-
-    if (!udpsrc || !fakesink) {
-      switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to create tx-monitor elements, cannot listen for primary sender\n");
-		goto bksnd_error;
-    } else {
-      g_object_set (udpsrc,
-        "address", data->tx_ip_addr, "port", data->tx_port,
-#ifdef _WIN32
-        // Disable IP_MULTICAST_LOOP to avoid listening packets from same host
-        // For Windows this needs to be set on the receiver's side
-         "loop", FALSE,
-#endif
-        "multicast-iface", data->rtp_iface, "caps", caps, NULL);
-
-      g_object_set(fakesink, "async", FALSE, NULL);
-
-      gst_bin_add_many (GST_BIN (pipeline), udpsrc, fakesink, NULL);
-      if (!gst_element_link_many (udpsrc, fakesink, NULL)) {
-        switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to link tx-monitor elements, cannot listen for primary sender\n");
-		  goto bksnd_error;
-      } else {
-        stream->pause_backup_sender = FALSE;
-        stream->backup_sender_idle_wait_ms = data->backup_sender_idle_wait_ms;
-
-        /* add a timer to check for remote sender's buffers every `backup_sender_idle_wait_ms` to resumek
-          our Tx as soon as possible once the remote Tx stops */
-        stream->backup_sender_idle_timer = g_timeout_add_full(G_PRIORITY_DEFAULT,
-          data->backup_sender_idle_wait_ms, backup_sender_timeout_cb, stream, NULL);
-      }
-    }
-
-	goto bksnd_exit;
-
-bksnd_error:
-    if (udpsrc !=NULL) gst_object_unref(udpsrc);
-	if (fakesink != NULL) gst_object_unref(fakesink);
-	if (caps!=NULL) gst_caps_unref(caps);
-	goto error;
-
-bksnd_exit:
-	gst_caps_unref(caps);
-  }
-
-
-
-  bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
-  gst_bus_add_watch (bus, bus_callback, stream);
-  gst_object_unref(bus);
-  bus = NULL;
-
-  stream->error_cb = error_cb;
-  stream->pipeline = GST_PIPELINE (pipeline);
-  stream->mainloop = g_main_loop_new (NULL, FALSE);
-  stream->thread = g_thread_new (pipeline_name, start_pipeline, stream);
-  stream->sample_rate = data->sample_rate;
-
-  g_atomic_int_set (&stream->clock_sync, 0);
-
-  gst_element_set_start_time(pipeline, GST_CLOCK_TIME_NONE);
-  gst_element_set_base_time(pipeline, 0);
-
-  if (rtp_pay) {
-    /* We have data->codec_ms of latency in the audiointerleave, so add that in */
-    /* FIXME: we should be cleverer and apply the pipeline latency as computed instead */
-    g_object_set (rtp_pay, "timestamp-offset",
-        gst_util_uint64_scale_int ((data->codec_ms + data->rtp_ts_offset) * GST_MSECOND, data->sample_rate, 
-            GST_SECOND)
-          % G_MAXUINT32,
-        NULL);
-  }
-
-  if (rtpdepay && data->synthetic_ptp) {
-	  if (stream->clock) {
-		  gst_object_unref(GST_OBJECT(stream->clock));
-		  stream->clock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "name", "SyntheticPtpClock", NULL);
-	  }
-      stream->cb_rx_stats_id =
-      g_timeout_add_full(G_PRIORITY_DEFAULT, SYNTHETIC_CLOCK_INTERVAL_MS, update_clock, stream, NULL);
-    /* We'll set the pipeline clock once it's synced */
-  } else {
-        stream->clock = NULL;
-        gst_pipeline_use_clock (GST_PIPELINE(pipeline), data->clock);
-        g_atomic_int_set (&stream->clock_sync, 1);
-  }
-
-  for (guint ch = 0; ch < MAX_IO_CHANNELS; ch++)
-    stream->leftover_bytes[ch] = 0;
-
-  goto exit;
+exit:
+	ret = TRUE;
 
 error:
-    if (pipeline !=NULL) gst_object_unref(GST_OBJECT(pipeline));
-	if (rtp_pay != NULL) gst_object_unref(GST_OBJECT(rtp_pay));
-	if (stream != NULL) {
-		if (stream->clock != NULL) {
-			gst_object_unref(stream->clock); // Fix: Added missing unref
+	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
+	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
+	DA_gst_object_unref(GST_OBJECT(appsink));
+	DA_gst_object_unref(GST_OBJECT(queue));
+	DA_gst_object_unref(GST_OBJECT(tee));
+
+	return ret;
+}
+
+static gboolean backup_sender_timeout_cb(gpointer userdata)
+{
+	gboolean retval = TRUE;
+
+	g_stream_t *stream = (g_stream_t *)userdata;
+	GstElement *fakesink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-monitor-fakesink");
+
+	GstClock *clock = NULL;
+	GstBuffer *buffer = NULL;
+	GstSample *last_sample = NULL;
+	GstNetAddressMeta *meta = NULL;
+
+	GSocketAddress *sock_addr = NULL;
+	gchar *host = NULL;
+
+	if (fakesink) {
+		clock = AL_gst_element_get_clock(fakesink);
+
+		if (clock) {
+			// pipeline in PLAYING state
+			GstClockTime current_time = gst_clock_get_time(clock);
+			GstClockTime delta;
+			// GstBuffer *buffer = NULL;
+			GstClockTime timestamp;
+			// GstSample *last_sample = NULL;
+			// GstNetAddressMeta *meta=NULL;
+			// GSocketAddress * sock_addr=NULL;
+			// gchar *host=NULL;
+			GstClockTime max_delta = stream->backup_sender_idle_wait_ms * GST_MSECOND;
+
+			g_object_get(G_OBJECT(fakesink), "last-sample", &last_sample, NULL);//allocates!
+			AL_cnt_samples(last_sample);
+			if (!last_sample) goto exit;
+
+			// no memory allocated
+			buffer = gst_sample_get_buffer(last_sample);
+			timestamp = GST_BUFFER_DTS_OR_PTS(buffer);
+			meta = gst_buffer_get_net_address_meta(buffer);
+			//
+
+			sock_addr = meta->addr;
+			host = g_inet_address_to_string(g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS(sock_addr))); //allocates!
+			AL_cnt_chars(host); //just count it
+			/* If the buffer timestamp is after the previous callback or before the next callback
+			  we know that new buffers are arriving and so pause our Tx */
+			delta = timestamp < current_time ? current_time - timestamp : timestamp - current_time;
+
+			if (delta < max_delta && FALSE == stream->pause_backup_sender) {
+				stream->pause_backup_sender = TRUE;
+
+				drop_output_buffers(TRUE, stream);
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+								  "got buffer from %s. Paused the backup sender\n", host);
+			} else if (delta >= max_delta && TRUE == stream->pause_backup_sender) {
+				stream->pause_backup_sender = FALSE;
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+								  "Time since last-sample from %s - %" GST_TIME_FORMAT ". Resuming the backup sender\n",
+								  host, GST_TIME_ARGS(delta));
+
+				// Stop dropping Tx buffers only if the if 'txdrop' is FALSE,
+				// in other words if 'txflow' is set to ON by the user
+				if (FALSE == stream->txdrop)
+					drop_output_buffers(FALSE, stream);
+				else
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+									  "txflow is off, continuing to drop the buffers\n");
+			} else {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "got last-sample from %s\n", host);
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+								  "delta - %" GST_TIME_FORMAT "; current time - %" GST_TIME_FORMAT
+								  "; last-sample timestamp - %" GST_TIME_FORMAT "\n",
+								  GST_TIME_ARGS(delta), GST_TIME_ARGS(current_time), GST_TIME_ARGS(timestamp));
+			}
+
+			DA_gst_sample_unref(last_sample);
+			last_sample = NULL;
+			DA_gst_object_unref(GST_OBJECT(clock));
+			clock = NULL;
+		} else {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Clock not available, pipeline is not PLAYING\n");
 		}
-		g_free(stream);
+		DA_gst_object_unref(GST_OBJECT(fakesink));
+		fakesink = NULL;
+	} else {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Could not find fakesink the stream\n");
+	}
+
+exit:
+	DA_gst_sample_unref(GST_OBJECT(last_sample));
+	DA_gst_object_unref(GST_OBJECT(clock));
+	DA_gst_object_unref(GST_OBJECT(fakesink));
+	DA_g_free(host);
+
+	return retval;
+}
+
+g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
+{
+	GstBus *bus = NULL;
+	GstElement *pipeline = NULL;
+	GstElement *rtp_pay = NULL;
+	GstElement *rtpdepay = NULL;
+	GstElement *rtpjitbuf = NULL;
+	char *pipeline_name = NULL;
+
+	g_stream_t *stream = g_new(g_stream_t, 1);
+	AL_cnt_chars(stream);			//g_new allocates chars for the stream, so count
+
+	char fixed_name[25] = {"pipeline"};
+	char *ts_ctx = DEFAULT_CONTEXT_NAME;
+
+	if (data->name)
+		pipeline_name = data->name;
+	else
+		pipeline_name = fixed_name;
+
+	if (0 != strlen(data->ts_context_name)) 
+		ts_ctx = data->ts_context_name;
+
+	stream->ts_ctx = ts_ctx;
+	pipeline = AL_gst_pipeline_new(pipeline_name);		// allocates memory!
+	if (!pipeline) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create the pipeline\n");
+		goto error;
+	}
+
+	if (data->direction & DIRECTION_RX) {
+		GstElement *udp_source = NULL;
+		GstElement *deinterleave = NULL;
+		GstElement *rx_audioconv = NULL;
+		GstElement *capsfilter = NULL;
+		GstElement *split = NULL;
+		GstElement *tee = NULL;
+
+		GstCaps *udp_caps = NULL;
+		GstCaps *rx_caps = NULL;
+
+#ifndef ENABLE_THREADSHARE
+		udp_source = AL_gst_element_factory_make("udpsrc", "rx-src");
+#else
+		MAKE_TS_ELEMENT(udp_source, "ts-udpsrc", "rx-src", ts_ctx);
+#endif
+		g_object_set(udp_source, "buffer-size", 1048576, NULL);
+
+		if (data->rx_codec == L16) {
+			rtpdepay = AL_gst_element_factory_make("rtpL16depay", RTP_DEPAY);
+			udp_caps =
+				gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
+									G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
+									"encoding-name", G_TYPE_STRING, "L16", "media", G_TYPE_STRING, "audio", NULL);
+			AL_cnt_caps(udp_caps);
+		} else {
+			rtpdepay = AL_gst_element_factory_make("rtpL24depay", RTP_DEPAY);
+			udp_caps =
+				gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
+									G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
+									"encoding-name", G_TYPE_STRING, "L24", "media", G_TYPE_STRING, "audio", NULL);
+			AL_cnt_caps(udp_caps);
+		}
+
+		rtpjitbuf = AL_gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
+		g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map), gst_caps_ref(udp_caps),
+							  destroy_caps, 0);
+
+		g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency, "mode", 0 /* none */, NULL);
+		rx_audioconv = AL_gst_element_factory_make("audioconvert", "rx-aconv");
+		g_object_set(rx_audioconv, "dithering", 0 /* none */, NULL);
+
+		capsfilter = AL_gst_element_factory_make("capsfilter", "rx-caps");
+
+		/*Always feed S16LE to the FS*/
+		rx_caps = gst_caps_new_simple("audio/x-raw", "channels", G_TYPE_INT, data->channels, "format", G_TYPE_STRING,
+									  "S16LE", "layout", G_TYPE_STRING, "interleaved", NULL);
+		AL_cnt_caps(rx_caps);
+		g_object_set(capsfilter, "caps", rx_caps, NULL);
+		DA_gst_caps_unref(rx_caps);
+		rx_caps = NULL;
+
+		split = AL_gst_element_factory_make("audiobuffersplit", "rx-split");
+		g_object_set(split, "output-buffer-duration", data->codec_ms, 1000, NULL);
+
+		deinterleave = AL_gst_element_factory_make("deinterleave", "rx-deinterleave");
+
+		for (guint ch = 0; ch < data->channels; ch++) {
+			gchar name[ELEMENT_NAME_SIZE];
+
+			NAME_ELEMENT(name, "tee", ch);
+			tee = AL_gst_element_factory_make("tee", name);
+
+			if (!tee) {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+								  "Failed to create tee element in rx pipeline\n");
+				DA_dec_objs(tee);
+				continue;
+			}
+			g_object_set(tee, "allow-not-linked", TRUE, NULL);
+
+			gst_bin_add(GST_BIN(pipeline), tee);
+			DA_dec_objs(tee);						 // check - assume pipeline will de-alloc
+			// The deinterleave will be linked to the tee dynamically
+		}
+
+		g_signal_connect(deinterleave, "pad-added", G_CALLBACK(deinterleave_pad_added), NULL);
+
+		g_object_set(udp_source, "address", data->rx_ip_addr, "port", data->rx_port, "multicast-iface", data->rtp_iface,
+					 "retrieve-sender-address", FALSE, NULL);
+		g_object_set(udp_source, "caps", udp_caps, NULL);
+		DA_gst_caps_unref(udp_caps);
+		udp_caps = NULL;
+
+		if (!udp_source || !rtpdepay || !rtpjitbuf || !rx_audioconv || !capsfilter || !split || !deinterleave) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create rx elements\n");
+			goto ddirRX_error;
+		}
+
+		gst_bin_add_many(GST_BIN(pipeline), udp_source, rtpdepay, rtpjitbuf, rx_audioconv, capsfilter, split,
+						 deinterleave, NULL);
+
+		if (!gst_element_link_many(udp_source, rtpjitbuf, rtpdepay, split, rx_audioconv, capsfilter, deinterleave,
+								   NULL)) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements in the rx pipeline");
+			goto ddirRX_error;
+		}
+
+		goto ddirRX_exit;
+
+	ddirRX_error:
+		DA_gst_object_unref(GST_OBJECT(udp_source));
+		udp_source = NULL;
+		DA_gst_object_unref(GST_OBJECT(deinterleave));
+		deinterleave = NULL;
+		DA_gst_object_unref(GST_OBJECT(rx_audioconv));
+		rx_audioconv = NULL;
+		DA_gst_object_unref(GST_OBJECT(capsfilter));
+		capsfilter = NULL;
+		DA_gst_object_unref(GST_OBJECT(tee));		//the other tees will be de-aloc when pipeline is
+		tee = NULL;
+		DA_gst_object_unref(GST_OBJECT(split));
+		split = NULL;
+		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));		//added to pipeline
+		rtpjitbuf = NULL;
+		DA_gst_object_unref(GST_OBJECT(rtpdepay));		// added to pipeline
+		rtpdepay = NULL;
+		goto error;
+
+	ddirRX_exit:
+		DA_dec_objs(udp_source);			// check if all of this is deallocated elsewhere
+		DA_dec_objs(deinterleave);			 // for now I just decr counters
+		DA_dec_objs(rx_audioconv);
+		DA_dec_objs(capsfilter);
+		DA_dec_objs(tee);
+		DA_dec_objs(split);
+		DA_dec_objs(rtpjitbuf);
+		DA_dec_objs(rtpdepay);
+	}
+
+	if (data->direction & DIRECTION_TX) {
+		GstElement *udpsink = NULL;
+		GstElement *tx_audioconv = NULL;
+		GstElement *audiointerleave = NULL;
+		GstElement *capsfilter = NULL;
+		GstElement *tx_valve = NULL;
+		GstElement *appsrc = NULL;
+		GstCaps	*caps = NULL;
+
+		audiointerleave = AL_gst_element_factory_make("audiointerleave", "audiointerleave"); // allocates memory!
+		gst_bin_add(GST_BIN(pipeline), audiointerleave);
+		g_object_set(audiointerleave, "start-time-selection", GST_AGGREGATOR_START_TIME_SELECTION_FIRST, NULL);
+		g_object_set(audiointerleave, "output-buffer-duration", data->codec_ms * GST_MSECOND, NULL);
+
+		if (data->tx_codec == L16) {
+			rtp_pay = AL_gst_element_factory_make("rtpL16pay", "rtp-pay");
+
+		} else {
+			rtp_pay = AL_gst_element_factory_make("rtpL24pay", "rtp-pay");
+		}
+		g_object_set(rtp_pay, "pt", data->rtp_payload_type, NULL);
+
+		if (data->ptime_ms != -1.0) {
+			g_object_set(rtp_pay, "max-ptime", (gint64)(data->ptime_ms * 1000000), "min-ptime",
+						 (gint64)(data->ptime_ms * 1000000), NULL);
+		}
+
+		
+		for (guint ch = 0; ch < data->channels; ch++) {
+			gchar name[ELEMENT_NAME_SIZE];
+			gchar pad_name[STR_SIZE];
+
+			NAME_ELEMENT(name, "appsrc", ch);
+			g_snprintf(pad_name, STR_SIZE, "sink_%u", ch);
+
+			appsrc = AL_gst_element_factory_make("appsrc", name);
+			if (!appsrc) {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create %s \n", name);
+				continue;
+			}
+
+			/*Always accept S16LE from the FS*/
+			caps = gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, data->sample_rate, "channels", G_TYPE_INT, 1,
+									   "format", G_TYPE_STRING, "S16LE", "layout", G_TYPE_STRING, "interleaved",
+									   "channel-mask", GST_TYPE_BITMASK, (guint64)0, NULL);
+			AL_cnt_caps(caps);
+			g_object_set(appsrc, "format", GST_FORMAT_TIME, NULL);
+			g_object_set(appsrc, "do-timestamp", TRUE, NULL);
+			g_object_set(appsrc, "is-live", TRUE, NULL);
+			/* Second * 3 allows a little bit of headroom */
+			g_object_set(appsrc, "max-bytes", data->codec_ms * data->sample_rate * 2 * 3 / 1000, NULL);
+
+			g_object_set(appsrc, "caps", caps, NULL);
+			DA_gst_caps_unref(caps);
+			caps = NULL;
+			gst_bin_add(GST_BIN(pipeline), appsrc);
+
+			if (!gst_element_link_pads(appsrc, "src", audiointerleave, pad_name)) {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+								  "Failed to link pads of %s with audiointerleave\n", name);
+				goto ddirTX_error;				// on errors, dealloc of added elemets occurs when pipeline de-allocated
+			}
+		}
+
+		tx_valve = AL_gst_element_factory_make("valve", "tx-valve");
+		g_object_set(tx_valve, "drop", data->txdrop, NULL);
+
+		capsfilter = AL_gst_element_factory_make("capsfilter", "tx-capsf");
+
+		tx_audioconv = AL_gst_element_factory_make("audioconvert", "tx-audioconv");
+		g_object_set(tx_audioconv, "dithering", 0 /* none */, NULL);
+
+		udpsink = AL_gst_element_factory_make("udpsink", "tx-sink");
+
+		caps = gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, data->sample_rate, "channels", G_TYPE_INT,
+								   data->channels, "format", G_TYPE_STRING, "S16LE", "layout", G_TYPE_STRING,
+								   "interleaved", "channel-mask", GST_TYPE_BITMASK, (guint64)0, NULL);
+		AL_cnt_caps(caps);
+		g_object_set(capsfilter, "caps", caps, NULL);
+		DA_gst_caps_unref(caps);
+		caps = NULL;
+
+		g_object_set(udpsink, "host", data->tx_ip_addr, "port", data->tx_port, "multicast-iface", data->rtp_iface,
+					 NULL);
+		g_object_set(udpsink, "sync", TRUE, "async", FALSE, NULL);
+		g_object_set(udpsink, "qos", TRUE, "qos-dscp", 34, NULL);
+		g_object_set(udpsink, "processing-deadline", 0 * GST_MSECOND, NULL);
+		if (data->is_backup_sender) {
+#ifndef _WIN32
+			// Disable IP_MULTICAST_LOOP to avoid listening packets from same host
+			// For Linux this needs to be set on the sender's side
+			g_object_set(udpsink, "loop", FALSE, NULL);
+#endif
+		}
+
+		if (!audiointerleave || !tx_valve || !tx_audioconv || !rtp_pay || !udpsink) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create tx elements\n");
+			goto ddirTX_error;
+		}
+
+		gst_bin_add_many(GST_BIN(pipeline), tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL);
+
+		if (!gst_element_link_many(audiointerleave, tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL)) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements");
+			goto ddirTX_error;
+		}
+		goto ddirTX_exit;
+
+	ddirTX_error:
+		DA_gst_object_unref(GST_OBJECT(udpsink));
+		udpsink = NULL;
+		DA_gst_object_unref(GST_OBJECT(tx_audioconv));
+		tx_audioconv = NULL;
+		DA_gst_object_unref(GST_OBJECT(audiointerleave));
+		audiointerleave = NULL;
+		DA_gst_object_unref(GST_OBJECT(capsfilter));
+		capsfilter = NULL;
+		DA_gst_object_unref(GST_OBJECT(tx_valve));
+		tx_valve = NULL;
+		DA_gst_object_unref(GST_OBJECT(appsrc));	//added to pipeline in loop, so all deallocated there
+		appsrc = NULL;
+		goto error;
+
+	ddirTX_exit:
+		DA_dec_objs(udpsink);				// these should be de-allocated in the pipeline
+		DA_dec_objs(tx_audioconv);			// for now I just decr counters to track
+		DA_dec_objs(audiointerleave);
+		DA_dec_objs(capsfilter);
+		DA_dec_objs(tx_valve);
+		DA_dec_objs(appsrc);
+		}
+
+	/* if this stream is configured to be a backup sender, we pause our Tx if we find another sender doing Tx
+	  on the same multicast address and resume once the remote sender stops
+	*/
+	if (data->is_backup_sender) {
+		GstElement *udpsrc = NULL;
+		GstElement *fakesink = NULL;
+		GstCaps *caps = NULL;
+
+		/* create a dummy pipeline with `udpsrc ! fakesink` just to receive on udp and read the last-sample from
+		 * fakesink */
+#ifndef ENABLE_THREADSHARE
+		udpsrc = AL_gst_element_factory_make("udpsrc", "tx-monitor-udpsrc");
+#else
+		MAKE_TS_ELEMENT(udpsrc, "ts-udpsrc", "tx-monitor-udpsrc", ts_ctx);
+#endif
+
+		fakesink = AL_gst_element_factory_make("fakesink", "tx-monitor-fakesink");
+
+		if (data->tx_codec == L16) {
+			caps = gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
+									   G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
+									   "encoding-name", G_TYPE_STRING, "L16", "media", G_TYPE_STRING, "audio", NULL);
+		} else {
+			caps = gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
+									   G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
+									   "encoding-name", G_TYPE_STRING, "L24", "media", G_TYPE_STRING, "audio", NULL);
+		}
+
+		if (!udpsrc || !fakesink) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+							  "Failed to create tx-monitor elements, cannot listen for primary sender\n");
+			goto bksnd_error;
+		} else {
+			g_object_set(udpsrc, "address", data->tx_ip_addr, "port", data->tx_port,
+#ifdef _WIN32
+						 // Disable IP_MULTICAST_LOOP to avoid listening packets from same host
+						 // For Windows this needs to be set on the receiver's side
+						 "loop", FALSE,
+#endif
+						 "multicast-iface", data->rtp_iface, "caps", caps, NULL);
+
+			g_object_set(fakesink, "async", FALSE, NULL);
+
+			gst_bin_add_many(GST_BIN(pipeline), udpsrc, fakesink, NULL);
+			if (!gst_element_link_many(udpsrc, fakesink, NULL)) {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+								  "Failed to link tx-monitor elements, cannot listen for primary sender\n");
+				goto bksnd_error;
+			} else {
+				stream->pause_backup_sender = FALSE;
+				stream->backup_sender_idle_wait_ms = data->backup_sender_idle_wait_ms;
+
+				/* add a timer to check for remote sender's buffers every `backup_sender_idle_wait_ms` to resumek
+				  our Tx as soon as possible once the remote Tx stops */
+				stream->backup_sender_idle_timer = g_timeout_add_full(
+					G_PRIORITY_DEFAULT, data->backup_sender_idle_wait_ms, backup_sender_timeout_cb, stream, NULL);
+			}
+		}
+		DA_gst_caps_unref(caps);
+		caps = NULL;
+		goto bksnd_exit;
+
+	bksnd_error:
+		DA_gst_caps_unref(caps);
+		caps = NULL;
+		DA_gst_object_unref(GST_OBJECT(udpsrc));
+		udpsrc = NULL;
+		DA_gst_object_unref(GST_OBJECT(fakesink));
+		fakesink = NULL;
+		goto error;
+
+	bksnd_exit:
+		DA_dec_objs(udpsrc);		//check 
+		DA_dec_objs(fakesink);		//check 
+	}
+
+	// ---
+
+	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(pipeline));
+	gst_bus_add_watch(bus, bus_callback, stream);
+	DA_gst_object_unref(GST_OBJECT(bus));
+	bus = NULL;
+
+	stream->error_cb = error_cb;
+	stream->pipeline = GST_PIPELINE(pipeline);
+	stream->mainloop = g_main_loop_new(NULL, FALSE);
+	stream->thread = g_thread_new(pipeline_name, start_pipeline, stream);
+	stream->sample_rate = data->sample_rate;
+
+	g_atomic_int_set(&stream->clock_sync, 0);
+
+	gst_element_set_start_time(pipeline, GST_CLOCK_TIME_NONE);
+	gst_element_set_base_time(pipeline, 0);
+
+	if (rtp_pay) {
+		/* We have data->codec_ms of latency in the audiointerleave, so add that in */
+		/* FIXME: we should be cleverer and apply the pipeline latency as computed instead */
+		g_object_set(rtp_pay, "timestamp-offset",
+					 gst_util_uint64_scale_int((data->codec_ms + data->rtp_ts_offset) * GST_MSECOND, data->sample_rate,
+											   GST_SECOND) % G_MAXUINT32, NULL);
+	}
+
+	if (rtpdepay && data->synthetic_ptp) {
+		if (stream->clock) {
+			gst_object_unref(GST_OBJECT(stream->clock)); // check - added - no wrapper, since not alloc here
+		}
+		stream->clock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "name", "SyntheticPtpClock", NULL);
+		AL_cnt_objs(stream->clock);	//count it
+		stream->cb_rx_stats_id =
+			g_timeout_add_full(G_PRIORITY_DEFAULT, SYNTHETIC_CLOCK_INTERVAL_MS, update_clock, stream, NULL);
+		/* We'll set the pipeline clock once it's synced */
+	} else {
+		if (stream->clock) {
+			gst_object_unref(GST_OBJECT(stream->clock)); // no wrapper, not alloc here
+			stream->clock = NULL;
+		}
+		gst_pipeline_use_clock(GST_PIPELINE(pipeline), data->clock);
+		g_atomic_int_set(&stream->clock_sync, 1);
+	}
+
+	for (guint ch = 0; ch < MAX_IO_CHANNELS; ch++) 
+		stream->leftover_bytes[ch] = 0;
+	goto exit;
+
+error:
+	DA_gst_object_unref(GST_OBJECT(pipeline));
+	DA_gst_object_unref(GST_OBJECT(rtp_pay));
+	DA_gst_object_unref(GST_OBJECT(rtpdepay));
+	if (stream != NULL) {
+		if (stream->clock != NULL)
+			DA_gst_object_unref(GST_OBJECT(stream->clock));					// added missing unref no wrapper, not alloc here
+		if (stream->mainloop != NULL) g_main_loop_unref(stream->mainloop);	// added - check
+		if (stream->thread != NULL) g_thread_join(stream->thread);			// added - check
+		DA_g_free(stream);
 	}
 	return NULL;
+
 exit:
-    return stream;
+	DA_dec_objs(pipeline);	//check if real dealloc is required
+	DA_dec_objs(rtp_pay);	
+	DA_dec_objs(rtpdepay);	
+	DA_dec_objs(stream->clock);
+	return stream;
 }
 
-void
-use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
+void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 {
-  g_atomic_int_set(&stream->clock_sync, 0);
-  gst_element_set_state(GST_ELEMENT (stream->pipeline), GST_STATE_READY);
+	g_atomic_int_set(&stream->clock_sync, 0);
+	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_READY);
 
-  /* cb_rx_stats_id will be non zero only when
-  Rx is operational and pipeline clock is not ptp*/
-  if (stream->cb_rx_stats_id) {
-    g_source_remove(stream->cb_rx_stats_id);
-    stream->cb_rx_stats_id = 0;
-  }
+	/* cb_rx_stats_id will be non zero only when
+	Rx is operational and pipeline clock is not ptp*/
+	if (stream->cb_rx_stats_id) {
+		g_source_remove(stream->cb_rx_stats_id);
+		stream->cb_rx_stats_id = 0;
+	}
 
-  if (stream->clock) {
-    gst_object_unref (stream->clock);
-    stream->clock = NULL;
-  }
+	if (stream->clock) {
+		gst_object_unref(GST_OBJECT(stream->clock)); // no wrapper, not alloc here
+		stream->clock = NULL;
+	}
 
-  gst_pipeline_use_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
-  gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
-  gst_element_set_state(GST_ELEMENT (stream->pipeline), GST_STATE_PLAYING);
-  dump_pipeline(stream->pipeline, "ptp-clock-switch");
+	gst_pipeline_use_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
+	gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
+	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);
+	dump_pipeline(stream->pipeline, "ptp-clock-switch");
 
-  g_atomic_int_set (&stream->clock_sync, 1);
+	g_atomic_int_set(&stream->clock_sync, 1);
 }
 
-void *
-start_pipeline (void *data)
+void *start_pipeline(void *data)
 {
-  g_stream_t *stream = (g_stream_t *) data;
-  gst_element_set_state (GST_ELEMENT (stream->pipeline), GST_STATE_PLAYING);
+	g_stream_t *stream = (g_stream_t *)data;
+	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);
 
-  dump_pipeline(stream->pipeline, "start-pipeline");
-  start_mainloop (stream->mainloop);
-  return NULL;
+	dump_pipeline(stream->pipeline, "start-pipeline");
+	start_mainloop(stream->mainloop);
+	return NULL;
 }
 
-void
-stop_pipeline (g_stream_t * stream)
+void stop_pipeline(g_stream_t *stream)
 {
-  GstBus *bus;
+	GstBus *bus = NULL;
 
-  dump_pipeline(stream->pipeline, "pipeline-stop");
+	dump_pipeline(stream->pipeline, "pipeline-stop");
 
-  gst_element_set_state (GST_ELEMENT (stream->pipeline), GST_STATE_NULL);
+	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 
-  /* cb_rx_stats_id will be non zero only when
-  Rx is operational and pipeline clock is not ptp*/
-  if (stream->cb_rx_stats_id)
-    g_source_remove(stream->cb_rx_stats_id);
+	/* cb_rx_stats_id will be non zero only when
+	Rx is operational and pipeline clock is not ptp*/
+	if (stream->cb_rx_stats_id) g_source_remove(stream->cb_rx_stats_id);
 
-  if (stream->backup_sender_idle_timer)
-    g_source_remove(stream->backup_sender_idle_timer);
+	if (stream->backup_sender_idle_timer) g_source_remove(stream->backup_sender_idle_timer);
 
-  bus = gst_pipeline_get_bus (GST_PIPELINE (stream->pipeline));
-  gst_bus_remove_watch (bus);
-  gst_object_unref(GST_OBJECT(bus));
-  bus = NULL;
+	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(stream->pipeline));
+	gst_bus_remove_watch(bus);
+	DA_gst_object_unref(GST_OBJECT(bus));
+	bus = NULL;
 
-  gst_object_unref (GST_OBJECT(stream->pipeline));
-  if (stream->clock)
-	gst_object_unref (GST_OBJECT(stream->clock));
-  teardown_mainloop (stream->mainloop);
-  g_thread_join (stream->thread);
+	gst_object_unref(GST_OBJECT(stream->pipeline)); // not allocated here, so no wrapper
+	stream->pipeline = NULL;
+	if (stream->clock) {
+		gst_object_unref(GST_OBJECT(stream->clock)); // not allocated here, so no wrapper
+		stream->clock = NULL;
+	}
 
-  if (stream != NULL) g_free(stream); 
-  switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-      "Pipeline and mainloop cleaned up\n");
-
+	teardown_mainloop(stream->mainloop);
+	if (stream->thread !=NULL) g_thread_join(stream->thread);
+	DA_g_free(stream);					//allocated elsewhere
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 }
 
-void
-teardown_mainloop (GMainLoop * mainloop)
+void teardown_mainloop(GMainLoop *mainloop)
 {
 
-  g_main_loop_quit (mainloop);
-  g_main_loop_unref (mainloop);
+	g_main_loop_quit(mainloop);
+	g_main_loop_unref(mainloop);
 }
 
-
-void
-start_mainloop (GMainLoop * mainloop)
+void start_mainloop(GMainLoop *mainloop)
 {
 
-  switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Running mainloop\n");
-  g_main_loop_run (mainloop);
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Running mainloop\n");
+	g_main_loop_run(mainloop);
 }
 
-
-gboolean
-push_buffer (g_stream_t *stream, unsigned char *payload, guint len,
-    guint ch_idx, switch_timer_t * timer)
+gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guint ch_idx, switch_timer_t *timer)
 {
-  GstState cur_state = GST_STATE_NULL, pending_state;
-  GstBuffer *buf =NULL;
-  GstMapInfo info;
+	GstState cur_state = GST_STATE_NULL;
+	GstState pending_state = GST_STATE_NULL;
+	GstBuffer *buf = NULL;
+	GstMapInfo info;
 
-  gboolean ret=FALSE;
-  GstFlowReturn result;
+	gboolean retval = FALSE;
+	GstFlowReturn result;
 
-  gchar name[ELEMENT_NAME_SIZE];
-  GstElement *appsrc = NULL;
-  GstPipeline *pipeline = stream->pipeline;
+	gchar name[ELEMENT_NAME_SIZE];
+	GstElement *appsrc = NULL;
+	GstPipeline *pipeline = stream->pipeline;
 
-  NAME_ELEMENT (name, "appsrc", ch_idx);
-  appsrc = gst_bin_get_by_name (GST_BIN (pipeline), name);
+	NAME_ELEMENT(name, "appsrc", ch_idx);
+	appsrc = AL_gst_bin_get_by_name(GST_BIN(pipeline), name);
 
-  switch_core_timer_next (timer);
+	switch_core_timer_next(timer);	//wait a bit
 
-  if (appsrc == NULL) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-        "Failed to find appsrc in the pipeline\n");
-	  goto error;
-  }
+	if (appsrc == NULL) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Failed to find appsrc in the pipeline\n");
+		goto error;
+	}
 
-  if (!g_atomic_int_get(&stream->clock_sync)) {
-	result = TRUE;
-    goto done;
-  }
+	if (!g_atomic_int_get(&stream->clock_sync)) {
+		retval = TRUE;
+		goto done;
+	}
 
-  gst_element_get_state (GST_ELEMENT (pipeline), &cur_state, &pending_state, 0);
-  if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) {
-    result = TRUE;
-    goto done;
-  }
+	gst_element_get_state(GST_ELEMENT(pipeline), &cur_state, &pending_state, 0);
+	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) {
+		retval = TRUE;
+		goto done;
+	}
 
-  buf = gst_buffer_new_allocate (NULL, len, NULL);
-  if (buf == NULL) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to allocate buffer\n");
-    goto error;
-  }
+	buf = AL_gst_buffer_new_allocate(NULL, len, NULL);
+	if (buf == NULL) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
+		goto error;
+	}
 
-  if (!gst_buffer_map (buf, &info, GST_MAP_WRITE)) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to get buffer map\n");
-    goto error;
-  }
-  memcpy (info.data, payload, len);
-  gst_buffer_unmap (buf, &info);
+	if (!gst_buffer_map(buf, &info, GST_MAP_WRITE)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get buffer map\n");
+		goto error;
+	}
+	memcpy(info.data, payload, len);
+	gst_buffer_unmap(buf, &info);
 
-  
-  g_signal_emit_by_name (appsrc, "push-buffer", buf, &result);
-  // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pushed buffer\n");
+	g_signal_emit_by_name(appsrc, "push-buffer", buf, &result);
+	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pushed buffer\n");
 
-  gst_buffer_unref(buf);
-  buf = NULL;
-  if (result == GST_FLOW_ERROR) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to do 'push-buffer' \n");
-    goto error;
-  }
+	DA_gst_buffer_unref(buf);
+	buf = NULL;
+	if (result == GST_FLOW_ERROR) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to do 'push-buffer' \n");
+		goto error;
+	}
 
 done:
-  ret = TRUE;
+	retval = TRUE;
 
 error:
-  gst_object_unref (GST_OBJECT (appsrc));
-	if (buf != NULL) gst_object_unref(GST_OBJECT(buf));
-  return ret;
+	DA_gst_object_unref(GST_OBJECT(appsrc));
+	DA_gst_buffer_unref(GST_OBJECT(buf));
+	return retval;
 }
 
-
-int
-pull_buffers (g_stream_t * stream, unsigned char *payload, guint needed_bytes,
-    guint ch_idx, switch_timer_t * timer, gchar *session)
+int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes, guint ch_idx, switch_timer_t *timer,
+				 gchar *session)
 {
-  GstState cur_state = GST_STATE_NULL, pending_state;
+	GstState cur_state = GST_STATE_NULL, pending_state;
 
-  GstBuffer *buf=NULL;
-  GstSample *sample=NULL;
+	GstBuffer *buf = NULL;
+	GstSample *sample = NULL;
 
-  GstMapInfo info;
-  int total_bytes = 0;
-  gchar name[ELEMENT_NAME_SIZE];
-  GstElement *appsink =NULL;
+	GstMapInfo info;
+	int total_bytes = 0;
+	gchar name[ELEMENT_NAME_SIZE];
+	GstElement *appsink = NULL;
 
-  if (session == NULL)
-    NAME_ELEMENT (name, "appsink", ch_idx);
-  else
-    NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
+	if (session == NULL)
+		NAME_ELEMENT(name, "appsink", ch_idx);
+	else
+		NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 
-  appsink = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);
+	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
 
-  if (appsink == NULL) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to find %s in the pipeline\n", name);
-    return 0;
-  }
+	if (appsink == NULL) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
+		goto error;
+		
+	}
 
-  gst_element_get_state (GST_ELEMENT (stream->pipeline), &cur_state,
-      &pending_state, 0);
-  if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING)
-    goto out;
+	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0);
+	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) goto out;
 
-  if (gst_app_sink_is_eos (GST_APP_SINK (appsink)))
-    goto out;
+	if (gst_app_sink_is_eos(GST_APP_SINK(appsink))) goto out;
 
-  // Note: assumes leftover_bytes will never be more than buflen, which is
-  // likely true (packet is limited to MTU, while buflen is 8192)
-  // FIXME: revisit this to check whether we need this anymore
-  if (stream->leftover_bytes[ch_idx]) {
-    int copy =
-        stream->leftover_bytes[ch_idx] <=
-        needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
-    memcpy (payload, stream->leftover[ch_idx], copy);
-    total_bytes += copy;
-    stream->leftover_bytes[ch_idx] -= copy;
-  }
+	// Note: assumes leftover_bytes will never be more than buflen, which is
+	// likely true (packet is limited to MTU, while buflen is 8192)
+	// FIXME: revisit this to check whether we need this anymore
+	if (stream->leftover_bytes[ch_idx]) {
+		int copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
+		memcpy(payload, stream->leftover[ch_idx], copy);
+		total_bytes += copy;
+		stream->leftover_bytes[ch_idx] -= copy;
+	}
 
-  while (total_bytes < needed_bytes) {
-    // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
-    sample =
-        gst_app_sink_try_pull_sample (GST_APP_SINK (appsink),
-        10 * GST_MSECOND);
-    if (!sample) {
-      // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Failed to pull sample\n");
-      switch_cond_next ();
-      break;
-    }
-    buf = gst_sample_get_buffer (sample);
+	while (total_bytes < needed_bytes) {
+		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
+		sample = AL_gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 10 * GST_MSECOND);
+		if (!sample) {
+			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Failed to pull sample\n");
+			switch_cond_next();
+			break;
+		}
+		buf = gst_sample_get_buffer(sample); // no alloc
 
-    if (!buf)
-      continue;
+		if (!buf) {
+			if (sample != NULL) { // added in case
+				DA_gst_sample_unref(sample);
+				sample = NULL;
+			}
+			continue;
+		}
 
-    if (gst_buffer_map (buf, &info, GST_MAP_READ)) {
-      if (total_bytes + info.size > needed_bytes) {
-        int want = needed_bytes - total_bytes;
+		if (gst_buffer_map(buf, &info, GST_MAP_READ)) {
+			if (total_bytes + info.size > needed_bytes) {
+				int want = needed_bytes - total_bytes;
 
-        stream->leftover_bytes[ch_idx] = info.size - want;
-        memcpy (stream->leftover[ch_idx], info.data + want,
-            stream->leftover_bytes[ch_idx]);
+				stream->leftover_bytes[ch_idx] = info.size - want;
+				memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
 
-        info.size = want;
-      }
+				info.size = want;
+			}
 
-      memcpy (payload + total_bytes, info.data, info.size);
-      total_bytes += info.size;
-    }
-    gst_buffer_unmap (buf, &info);
-	if (sample != NULL) gst_sample_unref(sample);
-	sample = NULL;
+			memcpy(payload + total_bytes, info.data, info.size);
+			total_bytes += info.size;
+		}
+		gst_buffer_unmap(buf, &info);
+		if (sample != NULL) {
+			DA_gst_sample_unref(sample);
+			sample = NULL;
+		}
 
-    // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got %d\n", total_bytes);
-  }
+		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got %d\n", total_bytes);
+	}
 
 #if 0
   {
@@ -1227,68 +1234,75 @@ pull_buffers (g_stream_t * stream, unsigned char *payload, guint needed_bytes,
   }
 #endif
 
-  // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u Returning needed %d, total_bytes: %d\n", ch_idx, needed_bytes, total_bytes);
-  // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Leftover %lu\n", stream->leftover_bytes[ch_idx]);
+	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%u Returning needed %d, total_bytes: %d\n", ch_idx,
+	// needed_bytes, total_bytes); switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Leftover %lu\n",
+	// stream->leftover_bytes[ch_idx]);
 
 out:
-  if (appsink !=NULL) gst_object_unref(GST_OBJECT(appsink));
-  if (buf != NULL) gst_object_unref(GST_OBJECT(buf));
-  return total_bytes;
+	DA_gst_object_unref(GST_OBJECT(appsink));
+	return total_bytes;
+error:
+	DA_gst_object_unref(GST_OBJECT(appsink)); 
+	return 0;
 }
 
-
-void
-drop_input_buffers (gboolean drop, g_stream_t * stream, guint32 ch_idx)
+void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 {
-  gchar name[ELEMENT_NAME_SIZE];
-  GstElement *valve =NULL;
-  NAME_ELEMENT (name, "valve", ch_idx);
-  valve = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);  //no mem allocation
-  if (valve == NULL) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to get valve element in the pipeline\n");
-    return;
-  }
-  g_object_set (valve, "drop", drop, NULL);
-  g_snprintf (name, STR_SIZE, "drop-ch%d-%d", ch_idx, drop);
-  dump_pipeline(stream->pipeline, name);
-  if (valve!=NULL) gst_object_unref(GST_OBJECT(valve));
+	gchar name[ELEMENT_NAME_SIZE];
+	GstElement *valve = NULL;
+	NAME_ELEMENT(name, "valve", ch_idx);
+	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count 
+	if (valve == NULL) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
+		goto error;
+	}
+	g_object_set(valve, "drop", drop, NULL);
+	g_snprintf(name, 2*STR_SIZE, "drop-ch%d-%d", ch_idx, drop);		//check increased string size
+	dump_pipeline(stream->pipeline, name);
+error: 
+	DA_gst_object_unref(GST_OBJECT(valve));
+	return;
 }
 
-gchar *
-get_rtp_stats (g_stream_t *stream) {
-
-  GstElement *rtpjitbuf=NULL;
-  gchar *stats_str = "";
-  rtpjitbuf = gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
-
-  if (rtpjitbuf) {
-    GstStructure * stats;
-    g_object_get(G_OBJECT(rtpjitbuf), "stats", &stats, NULL);
-    stats_str = gst_structure_to_string (stats);
-	gst_structure_free(stats);	 // Fix: Added missing free
-	gst_object_unref(rtpjitbuf); // Fix: Added missing unref
-	return stats_str;
-  } else
-    return "";
-}
-
-void drop_output_buffers (gboolean drop, g_stream_t *stream)
+//caller must free returned string!!
+gchar *get_rtp_stats(g_stream_t *stream)
 {
-  GstElement *tx_valve=NULL;
-  gchar name[ELEMENT_NAME_SIZE];
 
-  tx_valve = gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-valve"); //no allocation
-  if (tx_valve == NULL) {
-    switch_log_printf (SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-        "Failed to get valve element in the pipeline\n");
-    return;
-  }
+	GstElement *rtpjitbuf = NULL;
+	gchar *stats_str = NULL;		//fixed: dynamic allocation required since this is NOT on the stack
+	rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
 
-  g_object_set (tx_valve, "drop", drop, NULL);
+	if (rtpjitbuf) {
+		GstStructure *stats = NULL;
+		g_object_get(G_OBJECT(rtpjitbuf), "stats", &stats, NULL);
+		AL_cnt_structs(stats);	//stats
+		stats_str = AL_gst_structure_to_string(stats);								
+		DA_gst_structure_free(stats);			// Added missing free
+		stats = NULL;
+		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+		return stats_str;					//stats_str deallocated by caller	
+	} else {
+		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+		stats_str = g_strdup_printf("");			//must be dynamic
+		return stats_str;
+	}
+}
 
-  g_snprintf (name, ELEMENT_NAME_SIZE, "tx-drop-%d", drop);
-  dump_pipeline(stream->pipeline, name);
+void drop_output_buffers(gboolean drop, g_stream_t *stream)
+{
+	GstElement *tx_valve = NULL;
+	gchar name[ELEMENT_NAME_SIZE];
 
-  if (tx_valve !=NULL) gst_object_unref(GST_OBJECT(tx_valve));
+	tx_valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-valve"); // no allocation
+	if (tx_valve == NULL) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
+		goto error;
+	}
+
+	g_object_set(tx_valve, "drop", drop, NULL);
+
+	g_snprintf(name, ELEMENT_NAME_SIZE, "tx-drop-%d", drop);
+	dump_pipeline(stream->pipeline, name);
+error:
+	DA_gst_object_unref(GST_OBJECT(tx_valve));
 }
