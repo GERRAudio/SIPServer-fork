@@ -148,6 +148,7 @@ G_ALLOC_WRAP_FREE(g_error_free, errs, GError *)
 G_ALLOC_WRAP_FREE(gst_object_unref, objs, GstObject *)
 G_ALLOC_WRAP_DEC(objs, dec_objs, GstObject*, p)
 G_ALLOC_WRAP_INC(objs, cnt_objs,GstObject*, p)
+
 G_ALLOC_WRAP_ALLOC(GstBus *, gst_pipeline_get_bus, objs, GstPipeline *, b)
 G_ALLOC_WRAP_ALLOC(GstPad *, gst_pad_get_peer, objs, GstPad *, pad)
 G_ALLOC_WRAP_ALLOC2(GstElement *, gst_bin_get_by_name, objs, GstBin *, bin, const gchar *, name)
