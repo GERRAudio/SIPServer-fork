@@ -182,6 +182,7 @@ error:
 	// these need to be unconditionally deref'd
 	DA_gst_object_unref(GST_OBJECT(tee_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(tee));
+	gst_element_set_state(pipeline, GST_STATE_NULL);
 	DA_gst_object_unref(GST_OBJECT(pipeline));
 	DA_g_free(pad_name);	
 }
@@ -199,6 +200,7 @@ gboolean update_clock(gpointer userdata)
 	pipeline = (GstElement *)stream->pipeline;
 	rtpdepay = AL_gst_bin_get_by_name(GST_BIN(pipeline), RTP_DEPAY);
 	if (!rtpdepay) {
+		DA_dec_objs(rtpdepay); //dec count
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "rtpdepay not found in pipeline");
 		return G_SOURCE_CONTINUE;
 	}
@@ -971,6 +973,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	goto exit;
 
 error:
+	gst_element_set_state(pipeline, GST_STATE_NULL);
 	DA_gst_object_unref(GST_OBJECT(pipeline));
 	DA_gst_object_unref(GST_OBJECT(rtp_pay));
 	DA_gst_object_unref(GST_OBJECT(rtpdepay));
@@ -1135,7 +1138,7 @@ done:
 
 error:
 	DA_gst_object_unref(GST_OBJECT(appsrc));
-	DA_gst_buffer_unref(GST_OBJECT(buf));
+	DA_gst_buffer_unref(buf);
 	return retval;
 }
 
@@ -1280,12 +1283,11 @@ gchar *get_rtp_stats(g_stream_t *stream)
 		DA_gst_structure_free(stats);			// Added missing free
 		stats = NULL;
 		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
-		return stats_str;					//stats_str deallocated by caller	
 	} else {
 		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
-		stats_str = g_strdup_printf("");			//must be dynamic
-		return stats_str;
+		stats_str = g_strdup_printf(""); // must be heap
 	}
+	return stats_str;			//deallocated by caller
 }
 
 void drop_output_buffers(gboolean drop, g_stream_t *stream)
