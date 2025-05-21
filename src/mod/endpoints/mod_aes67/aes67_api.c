@@ -495,7 +495,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			if (!last_sample) goto exit;
 
 			// no memory allocated
-			buffer = gst_sample_get_buffer(last_sample);
+			buffer = gst_sample_get_buffer(last_sample);	//no alloc
 			timestamp = GST_BUFFER_DTS_OR_PTS(buffer);
 			meta = gst_buffer_get_net_address_meta(buffer);
 			//
@@ -1109,7 +1109,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		retval = TRUE;
 		goto done;
 	}
-
+	
 	buf = AL_gst_buffer_new_allocate(NULL, len, NULL);
 	if (buf == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");

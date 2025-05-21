@@ -117,7 +117,7 @@ G_ALLOC_WRAP_ALLOC(gchar*, gst_structure_to_string, chars, const GstStructure *,
 
 // --- Buffer wrappers ---
 G_ALLOC_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *)
-G_ALLOC_WRAP_REF(gst_buffer_ref, bufs, GstBuffer *)
+//G_ALLOC_WRAP_REF(gst_buffer_ref, bufs, GstBuffer *)
 G_ALLOC_WRAP_ALLOC3(GstBuffer *, gst_buffer_new_allocate, bufs, GstAllocator*, allocator, gsize, size, GstAllocationParams*, params)
 // G_ALLOC_WRAP_ALLOC(GstBuffer*, gst_buffer_new, bufs, void)
 
