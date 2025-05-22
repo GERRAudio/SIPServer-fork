@@ -109,14 +109,15 @@
 
 
 // chars
-G_ALLOC_WRAP_INC(chars, cnt_chars, gchar*, p)
-G_ALLOC_WRAP_FREE(g_free, chars, gpointer)
-G_ALLOC_WRAP_ALLOC(gpointer, g_malloc0, chars, gsize,c)
-G_ALLOC_WRAP_ALLOC(gchar*, g_strdup, chars,  gchar *,str)
-G_ALLOC_WRAP_ALLOC(gchar*, gst_structure_to_string, chars, const GstStructure *,s)
+	G_ALLOC_WRAP_INC(chars, cnt_chars, gchar *, p)
+	G_ALLOC_WRAP_FREE(g_free, chars, gpointer)
+	G_ALLOC_WRAP_ALLOC(gpointer, g_malloc0, chars, gsize, c)
+	G_ALLOC_WRAP_ALLOC(gchar *, g_strdup, chars, gchar *, str)
+	G_ALLOC_WRAP_ALLOC(gchar *, gst_structure_to_string, chars, const GstStructure *, s)
 
-// --- Buffer wrappers ---
-G_ALLOC_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *)
+	// --- Buffer wrappers ---
+	G_ALLOC_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p)
+	G_ALLOC_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *)
 //G_ALLOC_WRAP_REF(gst_buffer_ref, bufs, GstBuffer *)
 G_ALLOC_WRAP_ALLOC3(GstBuffer *, gst_buffer_new_allocate, bufs, GstAllocator*, allocator, gsize, size, GstAllocationParams*, params)
 // G_ALLOC_WRAP_ALLOC(GstBuffer*, gst_buffer_new, bufs, void)

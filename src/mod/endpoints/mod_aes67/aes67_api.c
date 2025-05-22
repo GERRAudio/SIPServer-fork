@@ -182,7 +182,7 @@ error:
 	// these need to be unconditionally deref'd
 	DA_gst_object_unref(GST_OBJECT(tee_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(tee));
-	gst_element_set_state(pipeline, GST_STATE_NULL);
+	//gst_element_set_state(pipeline, GST_STATE_NULL);		//added check
 	DA_gst_object_unref(GST_OBJECT(pipeline));
 	DA_g_free(pad_name);	
 }
@@ -973,7 +973,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	goto exit;
 
 error:
-	gst_element_set_state(pipeline, GST_STATE_NULL);
+	//gst_element_set_state(pipeline, GST_STATE_NULL);				//added check
 	DA_gst_object_unref(GST_OBJECT(pipeline));
 	DA_gst_object_unref(GST_OBJECT(rtp_pay));
 	DA_gst_object_unref(GST_OBJECT(rtpdepay));
@@ -1126,7 +1126,9 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	g_signal_emit_by_name(appsrc, "push-buffer", buf, &result);
 	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pushed buffer\n");
 
-	DA_gst_buffer_unref(buf);
+	gst_buffer_unref(buf);//  check - may kill audio!
+	DA_dec_bufs(buf); 
+
 	buf = NULL;
 	if (result == GST_FLOW_ERROR) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to do 'push-buffer' \n");
@@ -1138,7 +1140,8 @@ done:
 
 error:
 	DA_gst_object_unref(GST_OBJECT(appsrc));
-	DA_gst_buffer_unref(buf);
+	DA_gst_buffer_unref(buf);						// check - kills audio!
+	//DA_dec_bufs(buf);		  // allocated as a buffer - weirdly 
 	return retval;
 }
 
