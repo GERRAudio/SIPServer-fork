@@ -1126,7 +1126,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	g_signal_emit_by_name(appsrc, "push-buffer", buf, &result);
 	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pushed buffer\n");
 
-	gst_buffer_unref(buf);//  check - may kill audio!
+	gst_buffer_unref(buf);//  check 
 	DA_dec_bufs(buf); 
 
 	buf = NULL;
@@ -1140,8 +1140,8 @@ done:
 
 error:
 	DA_gst_object_unref(GST_OBJECT(appsrc));
-	DA_gst_buffer_unref(buf);						// check - kills audio!
-	//DA_dec_bufs(buf);		  // allocated as a buffer - weirdly 
+	gst_buffer_unref(buf);						// check 
+	DA_dec_bufs(buf);		  
 	return retval;
 }
 
