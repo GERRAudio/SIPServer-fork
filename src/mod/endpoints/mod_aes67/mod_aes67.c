@@ -411,13 +411,13 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
 				//switch_mutex_lock(globals.gst_mutex);						//added check
 				STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
-				STREAM_WRITER_LOCK(tech_pvt->audio_endpoint->in_stream);	//added check
+				//STREAM_WRITER_LOCK(tech_pvt->audio_endpoint->in_stream);	//added check
 
 				if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan,
 								session_id)) {
 					tech_pvt->audio_endpoint->active_listen_sessions++;
 				}
-				STREAM_WRITER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check
+				//STREAM_WRITER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check
 				STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
 				//switch_mutex_unlock(globals.gst_mutex);			//added check
 				switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
@@ -891,11 +891,11 @@ static switch_status_t channel_on_exchange_media(switch_core_session_t *session)
 		switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
 		switch_mutex_lock(globals.gst_mutex);				//added check
 		STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
-		STREAM_WRITER_LOCK(tech_pvt->audio_endpoint->in_stream);		//added check
+		//STREAM_WRITER_LOCK(tech_pvt->audio_endpoint->in_stream);		//added check
 		if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan, session_id)) {
 			tech_pvt->audio_endpoint->active_listen_sessions++;
 		}
-		STREAM_WRITER_UNLOCK(tech_pvt->audio_endpoint->in_stream);		//added check
+		//STREAM_WRITER_UNLOCK(tech_pvt->audio_endpoint->in_stream);		//added check
 		STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
 		switch_mutex_unlock(globals.gst_mutex);							//added check
 		switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
