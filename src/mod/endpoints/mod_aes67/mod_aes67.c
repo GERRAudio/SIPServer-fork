@@ -803,7 +803,7 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 
 		if (endpoint->in_stream) {
 			STREAM_READER_LOCK(endpoint->in_stream);	
-
+			//gst lock check?
 			if (remove_appsink(endpoint->in_stream->stream, endpoint->inchan, session_id)) {
 				endpoint->active_listen_sessions--;
 			}
@@ -940,9 +940,11 @@ static switch_status_t channel_endpoint_read(private_t *tech_pvt, switch_frame_t
 
 	if (STREAM_READER_TRYLOCK(endpoint->in_stream)) {
 		if (!endpoint->in_stream->stream) { return SWITCH_STATUS_FALSE; }
+		switch_mutex_lock(globals.gst_mutex); // check added
 		bytes = pull_buffers(endpoint->in_stream->stream, (unsigned char *)tech_pvt->read_frame.data,
 							 STREAM_SAMPLES_PER_PACKET(endpoint->in_stream) * 2 /* FIXME: non-S16LE */,
 							 endpoint->inchan, &tech_pvt->read_timer, session_id);
+		switch_mutex_unlock(globals.gst_mutex); // check added
 		STREAM_READER_UNLOCK(endpoint->in_stream);
 	} else {
 		// Pipeline is being reset, feed some silence
@@ -1102,11 +1104,13 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 	if (tech_pvt->hfh) { tech_close_file(tech_pvt); }
 
 	switch_mutex_lock(globals.device_lock);
+	switch_mutex_lock(globals.gst_mutex); // check added
 	bytes = pull_buffers(globals.main_stream->stream, (unsigned char *)globals.read_frame.data,
 						 globals.read_codec.implementation->samples_per_packet * 2 /* FIXME: S16LE-only */, 0,
 						 &globals.read_timer, session_id);
 	// FIXME: won't work for L24/L32
 	samples = bytes / sizeof(int16_t);
+	switch_mutex_unlock(globals.gst_mutex); // check added
 	switch_mutex_unlock(globals.device_lock);
 
 	if (samples) {
@@ -1906,6 +1910,7 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void *data)
 		switch_core_hash_this(hi, &var, NULL, &val);
 		s = val;
 		STREAM_WRITER_LOCK(s);
+		// check if gst lock required here
 		use_ptp_clock(s->stream, ptp_clock);
 		STREAM_WRITER_UNLOCK(s);
 	}
@@ -2125,12 +2130,13 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 				// Signal intent-to-reload to prevent writer starvation
 				g_atomic_int_set(&curr_stream->reloading, 1);
 				STREAM_WRITER_LOCK(curr_stream);
-
+				STREAM_READER_LOCK(curr_stream);			//added check
 				clear_shared_audio_stream(curr_stream);
 				create_shared_audio_stream(curr_stream);
 				link_rx_stream(curr_stream);
 
 				g_atomic_int_set(&curr_stream->reloading, 0);
+				STREAM_READER_UNLOCK(curr_stream);			//added check
 				STREAM_WRITER_UNLOCK(curr_stream);
 			}
 			/* dont insert the allocated stream to the sh_streams list*/
