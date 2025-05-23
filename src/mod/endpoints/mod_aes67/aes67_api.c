@@ -548,7 +548,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 	}
 
 exit:
-	DA_gst_sample_unref(GST_OBJECT(last_sample));
+	DA_gst_sample_unref(last_sample);
 	DA_gst_object_unref(GST_OBJECT(clock));
 	DA_gst_object_unref(GST_OBJECT(fakesink));
 	DA_g_free(host);
