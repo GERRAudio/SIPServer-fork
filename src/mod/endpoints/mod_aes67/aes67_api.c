@@ -1128,8 +1128,8 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	gst_buffer_unref(buf);//  check 
 	DA_dec_bufs(buf); 
-
 	buf = NULL;
+
 	if (result == GST_FLOW_ERROR) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to do 'push-buffer' \n");
 		goto error;
