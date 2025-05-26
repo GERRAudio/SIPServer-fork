@@ -1718,7 +1718,9 @@ static gboolean ptp_stats_cb(guint8 d, const GstStructure *stats, gpointer user_
 		}
 	} else if (globals.enable_ptp_stats) {
 		switch_event_t *event;
-		gchar *stats_str = AL_gst_structure_to_string(stats);
+		switch_mutex_lock(globals.gst_mutex);	//added check
+		gchar *stats_str = gst_structure_to_string(stats);
+		switch_mutex_unlock(globals.gst_mutex); // added check
 		if (stats_str == NULL) goto cleanup;
 
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
@@ -1737,8 +1739,8 @@ static gboolean ptp_stats_cb(guint8 d, const GstStructure *stats, gpointer user_
 			switch_event_fire(&event);
 		}
 	cleanup:
-		DA_g_free(stats_str);
-		stats_str = NULL;
+		g_free(stats_str);
+
 	}
 	return TRUE;
 }
