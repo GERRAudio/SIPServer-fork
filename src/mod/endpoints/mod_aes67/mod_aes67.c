@@ -798,17 +798,17 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 
 		switch_mutex_lock(endpoint->mutex);
 		//switch_mutex_lock(globals.gst_mutex);		//added - check
-		//STREAM_READER_LOCK(endpoint->in_stream);	//moved up check
+		STREAM_READER_LOCK(endpoint->in_stream);	//moved up check
 		//STREAM_WRITER_LOCK(endpoint->in_stream); // added check 
 
 		if (endpoint->in_stream) {
-			STREAM_READER_LOCK(endpoint->in_stream);	
+			//STREAM_READER_LOCK(endpoint->in_stream);	
 			//gst lock check?
 			if (remove_appsink(endpoint->in_stream->stream, endpoint->inchan, session_id)) {
 				endpoint->active_listen_sessions--;
 			}
 
-			STREAM_READER_UNLOCK(endpoint->in_stream);			
+			//STREAM_READER_UNLOCK(endpoint->in_stream);			
 		}
 
 		if (endpoint->active_listen_sessions == 0 && endpoint->in_stream) {
@@ -823,7 +823,7 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 		switch_core_codec_destroy(&tech_pvt->write_codec);
 
 		//STREAM_WRITER_UNLOCK(endpoint->in_stream); // added check
-		//STREAM_READER_UNLOCK(endpoint->in_stream);  //moved down check
+		STREAM_READER_UNLOCK(endpoint->in_stream);  //moved down check
 		//switch_mutex_unlock(globals.gst_mutex);		//added check
 		switch_mutex_unlock(endpoint->mutex);
 
@@ -2801,7 +2801,7 @@ static int create_shared_audio_stream(shared_audio_stream_t *shstream)
 static int clear_shared_audio_stream(shared_audio_stream_t *shstream)
 {
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Destroying shared audio stream %s\n", shstream->name);
-	if (shstream->stream) 
+	if (shstream->stream) //check - may need gst_mutex here?
 		stop_pipeline(shstream->stream);
 
 	shstream->stream = NULL; // deallocated in stop pipeline
@@ -2985,7 +2985,7 @@ SWITCH_STANDARD_API(aes_cmd)
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 	const char *usage_string = "USAGE:\n"
 							   "--------------------------------------------------------------------------------\n"
-							   "aes67 help\n"
+							   "aes67 (for this list)\n"
 							   "aes67 streams\n"
 							   "aes67 endpoints\n"
 							   "aes67 ptpstats <on|off> \n"
@@ -3062,95 +3062,105 @@ SWITCH_STANDARD_API(aes_cmd)
 			}
 
 			STREAM_READER_UNLOCK(astream);
-		} else {
+		}
+		else {
 			stream->write_function(stream, "reloadconf in progress, please retry\n");
 		}
-	} else if (!strcasecmp(argv[0], "txflow")) {
-		shared_audio_stream_t *astream;
-
-		if (!argv[1]) {
-			stream->write_function(stream, "Please provide the name of the stream\n");
-			stream->write_function(stream, "%s", usage_string);
-			goto done;
-		}
-
-		astream = switch_core_hash_find_locked(globals.sh_streams, argv[1], globals.sh_shtreams_lock);
-		if (!astream) {
-			stream->write_function(stream, "Stream with name %s not found\n", argv[1]);
-			stream->write_function(stream, "%s", usage_string);
-			goto done;
-		}
-
-		if (!strcasecmp(argv[2], "on")) {
-			if (STREAM_READER_TRYLOCK(astream)) {
-				drop_output_buffers(FALSE, astream->stream);
-				astream->txflow = TRUE;
-				// We still need txflow during the pipeline init to set valve's drop property
-				// the stream is initialized after the pipeline is created, so we need to preserve
-				// txflow somewhere until then
-				astream->stream->txdrop = FALSE;
-				stream->write_function(stream, "Tx buffers flowing!\n");
-
-				STREAM_READER_UNLOCK(astream);
-			} else {
-				stream->write_function(stream, "failed to start txflow: reloadconf in progress\n");
-			}
-		} else if (!strcasecmp(argv[2], "off")) {
-			if (STREAM_READER_TRYLOCK(astream)) {
-				drop_output_buffers(TRUE, astream->stream);
-				astream->txflow = FALSE;
-				astream->stream->txdrop = TRUE;
-				stream->write_function(stream, "Tx buffers dropping!\n");
-
-				STREAM_READER_UNLOCK(astream);
-			} else {
-				stream->write_function(stream, "failed to stop txflow: reloadconf in progress\n");
-			}
-		} else {
-			stream->write_function(stream, "Please mention 'on' or 'off'\n");
-			stream->write_function(stream, "%s", usage_string);
-			goto done;
-		}
-	} else if (!strcasecmp(argv[0], "reloadconf")) {
-		reload_config();
-	} else if (!strcasecmp(argv[0], "dump")) {
-		shared_audio_stream_t *astream;
-
-		if (!argv[1]) {
-			stream->write_function(stream, "Please provide the name of the stream\n");
-			stream->write_function(stream, "%s", usage_string);
-			goto done;
-		}
-
-		astream = switch_core_hash_find_locked(globals.sh_streams, argv[1], globals.sh_shtreams_lock);
-		if (!astream) {
-			stream->write_function(stream, "Stream with name %s not found\n", argv[1]);
-			stream->write_function(stream, "%s", usage_string);
-			goto done;
-		}
-		//switch_mutex_lock(globals.gst_mutex); //added - check
-		if (argv[2])
-			dump_pipeline(astream->stream->pipeline, argv[2]);
-		else
-			dump_pipeline(astream->stream->pipeline, "clidump");
-		//switch_mutex_unlock(globals.gst_mutex);							//added check
-
-	} else if (!strcasecmp(argv[0], "allocs")) {
-		stream->write_function(stream, "\tbufs: %d\n", g_alloc_counts.bufs);
-		stream->write_function(stream, "\tcaps: %d\n", g_alloc_counts.caps);
-		stream->write_function(stream, "\tchars: %d\n", g_alloc_counts.chars);
-		stream->write_function(stream, "\terrs: %d\n", g_alloc_counts.errs);
-		stream->write_function(stream, "\tstructs: %d\n", g_alloc_counts.structs);
-		stream->write_function(stream, "\tsamples: %d\n", g_alloc_counts.samples);
-		stream->write_function(stream, "\tmems: %d\n", g_alloc_counts.memories);
-		stream->write_function(stream, "\tmessages: %d\n", g_alloc_counts.messages);
-		stream->write_function(stream, "\tobjs: %d\n", g_alloc_counts.objs);
-		stream->write_function(stream, "\tdebugs: %d\n", g_alloc_counts.debugs);
-		stream->write_function(stream, "\tstats: %d\n", g_alloc_counts.stats);
-		stream->write_function(stream, "\tgobjects: %d\n", g_alloc_counts.gobjects);
-		stream->write_function(stream, "\tFDA: %d\n", g_alloc_counts.FDA);
-		stream->write_function(stream, "\tFAL: %d\n", g_alloc_counts.FAL);
 	}
+ else if (!strcasecmp(argv[0], "txflow")) {
+	 shared_audio_stream_t* astream;
+
+	 if (!argv[1]) {
+		 stream->write_function(stream, "Please provide the name of the stream\n");
+		 stream->write_function(stream, "%s", usage_string);
+		 goto done;
+	 }
+
+	 astream = switch_core_hash_find_locked(globals.sh_streams, argv[1], globals.sh_shtreams_lock);
+	 if (!astream) {
+		 stream->write_function(stream, "Stream with name %s not found\n", argv[1]);
+		 stream->write_function(stream, "%s", usage_string);
+		 goto done;
+	 }
+
+	 if (!strcasecmp(argv[2], "on")) {
+		 if (STREAM_READER_TRYLOCK(astream)) {
+			 drop_output_buffers(FALSE, astream->stream);
+			 astream->txflow = TRUE;
+			 // We still need txflow during the pipeline init to set valve's drop property
+			 // the stream is initialized after the pipeline is created, so we need to preserve
+			 // txflow somewhere until then
+			 astream->stream->txdrop = FALSE;
+			 stream->write_function(stream, "Tx buffers flowing!\n");
+
+			 STREAM_READER_UNLOCK(astream);
+		 }
+		 else {
+			 stream->write_function(stream, "failed to start txflow: reloadconf in progress\n");
+		 }
+	 }
+	 else if (!strcasecmp(argv[2], "off")) {
+		 if (STREAM_READER_TRYLOCK(astream)) {
+			 drop_output_buffers(TRUE, astream->stream);
+			 astream->txflow = FALSE;
+			 astream->stream->txdrop = TRUE;
+			 stream->write_function(stream, "Tx buffers dropping!\n");
+
+			 STREAM_READER_UNLOCK(astream);
+		 }
+		 else {
+			 stream->write_function(stream, "failed to stop txflow: reloadconf in progress\n");
+		 }
+	 }
+	 else {
+		 stream->write_function(stream, "Please mention 'on' or 'off'\n");
+		 stream->write_function(stream, "%s", usage_string);
+		 goto done;
+	 }
+	}
+ else if (!strcasecmp(argv[0], "reloadconf")) {
+	 reload_config();
+	}
+ else if (!strcasecmp(argv[0], "dump")) {
+	 shared_audio_stream_t* astream;
+
+	 if (!argv[1]) {
+		 stream->write_function(stream, "Please provide the name of the stream\n");
+		 stream->write_function(stream, "%s", usage_string);
+		 goto done;
+	 }
+
+	 astream = switch_core_hash_find_locked(globals.sh_streams, argv[1], globals.sh_shtreams_lock);
+	 if (!astream) {
+		 stream->write_function(stream, "Stream with name %s not found\n", argv[1]);
+		 stream->write_function(stream, "%s", usage_string);
+		 goto done;
+	 }
+	 //switch_mutex_lock(globals.gst_mutex); //added - check
+	 if (argv[2])
+		 dump_pipeline(astream->stream->pipeline, argv[2]);
+	 else
+		 dump_pipeline(astream->stream->pipeline, "clidump");
+	 //switch_mutex_unlock(globals.gst_mutex);							//added check
+
+	}
+ else if (!strcasecmp(argv[0], "allocs")) {
+	 stream->write_function(stream, "\tbufs: %d\n", g_alloc_counts.bufs);
+	 stream->write_function(stream, "\tcaps: %d\n", g_alloc_counts.caps);
+	 stream->write_function(stream, "\tchars: %d\n", g_alloc_counts.chars);
+	 stream->write_function(stream, "\terrs: %d\n", g_alloc_counts.errs);
+	 stream->write_function(stream, "\tstructs: %d\n", g_alloc_counts.structs);
+	 stream->write_function(stream, "\tsamples: %d\n", g_alloc_counts.samples);
+	 stream->write_function(stream, "\tmems: %d\n", g_alloc_counts.memories);
+	 stream->write_function(stream, "\tmessages: %d\n", g_alloc_counts.messages);
+	 stream->write_function(stream, "\tobjs: %d\n", g_alloc_counts.objs);
+	 stream->write_function(stream, "\tdebugs: %d\n", g_alloc_counts.debugs);
+	 stream->write_function(stream, "\tstats: %d\n", g_alloc_counts.stats);
+	 stream->write_function(stream, "\tgobjects: %d\n", g_alloc_counts.gobjects);
+	 stream->write_function(stream, "\tFDA: %d\n", g_alloc_counts.FDA);
+	 stream->write_function(stream, "\tFAL: %d\n", g_alloc_counts.FAL);
+	}
+
 
 done:
 	switch_safe_free(mycmd);
