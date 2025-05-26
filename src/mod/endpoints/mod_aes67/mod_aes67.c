@@ -798,17 +798,17 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 
 		switch_mutex_lock(endpoint->mutex);
 		//switch_mutex_lock(globals.gst_mutex);		//added - check
-		STREAM_READER_LOCK(endpoint->in_stream);	//moved up check
+		//STREAM_READER_LOCK(endpoint->in_stream);	//moved up check
 		//STREAM_WRITER_LOCK(endpoint->in_stream); // added check 
 
 		if (endpoint->in_stream) {
-			//STREAM_READER_LOCK(endpoint->in_stream);	
+			STREAM_READER_LOCK(endpoint->in_stream);	
 			//gst lock check?
 			if (remove_appsink(endpoint->in_stream->stream, endpoint->inchan, session_id)) {
 				endpoint->active_listen_sessions--;
 			}
 
-			//STREAM_READER_UNLOCK(endpoint->in_stream);			
+			STREAM_READER_UNLOCK(endpoint->in_stream);			
 		}
 
 		if (endpoint->active_listen_sessions == 0 && endpoint->in_stream) {
@@ -823,7 +823,7 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 		switch_core_codec_destroy(&tech_pvt->write_codec);
 
 		//STREAM_WRITER_UNLOCK(endpoint->in_stream); // added check
-		STREAM_READER_UNLOCK(endpoint->in_stream);  //moved down check
+		//STREAM_READER_UNLOCK(endpoint->in_stream);  //moved down check
 		//switch_mutex_unlock(globals.gst_mutex);		//added check
 		switch_mutex_unlock(endpoint->mutex);
 
