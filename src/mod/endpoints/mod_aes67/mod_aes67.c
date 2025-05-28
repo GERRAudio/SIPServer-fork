@@ -943,10 +943,12 @@ static switch_status_t channel_endpoint_read(private_t *tech_pvt, switch_frame_t
 	if (STREAM_READER_TRYLOCK(endpoint->in_stream)) {
 		if (!endpoint->in_stream->stream) { return SWITCH_STATUS_FALSE; }
 		//switch_mutex_lock(globals.gst_mutex); // check added -test
+		switch_mutex_lock(globals.device_lock);  //added check 7
 		bytes = pull_buffers(endpoint->in_stream->stream, (unsigned char *)tech_pvt->read_frame.data,
 							 STREAM_SAMPLES_PER_PACKET(endpoint->in_stream) * 2 /* FIXME: non-S16LE */,
 							 endpoint->inchan, &tech_pvt->read_timer, session_id);
 		//switch_mutex_unlock(globals.gst_mutex); // check added - test
+		switch_mutex_unlock(globals.device_lock); // added check 7u
 		STREAM_READER_UNLOCK(endpoint->in_stream);
 	} else {
 		// Pipeline is being reset, feed some silence
@@ -1161,13 +1163,14 @@ static switch_status_t channel_endpoint_write(private_t *tech_pvt, switch_frame_
 			STREAM_READER_UNLOCK(endpoint->out_stream);				//added, check 
 			return SWITCH_STATUS_FALSE;
 		}
-		//switch_mutex_lock(globals.main_stream->stream); // added check
+
 		// Pipeline is not being reset, we can push data
-		//switch_mutex_lock(globals.gst_mutex); // added - check -test
+		switch_mutex_lock(globals.gst_mutex); // added - check -test 6
 		push_buffer(endpoint->out_stream->stream, (unsigned char *)frame->data, frame->datalen, endpoint->outchan,
 					&(tech_pvt->write_timer));
-		//switch_mutex_unlock(globals.gst_mutex); // added - check - test
-		//switch_mutex_unlock(globals.main_stream->stream); // added check
+
+		switch_mutex_unlock(globals.gst_mutex); // added - check - test 6
+
 		STREAM_READER_UNLOCK(endpoint->out_stream);
 
 	}
@@ -1200,8 +1203,10 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 			// Note: 0 is passed as the channel index because main stream can have only one out channel
 			switch_mutex_lock(globals.main_stream->stream); // added - check
 			//switch_mutex_lock(globals.gst_mutex); // added - check -test
+			switch_mutex_lock(globals.gst_mutex); // added - check -test 6
 			push_buffer(globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
 						&(globals.main_stream->write_timer));
+			switch_mutex_unlock(globals.gst_mutex); // added - check -test 6
 			//switch_mutex_unlock(globals.gst_mutex);	   // added - check- test
 			switch_mutex_unlock(globals.main_stream->stream);	//added check
 		
