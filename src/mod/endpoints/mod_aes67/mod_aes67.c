@@ -409,17 +409,17 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(session));
 
 				switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
-				//switch_mutex_lock(globals.gst_mutex);						//added  -1
+
 				STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
-				//STREAM_WRITER_LOCK(tech_pvt->audio_endpoint->in_stream);	//added check
+
 
 				if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan,
 								session_id)) {
 					tech_pvt->audio_endpoint->active_listen_sessions++;
 				}
-				//STREAM_WRITER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check
+
 				STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
-				//switch_mutex_unlock(globals.gst_mutex);			//added check 1
+
 				switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 			}
 
@@ -588,10 +588,10 @@ static switch_status_t destroy_actual_stream(audio_stream_t *stream)
 	switch_mutex_lock(globals.streams_lock);						//added - check
 	if (globals.main_stream == stream) { globals.main_stream = NULL; }
 
-	//switch_mutex_lock(globals.gst_mutex);	//added-check -2
+
 	stop_pipeline(stream->stream);
 	stream->stream = NULL; 
-	//switch_mutex_unlock(globals.gst_mutex); // added-check
+
 
 	if (stream->write_timer.timer_interface) { switch_core_timer_destroy(&stream->write_timer); }
 
@@ -797,10 +797,7 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 		switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(tech_pvt->session));
 
 		switch_mutex_lock(endpoint->mutex);
-		//switch_mutex_lock(globals.sh_shtreams_lock);		//added - check 3
-		//switch_mutex_lock(globals.gst_mutex);		//added - check
-		//STREAM_READER_LOCK(endpoint->in_stream);	//moved up check
-		//STREAM_WRITER_LOCK(endpoint->in_stream); // added check 
+
 
 		if (endpoint->in_stream) {
 			STREAM_READER_LOCK(endpoint->in_stream);	
@@ -823,18 +820,15 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 		switch_core_codec_destroy(&tech_pvt->read_codec);
 		switch_core_codec_destroy(&tech_pvt->write_codec);
 
-		//STREAM_WRITER_UNLOCK(endpoint->in_stream); // added check
-		//STREAM_READER_UNLOCK(endpoint->in_stream);  //moved down check
-		//switch_mutex_unlock(globals.gst_mutex);		//added check
-		//switch_mutex_unlock(globals.sh_shtreams_lock); // added - check 3
+
 		switch_mutex_unlock(endpoint->mutex);
 
 		tech_pvt->audio_endpoint = NULL;			
 	}
 
-	//switch_mutex_lock(globals.gst_mutex);						// added check
+
 	switch_core_hash_delete(globals.call_hash, tech_pvt->call_id);
-	//switch_mutex_unlock(globals.gst_mutex);					//added - check
+
 
 	switch_clear_flag_locked(tech_pvt, TFLAG_IO);
 	switch_set_flag_locked(tech_pvt, TFLAG_HUP);
@@ -891,15 +885,15 @@ static switch_status_t channel_on_exchange_media(switch_core_session_t *session)
 		switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(session));
 
 		switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
-		//switch_mutex_lock(globals.gst_mutex);				//added check - test
+
 		STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
-		//STREAM_WRITER_LOCK(tech_pvt->audio_endpoint->in_stream);		//added check
+
 		if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan, session_id)) {
 			tech_pvt->audio_endpoint->active_listen_sessions++;
 		}
-		//STREAM_WRITER_UNLOCK(tech_pvt->audio_endpoint->in_stream);		//added check
+
 		STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
-		//switch_mutex_unlock(globals.gst_mutex);							//added check -test
+
 		switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 	}
 
@@ -942,12 +936,12 @@ static switch_status_t channel_endpoint_read(private_t *tech_pvt, switch_frame_t
 
 	if (STREAM_READER_TRYLOCK(endpoint->in_stream)) {
 		if (!endpoint->in_stream->stream) { return SWITCH_STATUS_FALSE; }
-		//switch_mutex_lock(globals.gst_mutex); // check added -test
+
 		switch_mutex_lock(globals.device_lock);  //added check 7
 		bytes = pull_buffers(endpoint->in_stream->stream, (unsigned char *)tech_pvt->read_frame.data,
 							 STREAM_SAMPLES_PER_PACKET(endpoint->in_stream) * 2 /* FIXME: non-S16LE */,
 							 endpoint->inchan, &tech_pvt->read_timer, session_id);
-		//switch_mutex_unlock(globals.gst_mutex); // check added - test
+
 		switch_mutex_unlock(globals.device_lock); // added check 7u
 		STREAM_READER_UNLOCK(endpoint->in_stream);
 	} else {
@@ -1108,13 +1102,13 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 	if (tech_pvt->hfh) { tech_close_file(tech_pvt); }
 
 	switch_mutex_lock(globals.device_lock);
-	//switch_mutex_lock(globals.gst_mutex); // check added -test
+
 	bytes = pull_buffers(globals.main_stream->stream, (unsigned char *)globals.read_frame.data,
 						 globals.read_codec.implementation->samples_per_packet * 2 /* FIXME: S16LE-only */, 0,
 						 &globals.read_timer, session_id);
 	// FIXME: won't work for L24/L32
 	samples = bytes / sizeof(int16_t);
-	//switch_mutex_unlock(globals.gst_mutex); // check added -test
+
 	switch_mutex_unlock(globals.device_lock);
 
 	if (samples) {
@@ -1168,7 +1162,6 @@ static switch_status_t channel_endpoint_write(private_t *tech_pvt, switch_frame_
 		switch_mutex_lock(globals.gst_mutex); // added - check -test 6
 		push_buffer(endpoint->out_stream->stream, (unsigned char *)frame->data, frame->datalen, endpoint->outchan,
 					&(tech_pvt->write_timer));
-
 		switch_mutex_unlock(globals.gst_mutex); // added - check - test 6
 
 		STREAM_READER_UNLOCK(endpoint->out_stream);
@@ -1201,14 +1194,12 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 	if (globals.main_stream) {
 		if (switch_test_flag((&globals), GFLAG_EAR)) {
 			// Note: 0 is passed as the channel index because main stream can have only one out channel
-			switch_mutex_lock(globals.main_stream->stream); // added - check
-			//switch_mutex_lock(globals.gst_mutex); // added - check -test
-			switch_mutex_lock(globals.gst_mutex); // added - check -test 6
+			//switch_mutex_lock(globals.main_stream->stream); // added - check
+			switch_mutex_lock(globals.gst_mutex); // added - check -test
 			push_buffer(globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
 						&(globals.main_stream->write_timer));
 			switch_mutex_unlock(globals.gst_mutex); // added - check -test 6
-			//switch_mutex_unlock(globals.gst_mutex);	   // added - check- test
-			switch_mutex_unlock(globals.main_stream->stream);	//added check
+			//switch_mutex_unlock(globals.main_stream->stream);	//added check
 		
 		}
 		status = SWITCH_STATUS_SUCCESS;
@@ -1727,9 +1718,9 @@ static gboolean ptp_stats_cb(guint8 d, const GstStructure *stats, gpointer user_
 		}
 	} else if (globals.enable_ptp_stats) {
 		switch_event_t *event;
-		switch_mutex_lock(globals.gst_mutex);	//added check
+		//switch_mutex_lock(globals.gst_mutex);	//added check
 		gchar *stats_str = gst_structure_to_string(stats);
-		switch_mutex_unlock(globals.gst_mutex); // added check
+		//switch_mutex_unlock(globals.gst_mutex); // added check
 		if (stats_str == NULL) goto cleanup;
 
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
@@ -1773,7 +1764,6 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 
 			switch_mutex_lock(tech_pvt->audio_endpoint->mutex);			
 			// stream lock aleady done before calling link_rx_stream
-			//switch_mutex_lock(globals.gst_mutex);						  //added check
 			STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);		//added check 4
 			if (state == CCS_ACTIVE) {
 				if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan,
@@ -1781,7 +1771,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 					tech_pvt->audio_endpoint->active_listen_sessions++;
 				}
 			}
-			//switch_mutex_unlock(globals.gst_mutex);						//added check
+
 			STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check 4
 			switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 		}
@@ -2726,9 +2716,9 @@ int open_audio_stream(g_stream_t **stream, udp_sock_t *indev, udp_sock_t *outdev
 	data.rtp_jitbuf_latency = globals.rtp_jitbuf_latency;
 
 
-	switch_mutex_lock(globals.gst_mutex);		//added - check - test
+	//switch_mutex_lock(globals.gst_mutex);		//added - check - test
 	*stream = create_pipeline(&data, error_callback);
-	switch_mutex_unlock(globals.gst_mutex); // added - check - test
+	//switch_mutex_unlock(globals.gst_mutex); // added - check - test
 
 	if (!*stream) {					//added check
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create pipeline\n");
@@ -2779,9 +2769,9 @@ int open_shared_audio_stream(shared_audio_stream_t *shstream)
 	data.is_backup_sender = shstream->is_backup_sender;
 	data.backup_sender_idle_wait_ms = shstream->backup_sender_idle_wait_ms;
 
-	switch_mutex_lock(globals.gst_mutex); // added - check - test
+	//switch_mutex_lock(globals.gst_mutex); // added - check - test
 	shstream->stream = create_pipeline(&data, error_callback);
-	switch_mutex_unlock(globals.gst_mutex); // added - check - test
+	//switch_mutex_unlock(globals.gst_mutex); // added - check - test
 
 	if (!shstream->stream) {			
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create shared audio pipeline\n");
@@ -2815,9 +2805,9 @@ static int clear_shared_audio_stream(shared_audio_stream_t *shstream)
 {
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Destroying shared audio stream %s\n", shstream->name);
 	if (shstream->stream) {
-		switch_mutex_lock(globals.gst_mutex); // added check
+		//switch_mutex_lock(globals.gst_mutex); // added check
 		stop_pipeline(shstream->stream);
-		switch_mutex_unlock(globals.gst_mutex); // added check
+		//switch_mutex_unlock(globals.gst_mutex); // added check
 	}
 
 	shstream->stream = NULL; // deallocated in stop pipeline
@@ -3152,12 +3142,12 @@ SWITCH_STANDARD_API(aes_cmd)
 		 stream->write_function(stream, "%s", usage_string);
 		 goto done;
 	 }
-	 //switch_mutex_lock(globals.gst_mutex); //added - check
+
 	 if (argv[2])
 		 dump_pipeline(astream->stream->pipeline, argv[2]);
 	 else
 		 dump_pipeline(astream->stream->pipeline, "clidump");
-	 //switch_mutex_unlock(globals.gst_mutex);							//added check
+
 
 	}
  else if (!strcasecmp(argv[0], "allocs")) {
