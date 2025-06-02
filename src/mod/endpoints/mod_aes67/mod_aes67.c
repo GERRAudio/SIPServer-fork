@@ -1101,15 +1101,32 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 
 	if (tech_pvt->hfh) { tech_close_file(tech_pvt); }
 
-	switch_mutex_lock(globals.device_lock);
 
-	bytes = pull_buffers(globals.main_stream->stream, (unsigned char *)globals.read_frame.data,
-						 globals.read_codec.implementation->samples_per_packet * 2 /* FIXME: S16LE-only */, 0,
-						 &globals.read_timer, session_id);
-	// FIXME: won't work for L24/L32
-	samples = bytes / sizeof(int16_t);
 
-	switch_mutex_unlock(globals.device_lock);
+		
+	audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;		//added check 9
+	if (!endpoint->in_stream) {									
+		switch_core_timer_next(&tech_pvt->read_timer);
+		*frame = &globals.cng_frame;
+		return SWITCH_STATUS_SUCCESS;
+	}
+	if (STREAM_READER_TRYLOCK(endpoint->in_stream)) {
+		if (!endpoint->in_stream->stream) { return SWITCH_STATUS_FALSE; }
+		switch_mutex_lock(globals.device_lock);
+
+		bytes = pull_buffers(globals.main_stream->stream, (unsigned char *)globals.read_frame.data,
+							 globals.read_codec.implementation->samples_per_packet * 2 /* FIXME: S16LE-only */, 0,
+							 &globals.read_timer, session_id);
+		// FIXME: won't work for L24/L32
+		samples = bytes / sizeof(int16_t);
+
+		switch_mutex_unlock(globals.device_lock);
+		STREAM_READER_UNLOCK(endpoint->in_stream);					//added check 9
+	} else {														//added check 9
+		// Pipeline is being reset, feed some silence
+		bytes = STREAM_SAMPLES_PER_PACKET(endpoint->in_stream) * 2;
+		memset(tech_pvt->read_frame.data, 0, bytes);
+	}
 
 	if (samples) {
 		globals.read_frame.datalen = bytes;
