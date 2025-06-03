@@ -1215,7 +1215,7 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 			// Note: 0 is passed as the channel index because main stream can have only one out channel
 			//switch_mutex_lock(globals.main_stream->stream); // added - check
 			audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;		//added check 8
-			if (STREAM_READER_TRYLOCK(endpoint->out_stream)) {
+			if (endpoint->out_stream && STREAM_READER_TRYLOCK(endpoint->out_stream)) {
 				if (!endpoint->out_stream->stream) {
 					STREAM_READER_UNLOCK(endpoint->out_stream); // added, check 8
 					return SWITCH_STATUS_FALSE;
