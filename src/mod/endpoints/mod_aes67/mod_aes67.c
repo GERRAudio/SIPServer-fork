@@ -408,8 +408,8 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				char session_id[SESSION_ID_LEN];
 				switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(session));
 
+				
 				switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
-
 				STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
 
 
@@ -419,8 +419,8 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				}
 
 				STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
-
 				switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
+			
 			}
 
 			switch_yield(1000000);
@@ -806,7 +806,7 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 				endpoint->active_listen_sessions--;
 			}
 
-			STREAM_READER_UNLOCK(endpoint->in_stream);			
+			STREAM_READER_UNLOCK(endpoint->in_stream);	
 		}
 
 		if (endpoint->active_listen_sessions == 0 && endpoint->in_stream) {
@@ -882,10 +882,11 @@ static switch_status_t channel_on_exchange_media(switch_core_session_t *session)
 
 	if (tech_pvt->audio_endpoint && tech_pvt->audio_endpoint->in_stream) {
 		char session_id[SESSION_ID_LEN];
+
 		switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(session));
 
+	
 		switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
-
 		STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
 
 		if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan, session_id)) {
@@ -893,8 +894,8 @@ static switch_status_t channel_on_exchange_media(switch_core_session_t *session)
 		}
 
 		STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
-
 		switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
+		
 	}
 
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "CHANNEL EXCHANGE MEDIA\n");
@@ -935,14 +936,16 @@ static switch_status_t channel_endpoint_read(private_t *tech_pvt, switch_frame_t
 	tech_pvt->read_frame.source = __FILE__;
 
 	if (STREAM_READER_TRYLOCK(endpoint->in_stream)) {
-		if (!endpoint->in_stream->stream) { return SWITCH_STATUS_FALSE; }
-
+		if (!endpoint->in_stream->stream) {
+			STREAM_READER_UNLOCK(endpoint->in_stream); // added
+			return SWITCH_STATUS_FALSE;
+		}
 		switch_mutex_lock(globals.device_lock);  //added check 7
 		bytes = pull_buffers(endpoint->in_stream->stream, (unsigned char *)tech_pvt->read_frame.data,
 							 STREAM_SAMPLES_PER_PACKET(endpoint->in_stream) * 2 /* FIXME: non-S16LE */,
 							 endpoint->inchan, &tech_pvt->read_timer, session_id);
 
-		switch_mutex_unlock(globals.device_lock); // added check 7u
+		switch_mutex_unlock(globals.device_lock); // added check 7
 		STREAM_READER_UNLOCK(endpoint->in_stream);
 	} else {
 		// Pipeline is being reset, feed some silence
@@ -1108,7 +1111,10 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 		return SWITCH_STATUS_SUCCESS;
 	}
 	if (STREAM_READER_TRYLOCK(endpoint->in_stream)) {
-		if (!endpoint->in_stream->stream) { return SWITCH_STATUS_FALSE; }
+		if (!endpoint->in_stream->stream) {
+			STREAM_READER_UNLOCK(endpoint->in_stream);
+			return SWITCH_STATUS_FALSE;
+		}
 		switch_mutex_lock(globals.device_lock);
 		bytes = pull_buffers(globals.main_stream->stream, (unsigned char *)globals.read_frame.data,
 							 globals.read_codec.implementation->samples_per_packet * 2 /* FIXME: S16LE-only */, 0,
@@ -1172,11 +1178,11 @@ static switch_status_t channel_endpoint_write(private_t *tech_pvt, switch_frame_
 		}
 
 		// Pipeline is not being reset, we can push data
+		//STREAM_READER_LOCK(endpoint->out_stream);	//added10
 		switch_mutex_lock(globals.pvt_lock); // added - check -test 6
 		push_buffer(endpoint->out_stream->stream, (unsigned char *)frame->data, frame->datalen, endpoint->outchan,
 					&(tech_pvt->write_timer));
 		switch_mutex_unlock(globals.pvt_lock); // added - check - test 6
-
 		STREAM_READER_UNLOCK(endpoint->out_stream);
 
 	}
@@ -1215,6 +1221,7 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 					return SWITCH_STATUS_FALSE;
 				}
 			}
+			//STREAM_READER_LOCK(endpoint->out_stream); // added check 10
 			switch_mutex_lock(globals.pvt_lock); // added - check -test
 			push_buffer(globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
 						&(globals.main_stream->write_timer));
@@ -1782,6 +1789,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 			char session_id[SESSION_ID_LEN];
 			switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(tech_pvt->session));
 
+			
 			switch_mutex_lock(tech_pvt->audio_endpoint->mutex);			
 			// stream lock aleady done before calling link_rx_stream
 			STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);		//added check 4
@@ -1794,6 +1802,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 
 			STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check 4
 			switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
+			
 		}
 	}
 }
