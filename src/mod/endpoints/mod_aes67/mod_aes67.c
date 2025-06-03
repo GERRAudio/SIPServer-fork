@@ -940,12 +940,12 @@ static switch_status_t channel_endpoint_read(private_t *tech_pvt, switch_frame_t
 			STREAM_READER_UNLOCK(endpoint->in_stream); // added
 			return SWITCH_STATUS_FALSE;
 		}
-		switch_mutex_lock(globals.device_lock);  //added check 7
+		//switch_mutex_lock(globals.device_lock);  //added check 
 		bytes = pull_buffers(endpoint->in_stream->stream, (unsigned char *)tech_pvt->read_frame.data,
 							 STREAM_SAMPLES_PER_PACKET(endpoint->in_stream) * 2 /* FIXME: non-S16LE */,
 							 endpoint->inchan, &tech_pvt->read_timer, session_id);
 
-		switch_mutex_unlock(globals.device_lock); // added check 7
+		//switch_mutex_unlock(globals.device_lock); // added check 
 		STREAM_READER_UNLOCK(endpoint->in_stream);
 	} else {
 		// Pipeline is being reset, feed some silence
@@ -1104,8 +1104,10 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 
 	if (tech_pvt->hfh) { tech_close_file(tech_pvt); }
 	
-	audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;		//added check 9
-	if (!endpoint->in_stream) {									
+	audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;		//added check 
+	if (!endpoint) return SWITCH_STATUS_FALSE;					//added check
+
+	if ( !endpoint->in_stream) {									
 		switch_core_timer_next(&tech_pvt->read_timer);
 		*frame = &globals.cng_frame;
 		return SWITCH_STATUS_SUCCESS;
@@ -1178,11 +1180,10 @@ static switch_status_t channel_endpoint_write(private_t *tech_pvt, switch_frame_
 		}
 
 		// Pipeline is not being reset, we can push data
-		//STREAM_READER_LOCK(endpoint->out_stream);	//added10
-		//switch_mutex_lock(globals.pvt_lock); // added - check -test 6
+		//switch_mutex_lock(globals.device_lock); // added check 
 		push_buffer(endpoint->out_stream->stream, (unsigned char *)frame->data, frame->datalen, endpoint->outchan,
 					&(tech_pvt->write_timer));
-		//switch_mutex_unlock(globals.pvt_lock); // added - check - test 6
+		//switch_mutex_unlock(globals.device_lock); // added check 
 		STREAM_READER_UNLOCK(endpoint->out_stream);
 
 	}
@@ -1214,19 +1215,18 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 		if (switch_test_flag((&globals), GFLAG_EAR)) {
 			// Note: 0 is passed as the channel index because main stream can have only one out channel
 			//switch_mutex_lock(globals.main_stream->stream); // added - check
-			audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;		//added check 8
+			audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;		//added check
+			if (!endpoint) return SWITCH_STATUS_FALSE;					//added check
 			if (endpoint->out_stream && STREAM_READER_TRYLOCK(endpoint->out_stream)) {
 				if (!endpoint->out_stream->stream) {
 					STREAM_READER_UNLOCK(endpoint->out_stream); // added, check 8
 					return SWITCH_STATUS_FALSE;
 				}
 			}
-			//STREAM_READER_LOCK(endpoint->out_stream); // added check 10
-			//switch_mutex_lock(globals.pvt_lock); // added - check -test
+			switch_mutex_lock(globals.device_lock); // added check 
 			push_buffer(globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
 						&(globals.main_stream->write_timer));
-			//switch_mutex_unlock(globals.pvt_lock); // added - check -test 6
-			//switch_mutex_unlock(globals.main_stream->stream);	//added check 
+			switch_mutex_unlock(globals.device_lock);		// added check 
 			STREAM_READER_UNLOCK(endpoint->out_stream); //added check 8
 		}
 		status = SWITCH_STATUS_SUCCESS;
@@ -2945,6 +2945,7 @@ static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
 		shared_audio_stream_t *s = NULL;
 		switch_core_hash_this(hi, &var, NULL, &val);
 		s = val;
+		//STREAM_WRITER_LOCK(s);//added check
 		stream->write_function(stream,
 							   "stream name: %s \t indev.ip_addr: %s, indev.port: %d, "
 							   "outdev.ip_addr: %s, outdev.port: %d, sample-rate: %d, "
@@ -2953,6 +2954,7 @@ static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
 							   s->outdev ? s->outdev->ip_addr : "None", s->outdev ? s->outdev->port : 0, s->sample_rate,
 							   s->codec_ms, s->channels, s->synthetic_ptp, s->txflow ? "on" : "off");
 		cnt++;
+		//STREAM_WRITER_UNLOCK(s);	//added check
 	}
 	switch_mutex_unlock(globals.sh_shtreams_lock);
 	stream->write_function(stream, "Total streams: %d\n", cnt);

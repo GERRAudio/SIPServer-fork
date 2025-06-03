@@ -1297,7 +1297,7 @@ void drop_output_buffers(gboolean drop, g_stream_t *stream)
 	GstElement *tx_valve = NULL;
 	gchar name[ELEMENT_NAME_SIZE];
 
-	tx_valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-valve"); // no allocation
+	tx_valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-valve"); 
 	if (tx_valve == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
 		goto error;
