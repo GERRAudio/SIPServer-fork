@@ -252,6 +252,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GstElement *appsink = NULL;
 
 	gboolean ret = FALSE;
+	if (!stream) goto error; //added check
 
 	NAME_ELEMENT(name, "tee", ch_idx);
 	tee = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
@@ -381,7 +382,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GstPad *queue_sink_pad = NULL;
 
 	gboolean ret = FALSE;
-
+	if (!stream) goto error;		//added check
 	/*
 	 * tee -> queue -> appsink
 	 *
@@ -996,6 +997,7 @@ exit:
 
 void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 {
+	if (!stream) goto error; //added check
 	g_atomic_int_set(&stream->clock_sync, 0);
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_READY);
 
@@ -1017,6 +1019,7 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 	dump_pipeline(stream->pipeline, "ptp-clock-switch");
 
 	g_atomic_int_set(&stream->clock_sync, 1);
+error:;
 }
 
 void *start_pipeline(void *data)
@@ -1034,7 +1037,7 @@ void stop_pipeline(g_stream_t *stream)
 	GstBus *bus = NULL;
 
 	dump_pipeline(stream->pipeline, "pipeline-stop");
-
+	if (!stream) goto error;//added check
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 
 	/* cb_rx_stats_id will be non zero only when
@@ -1059,6 +1062,7 @@ void stop_pipeline(g_stream_t *stream)
 	if (stream->thread !=NULL) g_thread_join(stream->thread);
 	DA_g_free(stream);					//allocated elsewhere
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
+error:;
 }
 
 void teardown_mainloop(GMainLoop *mainloop)
@@ -1087,9 +1091,10 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *appsrc = NULL;
+	if (!stream) goto error;		//added check
 	GstPipeline *pipeline = stream->pipeline;
 
-	if (!stream || !stream->pipeline) goto error;		//added check
+	if (!stream->pipeline) goto error;		//added check
 
 	NAME_ELEMENT(name, "appsrc", ch_idx);
 	appsrc = AL_gst_bin_get_by_name(GST_BIN(pipeline), name);
@@ -1258,6 +1263,7 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 {
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *valve = NULL;
+	if (!stream) goto error;			//added check
 	NAME_ELEMENT(name, "valve", ch_idx);
 	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count 
 	if (valve == NULL) {
@@ -1278,6 +1284,7 @@ gchar *get_rtp_stats(g_stream_t *stream)
 
 	GstElement *rtpjitbuf = NULL;
 	gchar *stats_str = NULL;		//fixed: dynamic allocation required since this is NOT on the stack
+	if (!stream) goto error; //added check
 	rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
 
 	if (rtpjitbuf) {
@@ -1292,6 +1299,7 @@ gchar *get_rtp_stats(g_stream_t *stream)
 		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
 		stats_str = g_strdup_printf(""); // must be heap
 	}
+error:
 	return stats_str;			//deallocated by caller
 }
 
@@ -1299,6 +1307,7 @@ void drop_output_buffers(gboolean drop, g_stream_t *stream)
 {
 	GstElement *tx_valve = NULL;
 	gchar name[ELEMENT_NAME_SIZE];
+	if (!stream) goto error;
 
 	tx_valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-valve"); 
 	if (tx_valve == NULL) {
