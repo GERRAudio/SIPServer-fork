@@ -1221,7 +1221,7 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 			if (!endpoint) return SWITCH_STATUS_FALSE;					//added check
 			if (endpoint->out_stream && STREAM_READER_TRYLOCK(endpoint->out_stream)) {
 				if (!endpoint->out_stream->stream) {
-					STREAM_READER_UNLOCK(endpoint->out_stream); // added, check 8
+					STREAM_READER_UNLOCK(endpoint->out_stream); // added, check 
 					return SWITCH_STATUS_FALSE;
 				}
 			}
@@ -1229,7 +1229,7 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 			push_buffer(globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
 						&(globals.main_stream->write_timer));
 			switch_mutex_unlock(globals.device_lock);		// added check 
-			STREAM_READER_UNLOCK(endpoint->out_stream); //added check 8
+			STREAM_READER_UNLOCK(endpoint->out_stream); //added check
 		}
 		status = SWITCH_STATUS_SUCCESS;
 	}

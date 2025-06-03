@@ -1089,6 +1089,8 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	GstElement *appsrc = NULL;
 	GstPipeline *pipeline = stream->pipeline;
 
+	if (!stream || !stream->pipeline) goto error;		//added check
+
 	NAME_ELEMENT(name, "appsrc", ch_idx);
 	appsrc = AL_gst_bin_get_by_name(GST_BIN(pipeline), name);
 
@@ -1156,6 +1158,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	int total_bytes = 0;
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *appsink = NULL;
+	if (!stream) goto error;		//added check
 
 	if (session == NULL)
 		NAME_ELEMENT(name, "appsink", ch_idx);
