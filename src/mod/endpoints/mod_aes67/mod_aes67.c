@@ -924,6 +924,7 @@ static switch_status_t channel_endpoint_read(private_t *tech_pvt, switch_frame_t
 	int bytes = 0;
 	int samples = 0;
 	audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;
+	if (!endpoint) return SWITCH_STATUS_FALSE;
 
 	if (!endpoint->in_stream) {
 		switch_core_timer_next(&tech_pvt->read_timer);
@@ -940,12 +941,12 @@ static switch_status_t channel_endpoint_read(private_t *tech_pvt, switch_frame_t
 			STREAM_READER_UNLOCK(endpoint->in_stream); // added
 			return SWITCH_STATUS_FALSE;
 		}
-		//switch_mutex_lock(globals.device_lock);  //added check 
+		switch_mutex_lock(globals.device_lock);  //added check 
 		bytes = pull_buffers(endpoint->in_stream->stream, (unsigned char *)tech_pvt->read_frame.data,
 							 STREAM_SAMPLES_PER_PACKET(endpoint->in_stream) * 2 /* FIXME: non-S16LE */,
 							 endpoint->inchan, &tech_pvt->read_timer, session_id);
 
-		//switch_mutex_unlock(globals.device_lock); // added check 
+		switch_mutex_unlock(globals.device_lock); // added check 
 		STREAM_READER_UNLOCK(endpoint->in_stream);
 	} else {
 		// Pipeline is being reset, feed some silence
@@ -1165,6 +1166,7 @@ error:
 static switch_status_t channel_endpoint_write(private_t *tech_pvt, switch_frame_t *frame)
 {
 	audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;
+	if (!endpoint) return SWITCH_STATUS_FALSE;
 	if (!endpoint->out_stream) {
 		switch_core_timer_next(&tech_pvt->write_timer);
 		return SWITCH_STATUS_SUCCESS;
