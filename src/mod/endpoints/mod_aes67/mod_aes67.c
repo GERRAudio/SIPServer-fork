@@ -1179,10 +1179,10 @@ static switch_status_t channel_endpoint_write(private_t *tech_pvt, switch_frame_
 
 		// Pipeline is not being reset, we can push data
 		//STREAM_READER_LOCK(endpoint->out_stream);	//added10
-		switch_mutex_lock(globals.pvt_lock); // added - check -test 6
+		//switch_mutex_lock(globals.pvt_lock); // added - check -test 6
 		push_buffer(endpoint->out_stream->stream, (unsigned char *)frame->data, frame->datalen, endpoint->outchan,
 					&(tech_pvt->write_timer));
-		switch_mutex_unlock(globals.pvt_lock); // added - check - test 6
+		//switch_mutex_unlock(globals.pvt_lock); // added - check - test 6
 		STREAM_READER_UNLOCK(endpoint->out_stream);
 
 	}
@@ -1222,10 +1222,10 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 				}
 			}
 			//STREAM_READER_LOCK(endpoint->out_stream); // added check 10
-			switch_mutex_lock(globals.pvt_lock); // added - check -test
+			//switch_mutex_lock(globals.pvt_lock); // added - check -test
 			push_buffer(globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
 						&(globals.main_stream->write_timer));
-			switch_mutex_unlock(globals.pvt_lock); // added - check -test 6
+			//switch_mutex_unlock(globals.pvt_lock); // added - check -test 6
 			//switch_mutex_unlock(globals.main_stream->stream);	//added check 
 			STREAM_READER_UNLOCK(endpoint->out_stream); //added check 8
 		}
