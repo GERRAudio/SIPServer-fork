@@ -943,10 +943,11 @@ static switch_status_t channel_endpoint_read(private_t *tech_pvt, switch_frame_t
 			return SWITCH_STATUS_FALSE;
 		}
 		switch_mutex_lock(globals.device_lock);  //added check 
+		switch_mutex_lock(globals.gst_mutex);	 // added check
 		bytes = pull_buffers(endpoint->in_stream->stream, (unsigned char *)tech_pvt->read_frame.data,
 							 STREAM_SAMPLES_PER_PACKET(endpoint->in_stream) * 2 /* FIXME: non-S16LE */,
 							 endpoint->inchan, &tech_pvt->read_timer, session_id);
-
+		switch_mutex_unlock(globals.gst_mutex);	  // added check
 		switch_mutex_unlock(globals.device_lock); // added check 
 		STREAM_READER_UNLOCK(endpoint->in_stream);
 	} else {
@@ -1120,12 +1121,13 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 			return SWITCH_STATUS_FALSE;
 		}
 		switch_mutex_lock(globals.device_lock);
+		switch_mutex_lock(globals.gst_mutex); //added check
 		bytes = pull_buffers(globals.main_stream->stream, (unsigned char *)globals.read_frame.data,
 							 globals.read_codec.implementation->samples_per_packet * 2 /* FIXME: S16LE-only */, 0,
 							 &globals.read_timer, session_id);
 		// FIXME: won't work for L24/L32
 		samples = bytes / sizeof(int16_t);
-
+		switch_mutex_unlock(globals.gst_mutex); // added check
 		switch_mutex_unlock(globals.device_lock);
 		STREAM_READER_UNLOCK(endpoint->in_stream);					//added check 9
 	} else {														//added check 9
@@ -1184,8 +1186,10 @@ static switch_status_t channel_endpoint_write(private_t *tech_pvt, switch_frame_
 
 		// Pipeline is not being reset, we can push data
 		//switch_mutex_lock(globals.device_lock); // added check 
+		//switch_mutex_lock(globals.gst_mutex); // added check
 		push_buffer(endpoint->out_stream->stream, (unsigned char *)frame->data, frame->datalen, endpoint->outchan,
 					&(tech_pvt->write_timer));
+		//switch_mutex_unlock(globals.gst_mutex); // added check
 		//switch_mutex_unlock(globals.device_lock); // added check 
 		STREAM_READER_UNLOCK(endpoint->out_stream);
 
@@ -1227,8 +1231,10 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 				}
 			}
 			switch_mutex_lock(globals.device_lock); // added check 
+			//switch_mutex_lock(globals.gst_mutex);	// added check
 			push_buffer(globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
 						&(globals.main_stream->write_timer));
+			//switch_mutex_unlock(globals.gst_mutex);		// added check
 			switch_mutex_unlock(globals.device_lock);		// added check 
 			STREAM_READER_UNLOCK(endpoint->out_stream); //added check
 		}
