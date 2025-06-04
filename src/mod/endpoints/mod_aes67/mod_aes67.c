@@ -802,10 +802,11 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 		if (endpoint->in_stream) {
 			STREAM_READER_LOCK(endpoint->in_stream);	
 			//gst lock check?
+			switch_mutex_lock(globals.gst_mutex); // added - check - test
 			if (remove_appsink(endpoint->in_stream->stream, endpoint->inchan, session_id)) {
 				endpoint->active_listen_sessions--;
 			}
-
+			switch_mutex_unlock(globals.gst_mutex); // added - check - test
 			STREAM_READER_UNLOCK(endpoint->in_stream);	
 		}
 
@@ -3126,12 +3127,13 @@ SWITCH_STANDARD_API(aes_cmd)
 		 if (STREAM_READER_TRYLOCK(astream)) {
 			 switch_mutex_lock(globals.gst_mutex); // added check 
 			 drop_output_buffers(FALSE, astream->stream);
-			 switch_mutex_unlock(globals.gst_mutex); // added check 
+
 			 astream->txflow = TRUE;
 			 // We still need txflow during the pipeline init to set valve's drop property
 			 // the stream is initialized after the pipeline is created, so we need to preserve
 			 // txflow somewhere until then
 			 astream->stream->txdrop = FALSE;
+			 switch_mutex_unlock(globals.gst_mutex); // added check 
 			 stream->write_function(stream, "Tx buffers flowing!\n");
 
 			 STREAM_READER_UNLOCK(astream);
@@ -3144,9 +3146,10 @@ SWITCH_STANDARD_API(aes_cmd)
 		 if (STREAM_READER_TRYLOCK(astream)) {
 			 switch_mutex_lock(globals.gst_mutex); // added check 
 			 drop_output_buffers(TRUE, astream->stream);
-			 switch_mutex_unlock(globals.gst_mutex); // added check 
+
 			 astream->txflow = FALSE;
 			 astream->stream->txdrop = TRUE;
+			 switch_mutex_unlock(globals.gst_mutex); // added check 
 			 stream->write_function(stream, "Tx buffers dropping!\n");
 
 			 STREAM_READER_UNLOCK(astream);
