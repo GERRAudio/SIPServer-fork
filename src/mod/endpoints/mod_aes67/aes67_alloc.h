@@ -18,7 +18,9 @@
 #include <gst/gst.h>
 #include <stdarg.h>
 
-extern switch_mutex_t *alloc_mutex;
+extern switch_mutex_t *alloc_mutex_b;
+extern switch_mutex_t *alloc_mutex_o;
+extern switch_mutex_t *alloc_mutex_s;
 
 // --- Macro for allocation wrappers ---
 #define G_ALLOC_WRAP_ALLOC(ret_type, func, counter, tp1, p1)                                                           \
@@ -29,13 +31,13 @@ extern switch_mutex_t *alloc_mutex;
 		return _ret;                                                                                                   \
 	}
 
-#define G_ALLOC_WRAP_ALLOCo(ret_type, func, counter, tp1, p1)                                                          \
+#define G_ALLOC_WRAP_ALLOC_L(ret_type, func, counter, tp1, p1, l)                                                      \
 	inline ret_type AL_##func(tp1 p1)                                                                                  \
 	{                                                                                                                  \
-		switch_mutex_lock(alloc_mutex);                                                                                \
+		switch_mutex_lock(l);                                                                                          \
 		ret_type _ret = func(p1);                                                                                      \
 		if (_ret != NULL) g_alloc_counts.counter++;                                                                    \
-		switch_mutex_unlock(alloc_mutex);                                                                              \
+		switch_mutex_unlock(l);                                                                                        \
 		return _ret;                                                                                                   \
 	}
 
@@ -47,13 +49,13 @@ extern switch_mutex_t *alloc_mutex;
 		return _ret;                                                                                                   \
 	}
 
-#define G_ALLOC_WRAP_ALLOC2o(ret_type, func, counter, tp1, p1, tp2, p2)                                                \
+#define G_ALLOC_WRAP_ALLOC2_L(ret_type, func, counter, tp1, p1, tp2, p2, l)                                            \
 	inline ret_type AL_##func(tp1 p1, tp2 p2)                                                                          \
 	{                                                                                                                  \
-		switch_mutex_lock(alloc_mutex);                                                                                \
+		switch_mutex_lock(l);                                                                                          \
 		ret_type _ret = func(p1, p2);                                                                                  \
 		if (_ret != NULL) g_alloc_counts.counter++;                                                                    \
-		switch_mutex_unlock(alloc_mutex);                                                                              \
+		switch_mutex_unlock(l);                                                                                        \
 		return _ret;                                                                                                   \
 	}
 
@@ -65,23 +67,29 @@ extern switch_mutex_t *alloc_mutex;
 		return _ret;                                                                                                   \
 	}
 
+#define G_ALLOC_WRAP_ALLOC3_L(ret_type, func, counter, tp1, p1, tp2, p2, tp3, p3, l)                                   \
+	inline ret_type AL_##func(tp1 p1, tp2 p2, tp3 p3)                                                                  \
+	{                                                                                                                  \
+		switch_mutex_lock(l);                                                                                          \
+		ret_type _ret = func(p1, p2, p3);                                                                              \
+		if (_ret != NULL) g_alloc_counts.counter++;                                                                    \
+		switch_mutex_unlock(l);                                                                                        \
+		return _ret;                                                                                                   \
+	}
+
 #define G_ALLOC_WRAP_ALLOC4(ret_type, func, counter, tp1, p1, tp2, p2, tp3, p3, tp4, p4)                               \
 	inline ret_type AL_##func(tp1 p1, tp2 p2, tp3 p3, tp4 p4)                                                          \
 	{                                                                                                                  \
-		switch_mutex_lock(alloc_mutex);                                                                                \
 		ret_type _ret = func(p1, p2, p3, p4);                                                                          \
 		if (_ret != NULL) g_alloc_counts.counter++;                                                                    \
-		switch_mutex_unlock(alloc_mutex);                                                                              \
 		return _ret;                                                                                                   \
 	}
 
 #define G_ALLOC_WRAP_ALLOC7(ret_type, func, counter, tp1, p1, tp2, p2, tp3, p3, tp4, p4, tp5, p5, tp6, p6, tp7, p7)    \
 	inline ret_type AL_##func(tp1 p1, tp2 p2, tp3 p3, tp4 p4, tp5 p5, tp6 p6, tp7 p7)                                  \
 	{                                                                                                                  \
-		switch_mutex_lock(alloc_mutex);                                                                                \
 		ret_type _ret = func(p1, p2, p3, p4, p5, p6, p7);                                                              \
 		if (_ret != NULL) g_alloc_counts.counter++;                                                                    \
-		switch_mutex_unlock(alloc_mutex);                                                                              \
 		return _ret;                                                                                                   \
 	}
 
@@ -95,14 +103,14 @@ extern switch_mutex_t *alloc_mutex;
 		}                                                                                                              \
 	}
 
-#define G_ALLOC_WRAP_FREEo(func, counter, arg_type)                                                                    \
+#define G_ALLOC_WRAP_FREE_L(func, counter, arg_type, l)                                                                \
 	inline void DA_##func(arg_type p)                                                                                  \
 	{                                                                                                                  \
 		if (p != NULL) {                                                                                               \
-			switch_mutex_lock(alloc_mutex);                                                                            \
+			switch_mutex_lock(l);                                                                                      \
 			g_alloc_counts.counter--;                                                                                  \
 			func(p);                                                                                                   \
-			switch_mutex_unlock(alloc_mutex);                                                                          \
+			switch_mutex_unlock(l);                                                                                    \
 		}                                                                                                              \
 	}
 
@@ -161,10 +169,10 @@ G_ALLOC_WRAP_ALLOC(gchar *, gst_structure_to_string, chars, const GstStructure *
 
 // --- Buffer wrappers ---
 G_ALLOC_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p)
-G_ALLOC_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *)
+G_ALLOC_WRAP_FREE_L(gst_buffer_unref, bufs, GstBuffer *, alloc_mutex_b)
 // G_ALLOC_WRAP_REF(gst_buffer_ref, bufs, GstBuffer *)
-G_ALLOC_WRAP_ALLOC3(GstBuffer *, gst_buffer_new_allocate, bufs, GstAllocator *, allocator, gsize, size,
-					GstAllocationParams *, params)
+G_ALLOC_WRAP_ALLOC3_L(GstBuffer *, gst_buffer_new_allocate, bufs, GstAllocator *, allocator, gsize, size,
+					  GstAllocationParams *, params, alloc_mutex_b)
 // G_ALLOC_WRAP_ALLOC(GstBuffer*, gst_buffer_new, bufs, void)
 
 // --- Structure wrappers ---
@@ -189,84 +197,87 @@ G_ALLOC_WRAP_INC(errs, cnt_errs, GError *, p)
 G_ALLOC_WRAP_FREE(g_error_free, errs, GError *)
 
 // --- Object wrappers ---
-G_ALLOC_WRAP_FREEo(gst_object_unref, objs, GstObject *) G_ALLOC_WRAP_DEC(objs, dec_objs, GstObject *, p)
+G_ALLOC_WRAP_FREE_L(gst_object_unref, objs, GstObject *, alloc_mutex_o)
+G_ALLOC_WRAP_DEC(objs, dec_objs, GstObject *, p)
 G_ALLOC_WRAP_INC(objs, cnt_objs, GstObject *, p)
 
 G_ALLOC_WRAP_ALLOC(GstBus *, gst_pipeline_get_bus, objs, GstPipeline *, b)
-G_ALLOC_WRAP_ALLOCo(GstPad *, gst_pad_get_peer, objs, GstPad *, pad)
+G_ALLOC_WRAP_ALLOC_L(GstPad *, gst_pad_get_peer, objs, GstPad *, pad, alloc_mutex_o)
 G_ALLOC_WRAP_ALLOC2(GstElement *, gst_bin_get_by_name, objs, GstBin *, bin, const gchar *, name)
-G_ALLOC_WRAP_ALLOC2(GstElement *, gst_element_request_pad_simple, objs, GstBin *, bin,	const gchar *, name)
+G_ALLOC_WRAP_ALLOC2(GstElement *, gst_element_request_pad_simple, objs, GstBin *, bin, const gchar *, name)
 
-G_ALLOC_WRAP_ALLOC2o(GstElement *, gst_element_factory_make, objs, const gchar *, factoryname, const gchar *, name)
+G_ALLOC_WRAP_ALLOC2_L(GstElement *, gst_element_factory_make, objs, const gchar *, factoryname, const gchar *, name,
+					  alloc_mutex_o)
 G_ALLOC_WRAP_ALLOC(GstClock *, gst_element_get_clock, objs, GstElement *, element)
 G_ALLOC_WRAP_ALLOC(GstElement *, gst_pipeline_new, objs, const gchar *, name)
-
 G_ALLOC_WRAP_ALLOC2(GstPad *, gst_element_get_static_pad, objs, GstElement *, element, const gchar *, name)
+G_ALLOC_WRAP_ALLOC_L(GstObject *, gst_element_get_parent, objs, GstElement *, elem, alloc_mutex_o)
+// G_ALLOC_WRAP_ALLOC2(GstPad *, gst_element_get_pad, objs, GstElement *, element, const gchar *, name)
+// G_ALLOC_WRAP_FREE(g_object_unref, gobjects, gpointer)
+// G_ALLOC_WRAP_REF(g_object_ref, gobjects, gpointer)
+// G_ALLOC_WRAP_REF(gst_object_ref, objs, GstObject *)
+// G_ALLOC_WRAP_REF(gst_object_ref_sink, objs, GstObject *)
 
-G_ALLOC_WRAP_ALLOCo(GstObject *, gst_element_get_parent, objs, GstElement *, elem)
-	// G_ALLOC_WRAP_ALLOC2(GstPad *, gst_element_get_pad, objs, GstElement *, element, const gchar *, name)
-	// G_ALLOC_WRAP_FREE(g_object_unref, gobjects, gpointer)
-	// G_ALLOC_WRAP_REF(g_object_ref, gobjects, gpointer)
-	// G_ALLOC_WRAP_REF(gst_object_ref, objs, GstObject *)
-	// G_ALLOC_WRAP_REF(gst_object_ref_sink, objs, GstObject *)
+// --- Sample  wrappers ---
+G_ALLOC_WRAP_INC(samples, cnt_samples, GstSample *, p)
+G_ALLOC_WRAP_FREE_L(gst_sample_unref, samples, GstSample *, alloc_mutex_s)
+G_ALLOC_WRAP_ALLOC2_L(GstSample *, gst_app_sink_try_pull_sample, samples, GstAppSink *, appsink, guint64, timeout,
+					  alloc_mutex_s)
+// G_ALLOC_WRAP_ALLOC(GstSample*, gst_app_sink_pull_sample, samples, GstAppSink *,appsink)
+// G_ALLOC_WRAP_ALLOC(GstSample*, gst_app_sink_pull_preroll, samples, GstAppSink *,appsink)
+// G_ALLOC_WRAP_ALLOC4(GstSample*, gst_sample_new, samples, GstBuffer *,buffer, GstCaps *,caps, GstSegment *,
+// segment, GstStructure *,info) G_ALLOC_WRAP_REF(gst_sample_ref, samples, GstSample *)
 
-	// --- Sample  wrappers ---
-	G_ALLOC_WRAP_INC(samples, cnt_samples, GstSample *, p) G_ALLOC_WRAP_FREE(gst_sample_unref, samples, GstSample *)
-		G_ALLOC_WRAP_ALLOC2(GstSample *, gst_app_sink_try_pull_sample, samples, GstAppSink *, appsink, guint64, timeout)
-	// G_ALLOC_WRAP_ALLOC(GstSample*, gst_app_sink_pull_sample, samples, GstAppSink *,appsink)
-	// G_ALLOC_WRAP_ALLOC(GstSample*, gst_app_sink_pull_preroll, samples, GstAppSink *,appsink)
-	// G_ALLOC_WRAP_ALLOC4(GstSample*, gst_sample_new, samples, GstBuffer *,buffer, GstCaps *,caps, GstSegment *,
-	// segment, GstStructure *,info) G_ALLOC_WRAP_REF(gst_sample_ref, samples, GstSample *)
+// --- caps wrappers ---
+G_ALLOC_WRAP_INC(caps, cnt_caps, GstCaps *, p)
+G_ALLOC_WRAP_FREE(gst_caps_unref, caps, GstCaps *)
+G_ALLOC_WRAP_ALLOC(GstCaps *, gst_caps_from_string, caps, const gchar *, string)
+// G_ALLOC_WRAP_ALLOC(GstCaps*, gst_caps_new_empty, caps, void)
+// G_ALLOC_WRAP_ALLOC(GstCaps*, gst_caps_new_any, caps, void)
+// G_ALLOC_WRAP_ALLOC2(GstCaps*, gst_caps_copy_nth, caps, const GstCaps *,caps, guint, nth)
+// G_ALLOC_WRAP_ALLOC3(GstCaps*, gst_caps_copy_and_set_caps_features, caps, const GstCaps *,caps, guint, index,
+// const GstCapsFeatures *,features) G_ALLOC_WRAP_ALLOC2(GstCaps*, gst_caps_merge, caps, GstCaps *,caps1, GstCaps
+// *,caps2) G_ALLOC_WRAP_ALLOC2(GstCaps*, gst_caps_merge_structure, caps, GstCaps *,caps, GstStructure *,structure)
+// G_ALLOC_WRAP_ALLOC(GstCaps*, gst_caps_normalize, caps, GstCaps *,caps)
+// G_ALLOC_WRAP_ALLOC3(GstCaps*, gst_caps_merge_structure_full, caps, GstCaps *,caps, GstStructure *,structure,
+// GstCapsFeatures *,features) G_ALLOC_WRAP_ALLOC3(GstCaps*, gst_type_find_helper_for_buffer, caps, GstObject *,obj,
+// GstBuffer *,buf, GstCaps *,filter) G_ALLOC_WRAP_ALLOC4(GstCaps*, gst_type_find_helper_for_buffer_with_caps, caps,
+// GstObject *,obj, GstBuffer *,buf, GstCaps *,caps, GstCaps *,filter) G_ALLOC_WRAP_ALLOC2(GstCaps*,
+// gst_caps_intersect, caps, const GstCaps *,caps1, const GstCaps *,caps2) G_ALLOC_WRAP_ALLOC3(GstCaps*,
+// gst_caps_intersect_full, caps, const GstCaps *,caps1, const GstCaps *,caps2, GstCapsIntersectMode, mode)
+// G_ALLOC_WRAP_ALLOC2(GstCaps*, gst_caps_union, caps, const GstCaps *,caps1, const GstCaps *,caps2)
+// G_ALLOC_WRAP_ALLOC2(GstCaps*, gst_caps_subtract, caps, const GstCaps *,minuend, const GstCaps *,subtrahend)
+// G_ALLOC_WRAP_ALLOC(GstCaps*, gst_caps_fixate, caps, const GstCaps *,caps)
 
-	// --- caps wrappers ---
-	G_ALLOC_WRAP_INC(caps, cnt_caps, GstCaps *, p) G_ALLOC_WRAP_FREE(gst_caps_unref, caps, GstCaps *)
-		G_ALLOC_WRAP_ALLOC(GstCaps *, gst_caps_from_string, caps, const gchar *, string)
-	// G_ALLOC_WRAP_ALLOC(GstCaps*, gst_caps_new_empty, caps, void)
-	// G_ALLOC_WRAP_ALLOC(GstCaps*, gst_caps_new_any, caps, void)
-	// G_ALLOC_WRAP_ALLOC2(GstCaps*, gst_caps_copy_nth, caps, const GstCaps *,caps, guint, nth)
-	// G_ALLOC_WRAP_ALLOC3(GstCaps*, gst_caps_copy_and_set_caps_features, caps, const GstCaps *,caps, guint, index,
-	// const GstCapsFeatures *,features) G_ALLOC_WRAP_ALLOC2(GstCaps*, gst_caps_merge, caps, GstCaps *,caps1, GstCaps
-	// *,caps2) G_ALLOC_WRAP_ALLOC2(GstCaps*, gst_caps_merge_structure, caps, GstCaps *,caps, GstStructure *,structure)
-	// G_ALLOC_WRAP_ALLOC(GstCaps*, gst_caps_normalize, caps, GstCaps *,caps)
-	// G_ALLOC_WRAP_ALLOC3(GstCaps*, gst_caps_merge_structure_full, caps, GstCaps *,caps, GstStructure *,structure,
-	// GstCapsFeatures *,features) G_ALLOC_WRAP_ALLOC3(GstCaps*, gst_type_find_helper_for_buffer, caps, GstObject *,obj,
-	// GstBuffer *,buf, GstCaps *,filter) G_ALLOC_WRAP_ALLOC4(GstCaps*, gst_type_find_helper_for_buffer_with_caps, caps,
-	// GstObject *,obj, GstBuffer *,buf, GstCaps *,caps, GstCaps *,filter) G_ALLOC_WRAP_ALLOC2(GstCaps*,
-	// gst_caps_intersect, caps, const GstCaps *,caps1, const GstCaps *,caps2) G_ALLOC_WRAP_ALLOC3(GstCaps*,
-	// gst_caps_intersect_full, caps, const GstCaps *,caps1, const GstCaps *,caps2, GstCapsIntersectMode, mode)
-	// G_ALLOC_WRAP_ALLOC2(GstCaps*, gst_caps_union, caps, const GstCaps *,caps1, const GstCaps *,caps2)
-	// G_ALLOC_WRAP_ALLOC2(GstCaps*, gst_caps_subtract, caps, const GstCaps *,minuend, const GstCaps *,subtrahend)
-	// G_ALLOC_WRAP_ALLOC(GstCaps*, gst_caps_fixate, caps, const GstCaps *,caps)
+// -- variadic --
+/*
+ inline GstCaps* AL_gst_caps_new_simple(const char *media_type, const char *fieldname, ...) {
+	va_list args;
+	va_start(args, fieldname);
+	GstCaps *caps = gst_caps_new_simple_valist(media_type, fieldname, args);
+	va_end(args);
+	if (caps != NULL) g_alloc_counts.caps++;
+	return caps;
+}
+*/
 
-	// -- variadic --
-	/*
-	 inline GstCaps* AL_gst_caps_new_simple(const char *media_type, const char *fieldname, ...) {
-		va_list args;
-		va_start(args, fieldname);
-		GstCaps *caps = gst_caps_new_simple_valist(media_type, fieldname, args);
-		va_end(args);
-		if (caps != NULL) g_alloc_counts.caps++;
-		return caps;
-	}
-	*/
+/* inline GstCaps *AL_gst_type_find_helper(GstObject *obj, GstCaps *filter, ...) {
+	va_list args;
+	va_start(args, filter);
+	GstCaps *caps = gst_type_find_helper_valist(obj, filter, args);
+	va_end(args);
+	if (caps != NULL) g_alloc_counts.caps++;
+	return caps;
+}
+*/
 
-	/* inline GstCaps *AL_gst_type_find_helper(GstObject *obj, GstCaps *filter, ...) {
-		va_list args;
-		va_start(args, filter);
-		GstCaps *caps = gst_type_find_helper_valist(obj, filter, args);
-		va_end(args);
-		if (caps != NULL) g_alloc_counts.caps++;
-		return caps;
-	}
-	*/
+// --- features ---
+// G_ALLOC_WRAP_FREE(gst_caps_features_unref, features, GstCapsFeatures *)
+// G_ALLOC_WRAP_ALLOC(GstCapsFeatures*, gst_caps_features_new, features, const gchar *feature1, ...)         //weird
+// one G_ALLOC_WRAP_REF(gst_caps_features_ref, features, GstCapsFeatures *)
 
-	// --- features ---
-	// G_ALLOC_WRAP_FREE(gst_caps_features_unref, features, GstCapsFeatures *)
-	// G_ALLOC_WRAP_ALLOC(GstCapsFeatures*, gst_caps_features_new, features, const gchar *feature1, ...)         //weird
-	// one G_ALLOC_WRAP_REF(gst_caps_features_ref, features, GstCapsFeatures *)
-
-	// -- variadic --
-	inline GstCapsFeatures *AL_gst_caps_features_new(const gchar *feature1, ...)
+// -- variadic --
+inline GstCapsFeatures *AL_gst_caps_features_new(const gchar *feature1, ...)
 {
 	va_list args;
 	va_start(args, feature1);

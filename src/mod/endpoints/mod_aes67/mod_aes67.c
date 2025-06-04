@@ -226,7 +226,9 @@ struct private_object {
 	switch_codec_t write_codec;
 };
 
-switch_mutex_t *alloc_mutex;
+switch_mutex_t *alloc_mutex_o;
+switch_mutex_t *alloc_mutex_b;
+switch_mutex_t *alloc_mutex_s;
 
 static struct {
 	int debug;
@@ -1652,7 +1654,9 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_mutex_init(&globals.streams_lock, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.flag_mutex, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_mutex, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_mutex_b, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_mutex_s, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_mutex_o, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
 	globals.codecs_inited = 0;
 	globals.read_frame.data = globals.databuf;
