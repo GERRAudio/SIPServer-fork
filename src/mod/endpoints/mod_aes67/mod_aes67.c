@@ -2747,9 +2747,9 @@ int open_audio_stream(g_stream_t **stream, udp_sock_t *indev, udp_sock_t *outdev
 	data.rtp_jitbuf_latency = globals.rtp_jitbuf_latency;
 
 
-	//switch_mutex_lock(globals.gst_mutex);		//added - check - test
+	switch_mutex_lock(globals.gst_mutex);		//added - check - test
 	*stream = create_pipeline(&data, error_callback);
-	//switch_mutex_unlock(globals.gst_mutex); // added - check - test
+	switch_mutex_unlock(globals.gst_mutex); // added - check - test
 
 	if (!*stream) {					//added check
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create pipeline\n");
@@ -2800,9 +2800,9 @@ int open_shared_audio_stream(shared_audio_stream_t *shstream)
 	data.is_backup_sender = shstream->is_backup_sender;
 	data.backup_sender_idle_wait_ms = shstream->backup_sender_idle_wait_ms;
 
-	//switch_mutex_lock(globals.gst_mutex); // added - check - test
+	switch_mutex_lock(globals.gst_mutex); // added - check - test
 	shstream->stream = create_pipeline(&data, error_callback);
-	//switch_mutex_unlock(globals.gst_mutex); // added - check - test
+	switch_mutex_unlock(globals.gst_mutex); // added - check - test
 
 	if (!shstream->stream) {			
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create shared audio pipeline\n");
@@ -2836,9 +2836,9 @@ static int clear_shared_audio_stream(shared_audio_stream_t *shstream)
 {
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Destroying shared audio stream %s\n", shstream->name);
 	if (shstream->stream) {
-		//switch_mutex_lock(globals.gst_mutex); // added check
+		switch_mutex_lock(globals.gst_mutex); // added check
 		stop_pipeline(shstream->stream);
-		//switch_mutex_unlock(globals.gst_mutex); // added check
+		switch_mutex_unlock(globals.gst_mutex); // added check
 	}
 
 	shstream->stream = NULL; // deallocated in stop pipeline
@@ -3124,7 +3124,9 @@ SWITCH_STANDARD_API(aes_cmd)
 
 	 if (!strcasecmp(argv[2], "on")) {
 		 if (STREAM_READER_TRYLOCK(astream)) {
+			 switch_mutex_lock(globals.gst_mutex); // added check 
 			 drop_output_buffers(FALSE, astream->stream);
+			 switch_mutex_unlock(globals.gst_mutex); // added check 
 			 astream->txflow = TRUE;
 			 // We still need txflow during the pipeline init to set valve's drop property
 			 // the stream is initialized after the pipeline is created, so we need to preserve
@@ -3140,7 +3142,9 @@ SWITCH_STANDARD_API(aes_cmd)
 	 }
 	 else if (!strcasecmp(argv[2], "off")) {
 		 if (STREAM_READER_TRYLOCK(astream)) {
+			 switch_mutex_lock(globals.gst_mutex); // added check 
 			 drop_output_buffers(TRUE, astream->stream);
+			 switch_mutex_unlock(globals.gst_mutex); // added check 
 			 astream->txflow = FALSE;
 			 astream->stream->txdrop = TRUE;
 			 stream->write_function(stream, "Tx buffers dropping!\n");
