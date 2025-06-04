@@ -20,12 +20,13 @@
 	
 
 // --- Macro for allocation wrappers ---
-#define G_ALLOC_WRAP_ALLOC(ret_type, func, counter, tp1, p1)\
-     inline ret_type AL_##func(tp1 p1) {                    \
-        ret_type _ret = func(p1);                                 \
-        if (_ret != NULL) g_alloc_counts.counter++;               \
-        return _ret;                                              \
-    }
+#define G_ALLOC_WRAP_ALLOC(ret_type, func, counter, tp1, p1) \
+inline ret_type AL_##func(tp1 p1)	\
+{	\
+	ret_type _ret = func(p1);	\
+	if (_ret != NULL) g_alloc_counts.counter++;\
+	return _ret;\
+}
 
 #define G_ALLOC_WRAP_ALLOC2(ret_type, func, counter, tp1, p1, tp2, p2)  \
 	 inline ret_type AL_##func(tp1 p1, tp2 p2)                    \
@@ -62,12 +63,15 @@
 
 // --- Macro for deallocation wrappers ---
 #define G_ALLOC_WRAP_FREE(func, counter, arg_type)      \
-    inline void DA_##func(arg_type p) {                 \
-	if (p != NULL) {                            \
-		g_alloc_counts.counter--;               \
-		func(p);  \
-	    }                                        \
-    }   
+		inline void DA_##func(arg_type p)                                                                              \
+		{                                                                                                              \
+			if (p != NULL) {                                                                                           \
+				g_alloc_counts.counter--;                                                                              \
+				func(p);                                                                                               \
+			} \
+		} 
+
+
 
  // --special test case ----                                                     
 	inline void DF_gst_object_unref(GstObject* p)                                                                           
