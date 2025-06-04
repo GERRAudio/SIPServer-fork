@@ -71,7 +71,7 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown);
 SWITCH_MODULE_RUNTIME_FUNCTION(mod_aes67_runtime);
 SWITCH_MODULE_DEFINITION(mod_aes67, mod_aes67_load, mod_aes67_shutdown, mod_aes67_runtime);
 
-static switch_memory_pool_t *module_pool = NULL;
+static switch_memory_pool_t *module_pool = NULL;		
 switch_endpoint_interface_t *aes67_endpoint_interface;
 
 #define SAMPLE_TYPE gint16
@@ -226,6 +226,8 @@ struct private_object {
 	switch_codec_t write_codec;
 };
 
+switch_mutex_t *alloc_mutex;
+
 static struct {
 	int debug;
 	int port;
@@ -246,6 +248,7 @@ static struct {
 	switch_mutex_t *flag_mutex;
 	switch_mutex_t *gst_mutex;
 	switch_mutex_t *sh_shtreams_lock;
+
 	int sample_rate;
 	int codec_ms;
 	char bit_depth[AUDIO_FMT_STR_LEN];
@@ -1649,6 +1652,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_mutex_init(&globals.streams_lock, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.flag_mutex, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_mutex, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
 	globals.codecs_inited = 0;
 	globals.read_frame.data = globals.databuf;
