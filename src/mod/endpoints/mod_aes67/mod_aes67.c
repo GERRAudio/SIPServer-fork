@@ -592,7 +592,7 @@ static switch_status_t validate_main_audio_stream()
 static switch_status_t destroy_actual_stream(audio_stream_t *stream)
 {
 	if (stream == NULL) { return SWITCH_STATUS_FALSE; }
-	switch_mutex_lock(globals.streams_lock);						//added - check
+	//switch_mutex_lock(globals.streams_lock);						//added - check
 	if (globals.main_stream == stream) { globals.main_stream = NULL; }
 
 
@@ -606,7 +606,7 @@ static switch_status_t destroy_actual_stream(audio_stream_t *stream)
 	switch_safe_free(stream->outdev);
 
 	switch_safe_free(stream);
-	switch_mutex_unlock(globals.streams_lock); // added - check
+	//switch_mutex_unlock(globals.streams_lock); // added - check
 	return SWITCH_STATUS_SUCCESS;
 }
 
@@ -1237,12 +1237,12 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 					return SWITCH_STATUS_FALSE;
 				}
 			}
-			switch_mutex_lock(globals.device_lock); // added check  match frame pull
+			//switch_mutex_lock(globals.device_lock); // added check  match frame pull
 			//switch_mutex_lock(globals.gst_mutex);	// added check
 			push_buffer(globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
 						&(globals.main_stream->write_timer));
 			//switch_mutex_unlock(globals.gst_mutex);		// added check
-			switch_mutex_unlock(globals.device_lock);		// added check to match frame pull
+			//switch_mutex_unlock(globals.device_lock);		// added check to match frame pull
 			STREAM_READER_UNLOCK(endpoint->out_stream); //added check
 		}
 		status = SWITCH_STATUS_SUCCESS;
@@ -2766,9 +2766,9 @@ int open_audio_stream(g_stream_t **stream, udp_sock_t *indev, udp_sock_t *outdev
 	data.rtp_jitbuf_latency = globals.rtp_jitbuf_latency;
 
 
-	switch_mutex_lock(globals.gst_mutex);		//added - check - test
+	//switch_mutex_lock(globals.gst_mutex);		//added - check - test
 	*stream = create_pipeline(&data, error_callback);
-	switch_mutex_unlock(globals.gst_mutex); // added - check - test
+	//switch_mutex_unlock(globals.gst_mutex); // added - check - test
 
 	if (!*stream) {					//added check
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create pipeline\n");
