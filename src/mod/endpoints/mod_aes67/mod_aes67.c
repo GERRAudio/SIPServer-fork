@@ -1231,10 +1231,10 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 				}
 			}
 			switch_mutex_lock(globals.device_lock); // added check 
-			//switch_mutex_lock(globals.gst_mutex);	// added check
+			switch_mutex_lock(globals.gst_mutex);	// added check
 			push_buffer(globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
 						&(globals.main_stream->write_timer));
-			//switch_mutex_unlock(globals.gst_mutex);		// added check
+			switch_mutex_unlock(globals.gst_mutex);		// added check
 			switch_mutex_unlock(globals.device_lock);		// added check 
 			STREAM_READER_UNLOCK(endpoint->out_stream); //added check
 		}
