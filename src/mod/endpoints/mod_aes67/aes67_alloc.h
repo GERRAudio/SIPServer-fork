@@ -20,6 +20,8 @@
 
 extern switch_mutex_t *alloc_mutex_b;
 extern switch_mutex_t *alloc_mutex_o;
+extern switch_mutex_t *alloc_mutex_p;
+extern switch_mutex_t *alloc_mutex_pl;
 extern switch_mutex_t *alloc_mutex_s;
 
 // --- Macro for allocation wrappers ---
@@ -201,17 +203,15 @@ G_ALLOC_WRAP_FREE_L(gst_object_unref, objs, GstObject *, alloc_mutex_o)
 G_ALLOC_WRAP_DEC(objs, dec_objs, GstObject *, p)
 G_ALLOC_WRAP_INC(objs, cnt_objs, GstObject *, p)
 
-G_ALLOC_WRAP_ALLOC(GstBus *, gst_pipeline_get_bus, objs, GstPipeline *, b)
+G_ALLOC_WRAP_ALLOC_L(GstBus *, gst_pipeline_get_bus, objs, GstPipeline *, b,  alloc_mutex_pl)
 G_ALLOC_WRAP_ALLOC_L(GstPad *, gst_pad_get_peer, objs, GstPad *, pad, alloc_mutex_o)
 G_ALLOC_WRAP_ALLOC2(GstElement *, gst_bin_get_by_name, objs, GstBin *, bin, const gchar *, name)
-G_ALLOC_WRAP_ALLOC2(GstElement *, gst_element_request_pad_simple, objs, GstBin *, bin, const gchar *, name)
-
-G_ALLOC_WRAP_ALLOC2_L(GstElement *, gst_element_factory_make, objs, const gchar *, factoryname, const gchar *, name,
-					  alloc_mutex_o)
+G_ALLOC_WRAP_ALLOC2_L(GstElement *, gst_element_request_pad_simple, objs, GstBin *, bin, const gchar *, name, alloc_mutex_p)
+G_ALLOC_WRAP_ALLOC2(GstElement *, gst_element_factory_make, objs, const gchar *, factoryname, const gchar *, name)
 G_ALLOC_WRAP_ALLOC(GstClock *, gst_element_get_clock, objs, GstElement *, element)
-G_ALLOC_WRAP_ALLOC(GstElement *, gst_pipeline_new, objs, const gchar *, name)
-G_ALLOC_WRAP_ALLOC2(GstPad *, gst_element_get_static_pad, objs, GstElement *, element, const gchar *, name)
-G_ALLOC_WRAP_ALLOC_L(GstObject *, gst_element_get_parent, objs, GstElement *, elem, alloc_mutex_o)
+G_ALLOC_WRAP_ALLOC_L(GstElement *, gst_pipeline_new, objs, const gchar *, name, alloc_mutex_pl)
+G_ALLOC_WRAP_ALLOC2_L(GstPad *, gst_element_get_static_pad, objs, GstElement *, element, const gchar *, name,  alloc_mutex_p)
+G_ALLOC_WRAP_ALLOC(GstObject *, gst_element_get_parent, objs, GstElement *, elem)
 // G_ALLOC_WRAP_ALLOC2(GstPad *, gst_element_get_pad, objs, GstElement *, element, const gchar *, name)
 // G_ALLOC_WRAP_FREE(g_object_unref, gobjects, gpointer)
 // G_ALLOC_WRAP_REF(g_object_ref, gobjects, gpointer)
