@@ -1185,7 +1185,7 @@ static switch_status_t channel_endpoint_write(private_t *tech_pvt, switch_frame_
 		}
 
 		// Pipeline is not being reset, we can push data
-		//switch_mutex_lock(globals.device_lock); // added check 
+		//switch_mutex_lock(globals.device_lock); // added check to match pull and other push - add lots of bad audio
 		//switch_mutex_lock(globals.gst_mutex); // added check
 		push_buffer(endpoint->out_stream->stream, (unsigned char *)frame->data, frame->datalen, endpoint->outchan,
 					&(tech_pvt->write_timer));

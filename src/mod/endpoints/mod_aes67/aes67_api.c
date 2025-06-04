@@ -1094,11 +1094,12 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	if (!stream) goto error;		//added check
 	GstPipeline *pipeline = stream->pipeline;
 
-	if (!stream->pipeline) goto error;		//added check
+	if (!pipeline) goto error;		//added check
 
 	NAME_ELEMENT(name, "appsrc", ch_idx);
+	switch_mutex_lock(stream);		//added check
 	appsrc = AL_gst_bin_get_by_name(GST_BIN(pipeline), name);
-
+	switch_mutex_unlock(stream);	//added check
 	switch_core_timer_next(timer);	//wait a bit
 
 	if (appsrc == NULL) {
@@ -1116,8 +1117,9 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		retval = TRUE;
 		goto done;
 	}
-	
+	switch_mutex_lock(stream); // added check
 	buf = AL_gst_buffer_new_allocate(NULL, len, NULL);
+	switch_mutex_unlock(stream); // added check
 	if (buf == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
 		goto error;
@@ -1132,9 +1134,10 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	g_signal_emit_by_name(appsrc, "push-buffer", buf, &result);
 	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pushed buffer\n");
-
+	switch_mutex_lock(stream); // added check
 	DA_gst_buffer_unref(buf);//  check 
 	buf = NULL;
+	switch_mutex_unlock(stream); // added check
 
 	if (result == GST_FLOW_ERROR) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to do 'push-buffer' \n");
@@ -1145,9 +1148,10 @@ done:
 	retval = TRUE;
 
 error:
+	switch_mutex_lock(stream); // added check
 	DA_gst_object_unref(GST_OBJECT(appsrc));
 	DA_gst_buffer_unref(buf);						// check 
-  
+    switch_mutex_unlock(stream);					// added check
 	return retval;
 }
 
@@ -1169,9 +1173,9 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		NAME_ELEMENT(name, "appsink", ch_idx);
 	else
 		NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
-
+	switch_mutex_lock(stream); //added check
 	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
-
+	switch_mutex_unlock(stream); // added check
 	if (appsink == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
 		goto error;
@@ -1195,7 +1199,9 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
+		switch_mutex_lock(stream); // added check
 		sample = AL_gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 10 * GST_MSECOND);
+		switch_mutex_unlock(stream); // added check
 		if (!sample) {
 			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Failed to pull sample\n");
 			switch_cond_next();
@@ -1205,7 +1211,9 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 		if (!buf) {
 			if (sample != NULL) { // added in case
+				switch_mutex_lock(stream); // added check
 				DA_gst_sample_unref(sample);
+				switch_mutex_unlock(stream); // added check
 				sample = NULL;
 			}
 			continue;
@@ -1226,8 +1234,10 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		}
 		gst_buffer_unmap(buf, &info);
 		if (sample != NULL) {
+			switch_mutex_lock(stream); // added check
 			DA_gst_sample_unref(sample);
 			sample = NULL;
+			switch_mutex_unlock(stream); // added check
 		}
 
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got %d\n", total_bytes);
@@ -1252,10 +1262,14 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// stream->leftover_bytes[ch_idx]);
 
 out:
+	switch_mutex_lock(stream); // added check
 	DA_gst_object_unref(GST_OBJECT(appsink));
+	switch_mutex_unlock(stream); // added check
 	return total_bytes;
 error:
+	switch_mutex_lock(stream); // added check
 	DA_gst_object_unref(GST_OBJECT(appsink)); 
+	switch_mutex_unlock(stream); // added check
 	return 0;
 }
 
