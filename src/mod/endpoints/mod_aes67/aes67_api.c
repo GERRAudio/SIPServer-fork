@@ -606,14 +606,14 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		if (data->rx_codec == L16) {
 			rtpdepay = AL_gst_element_factory_make("rtpL16depay", RTP_DEPAY);
 			udp_caps =
-				gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
+				MU_gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
 									G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
 									"encoding-name", G_TYPE_STRING, "L16", "media", G_TYPE_STRING, "audio", NULL);
 			AL_cnt_caps(udp_caps);
 		} else {
 			rtpdepay = AL_gst_element_factory_make("rtpL24depay", RTP_DEPAY);
 			udp_caps =
-				gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
+				MU_gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
 									G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
 									"encoding-name", G_TYPE_STRING, "L24", "media", G_TYPE_STRING, "audio", NULL);
 			AL_cnt_caps(udp_caps);
@@ -630,7 +630,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		capsfilter = AL_gst_element_factory_make("capsfilter", "rx-caps");
 
 		/*Always feed S16LE to the FS*/
-		rx_caps = gst_caps_new_simple("audio/x-raw", "channels", G_TYPE_INT, data->channels, "format", G_TYPE_STRING,
+		rx_caps = MU_gst_caps_new_simple("audio/x-raw", "channels", G_TYPE_INT, data->channels, "format", G_TYPE_STRING,
 									  "S16LE", "layout", G_TYPE_STRING, "interleaved", NULL);
 		AL_cnt_caps(rx_caps);
 		MU_g_object_set(capsfilter, "caps", rx_caps, NULL);
@@ -757,7 +757,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			}
 
 			/*Always accept S16LE from the FS*/
-			caps = gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, data->sample_rate, "channels", G_TYPE_INT, 1,
+			caps = MU_gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, data->sample_rate, "channels", G_TYPE_INT, 1,
 									   "format", G_TYPE_STRING, "S16LE", "layout", G_TYPE_STRING, "interleaved",
 									   "channel-mask", GST_TYPE_BITMASK, (guint64)0, NULL);
 			AL_cnt_caps(caps);
@@ -789,7 +789,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		udpsink = AL_gst_element_factory_make("udpsink", "tx-sink");
 
-		caps = gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, data->sample_rate, "channels", G_TYPE_INT,
+		caps = MU_gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, data->sample_rate, "channels", G_TYPE_INT,
 								   data->channels, "format", G_TYPE_STRING, "S16LE", "layout", G_TYPE_STRING,
 								   "interleaved", "channel-mask", GST_TYPE_BITMASK, (guint64)0, NULL);
 		AL_cnt_caps(caps);
@@ -866,11 +866,11 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		fakesink = AL_gst_element_factory_make("fakesink", "tx-monitor-fakesink");
 
 		if (data->tx_codec == L16) {
-			caps = gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
+			caps = MU_gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
 									   G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
 									   "encoding-name", G_TYPE_STRING, "L16", "media", G_TYPE_STRING, "audio", NULL);
 		} else {
-			caps = gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
+			caps = MU_gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
 									   G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
 									   "encoding-name", G_TYPE_STRING, "L24", "media", G_TYPE_STRING, "audio", NULL);
 		}
