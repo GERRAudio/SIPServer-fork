@@ -227,16 +227,16 @@ struct private_object {
 };
 
 
-switch_mutex_t *alloc_mutex_b;
-switch_mutex_t *alloc_mutex_c;
-switch_mutex_t *alloc_mutex_e;
-switch_mutex_t *alloc_mutex_o;
-switch_mutex_t *alloc_mutex_p;
-switch_mutex_t *alloc_mutex_pl;
-switch_mutex_t *alloc_mutex_s;
-switch_mutex_t *gst_lock;
-switch_mutex_t *set_lock;
-switch_mutex_t *add_lock;
+switch_mutex_t *alloc_buf_lock;
+switch_mutex_t *alloc_clk_lock;
+switch_mutex_t *alloc_elem_lock;
+switch_mutex_t *alloc_obj_lock;
+switch_mutex_t *alloc_pad_lock;
+switch_mutex_t *alloc_pipl_lock;
+switch_mutex_t *alloc_samp_lock;
+switch_mutex_t *alloc_gst_lock;
+switch_mutex_t *alloc_set_lock;
+switch_mutex_t *alloc_add_lock;
 
 
 static struct {
@@ -427,7 +427,6 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				//switch_mutex_lock(globals.gst_mutex); // around appsinks check added
 				STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
 
-
 				if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan,
 								session_id)) {
 					tech_pvt->audio_endpoint->active_listen_sessions++;
@@ -436,7 +435,6 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
 				//switch_mutex_unlock(globals.gst_mutex); // around appsinks check added
 				switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
-			
 			}
 
 			switch_yield(1000000);
@@ -1133,7 +1131,7 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 		*frame = &globals.cng_frame;
 		return SWITCH_STATUS_SUCCESS;
 	}
-	if (STREAM_READER_TRYLOCK(endpoint->in_stream)) {
+	if (STREAM_READER_TRYLOCK(endpoint->in_stream)) {		//check if required
 		if (!endpoint->in_stream->stream) {
 			STREAM_READER_UNLOCK(endpoint->in_stream);
 			return SWITCH_STATUS_FALSE;
@@ -1147,8 +1145,8 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 		samples = bytes / sizeof(int16_t);
 		//switch_mutex_unlock(globals.gst_mutex); // added check
 		switch_mutex_unlock(globals.device_lock);
-		STREAM_READER_UNLOCK(endpoint->in_stream);					//added check 9
-	} else {														//added check 9
+		STREAM_READER_UNLOCK(endpoint->in_stream);					//added check if required
+	} else {														//added check 
 		// Pipeline is being reset, feed some silence
 		bytes = STREAM_SAMPLES_PER_PACKET(endpoint->in_stream) * 2;
 		memset(tech_pvt->read_frame.data, 0, bytes);
@@ -1244,7 +1242,7 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 			if (!endpoint) return SWITCH_STATUS_FALSE;					//added check
 			if (endpoint->out_stream && STREAM_READER_TRYLOCK(endpoint->out_stream)) {
 				if (!endpoint->out_stream->stream) {
-					STREAM_READER_UNLOCK(endpoint->out_stream); // added, check 
+					STREAM_READER_UNLOCK(endpoint->out_stream); // added, check if required
 					return SWITCH_STATUS_FALSE;
 				}
 			}
@@ -1254,7 +1252,7 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 						&(globals.main_stream->write_timer));
 			//switch_mutex_unlock(globals.gst_mutex);		// added check
 			//switch_mutex_unlock(globals.device_lock);		// added check to match frame pull
-			STREAM_READER_UNLOCK(endpoint->out_stream); //added check
+			STREAM_READER_UNLOCK(endpoint->out_stream); //added check if required
 		}
 		status = SWITCH_STATUS_SUCCESS;
 	}
@@ -1669,16 +1667,16 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_mutex_init(&globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
 
-	switch_mutex_init(&alloc_mutex_b, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_mutex_c, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_mutex_e, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_mutex_o, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_mutex_p, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_mutex_pl, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_mutex_s, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&gst_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&set_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&add_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_buf_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_clk_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_elem_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_obj_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_pad_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_pipl_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_samp_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_gst_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_set_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&alloc_add_lock, SWITCH_MUTEX_NESTED, module_pool);
 
 	globals.codecs_inited = 0;
 	globals.read_frame.data = globals.databuf;
@@ -1832,7 +1830,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 			switch_mutex_lock(tech_pvt->audio_endpoint->mutex);			
 			// stream lock aleady done before calling link_rx_stream
 			//switch_mutex_lock(globals.gst_mutex);					 // around appsinks check added
-			STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);		//added check 
+			STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);		//added check if required
 			if (state == CCS_ACTIVE) {
 				if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan,
 								session_id)) {
@@ -1840,7 +1838,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 				}
 			}
 
-			STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check 
+			STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check if required
 			//switch_mutex_unlock(globals.gst_mutex);					   // around appsinks check added
 			switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 			
@@ -2203,13 +2201,13 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 				// Signal intent-to-reload to prevent writer starvation
 				g_atomic_int_set(&curr_stream->reloading, 1);
 				STREAM_WRITER_LOCK(curr_stream);
-				STREAM_READER_LOCK(curr_stream);			//added check
+				STREAM_READER_LOCK(curr_stream);			//added check if required
 				clear_shared_audio_stream(curr_stream);
 				create_shared_audio_stream(curr_stream);
 				link_rx_stream(curr_stream);
 
 				g_atomic_int_set(&curr_stream->reloading, 0);
-				STREAM_READER_UNLOCK(curr_stream);			//added check
+				STREAM_READER_UNLOCK(curr_stream);			//added check if required
 				STREAM_WRITER_UNLOCK(curr_stream);
 			}
 			/* dont insert the allocated stream to the sh_streams list*/
