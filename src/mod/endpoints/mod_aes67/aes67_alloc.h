@@ -181,6 +181,24 @@ inline GstElement *AF_gst_bin_get_by_name(GstBin *bin, gchar *name)
 		return retval;                                                                                                 \
 	}
 
+#define MU_WRAP1(ret_type, fname, tp1, p1,  l)                                                                  \
+	inline ret_type MU_##fname(tp1 p1)                                                                         \
+	{                                                                                                                  \
+		switch_mutex_lock(l);                                                                                          \
+		ret_type retval = fname(p1);                                                                               \
+		switch_mutex_unlock(l);                                                                                        \
+		return retval;                                                                                                 \
+	}
+
+
+#define MU_WRAPV(fname, tp1, p1, tp2, p2, l)                                                                           \
+	inline void MU_##fname(tp1 p1, tp2 p2)                                                                                     \
+	{                                                                                                                  \
+		switch_mutex_lock(l);                                                                                          \
+		fname(p1, p2);                                                                                                 \
+		switch_mutex_unlock(l);                                                                                        \
+	}
+
 // ===
 // gst functions that require mutexes- so wrap
 // GstStateChangeReturn    gst_element_set_state           (GstElement *element, GstState state);
@@ -189,6 +207,16 @@ MU_WRAP(GstStateChangeReturn, gst_element_set_state, GstElement *, e, GstState, 
 MU_WRAP(gboolean, gst_pipeline_set_clock, GstPipeline *, p, GstClock *, c, alloc_pipl_lock)
 // gboolean gst_bin_add (GstBin *bin, GstElement *element);
 MU_WRAP(gboolean, gst_bin_add, GstBin *, bin, GstElement *, element, alloc_elem_lock)
+//gboolean gst_element_link(GstElement *src, GstElement *dest);
+MU_WRAP(gboolean, gst_element_link, GstElement *,src, GstElement *,dest, alloc_elem_lock)
+//gboolean gst_element_sync_state_with_parent(GstElement *element);
+MU_WRAP1(gboolean, gst_element_sync_state_with_parent, GstElement *, element, alloc_elem_lock)
+//GstPadLinkReturn gst_pad_link (GstPad *srcpad, GstPad *sinkpad);
+MU_WRAP(GstPadLinkReturn, gst_pad_link,GstPad *,srcpad, GstPad *,sinkpad,alloc_pad_lock)
+//void gst_element_release_request_pad (GstElement *element, GstPad *pad);
+MU_WRAPV(gst_element_release_request_pad, GstElement*, element, GstPad*, pad, alloc_pad_lock)
+//void gst_element_unlink (GstElement *src, GstElement *dest);
+MU_WRAPV(gst_element_unlink,GstElement *,src, GstElement *,dest, alloc_elem_lock)
 // void g_object_set (gpointer object, const gchar *first_property_name, ...);
 #define MU_g_object_set(p1, ...)                                                                                       \
 	do {                                                                                                               \

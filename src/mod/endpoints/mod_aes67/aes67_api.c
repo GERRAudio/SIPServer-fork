@@ -296,7 +296,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		goto error;
 	}
 
-	if (!gst_element_link(queue, appsink)) {
+	if (!MU_gst_element_link(queue, appsink)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link appsink and queue ch: %d, session: %s",
 						  ch_idx, session);
 		goto error;
@@ -314,19 +314,19 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		goto error;
 	}
 
-	if (!gst_element_sync_state_with_parent(queue)) {
+	if (!MU_gst_element_sync_state_with_parent(queue)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to sync queue state with pipeline. ch: %d, session: %s", ch_idx, session);
 		goto error;
 	}
 
-	if (!gst_element_sync_state_with_parent(appsink)) {
+	if (!MU_gst_element_sync_state_with_parent(appsink)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to sync appsink state with pipeline. ch: %d, session: %s", ch_idx, session);
 		goto error;
 	}
 
-	if (GST_PAD_LINK_OK != (gst_pad_link(tee_src_pad, queue_sink_pad))) {
+	if (GST_PAD_LINK_OK != (MU_gst_pad_link(tee_src_pad, queue_sink_pad))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link the queue and tee. ch: %d, session: %s",
 						  ch_idx, session);
 		goto error;
@@ -418,7 +418,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to unlink tee and queue ch: %d, session: %s",
 						  ch_idx, session);
 	}
-	gst_element_release_request_pad(tee, tee_src_pad);
+	MU_gst_element_release_request_pad(tee, tee_src_pad);
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	tee_src_pad = NULL;
 
@@ -432,7 +432,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		goto error;
 	}
 
-	gst_element_unlink(queue, appsink);
+	MU_gst_element_unlink(queue, appsink);
 
 
 	MU_gst_element_set_state(queue, GST_STATE_NULL);
