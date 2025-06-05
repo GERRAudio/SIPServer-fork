@@ -26,6 +26,8 @@ extern switch_mutex_t *alloc_mutex_p;
 extern switch_mutex_t *alloc_mutex_pl;
 extern switch_mutex_t *alloc_mutex_s;
 extern switch_mutex_t *gst_lock;
+extern switch_mutex_t *set_lock;
+extern switch_mutex_t *add_lock;
 
 // --- Macro for allocation wrappers ---
 #define G_ALLOC_WRAP_ALLOC(ret_type, func, counter, tp1, p1)                                                           \
@@ -118,7 +120,7 @@ extern switch_mutex_t *gst_lock;
 			switch_mutex_unlock(l);                                                                                    \
 		}                                                                                                              \
 	}
-
+/*
 // --special test case ----
 inline void DF_gst_object_unref(GstObject *p)
 {
@@ -138,8 +140,9 @@ inline GstElement *AF_gst_bin_get_by_name(GstBin *bin, gchar *name)
 	}
 	return _ret;
 }
+*/
 // -----
-
+/*
 #define G_ALLOC_WRAP_REF(func, counter, arg_type)                                                                      \
 	inline arg_type AL_##func(arg_type p)                                                                              \
 	{                                                                                                                  \
@@ -147,6 +150,7 @@ inline GstElement *AF_gst_bin_get_by_name(GstBin *bin, gchar *name)
 		if (_ret != NULL) g_alloc_counts.counter++;                                                                    \
 		return _ret;                                                                                                   \
 	}
+*/
 
 // the following are incrementers to use when wrapping of variadic functions is too hard
 // --- Macro for increment-only wrappers (for manual tracking) ---
@@ -178,6 +182,24 @@ inline GstElement *AF_gst_bin_get_by_name(GstBin *bin, gchar *name)
 MU_WRAP(GstStateChangeReturn, gst_element_set_state, GstElement*, e, GstState, s, gst_lock)
 //gboolean gst_pipeline_set_clock(GstPipeline *pipeline, GstClock *clock);
 MU_WRAP(gboolean, gst_pipeline_set_clock, GstPipeline *, p, GstClock *, c, gst_lock)
+//gboolean gst_bin_add (GstBin *bin, GstElement *element);
+MU_WRAP(gboolean, gst_bin_add, GstBin* ,bin, GstElement* ,element, add_lock)
+//void g_object_set (gpointer object, const gchar *first_property_name, ...);
+#define MU_g_object_set(p1,...)                                                                                     \
+	do {                                                                                                               \
+		switch_mutex_lock(set_lock);                                                                                      \
+		g_object_set(p1, __VA_ARGS__);                                                                                             \
+		switch_mutex_unlock(set_lock);                                                                                    \
+	} while (0)
+//void gst_bin_add_many (GstBin *bin, GstElement *element_1, ...);
+#define MU_gst_bin_add_many(p1, ...)                                                                                       \
+	do {                                                                                                               \
+		switch_mutex_lock(add_lock);                                                                                   \
+		gst_bin_add_many(p1, __VA_ARGS__);                                                                                 \
+		switch_mutex_unlock(add_lock);                                                                                 \
+	} while (0)
+
+
 // chars
 G_ALLOC_WRAP_INC(chars, cnt_chars, gchar *, p)
 G_ALLOC_WRAP_FREE(g_free, chars, gpointer)

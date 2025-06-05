@@ -34,7 +34,7 @@ G_alloc_counts g_alloc_counts; // counters for allocation
 #define MAKE_TS_ELEMENT(var, factory, name, context)                                                                   \
 	do {                                                                                                               \
 		var = AL_gst_element_factory_make(factory, name);                                                              \
-		g_object_set(var, "context-wait", DEFAULT_CONTEXT_WAIT, "context", context, NULL);                             \
+		MU_g_object_set(var, "context-wait", DEFAULT_CONTEXT_WAIT, "context", context, NULL);                             \
 	} while (0)
 
 typedef struct channel_remap channel_remap_t;
@@ -281,16 +281,16 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		goto error;
 	}
 
-	g_object_set(appsink, "emit-signals", FALSE, "sync", FALSE, "async", FALSE, "drop", TRUE, "max-buffers", 1,
+	MU_g_object_set(appsink, "emit-signals", FALSE, "sync", FALSE, "async", FALSE, "drop", TRUE, "max-buffers", 1,
 				 "enable-last-sample", FALSE, NULL);
 
-	if (!gst_bin_add(GST_BIN(stream->pipeline), appsink)) {
+	if (!MU_gst_bin_add(GST_BIN(stream->pipeline), appsink)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to add appsink to the pipeline ch: %d, session: %s", ch_idx, session);
 		goto error;
 	}
 
-	if (!gst_bin_add(GST_BIN(stream->pipeline), queue)) {
+	if (!MU_gst_bin_add(GST_BIN(stream->pipeline), queue)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to add queue to the pipeline ch: %d, session: %s", ch_idx, session);
 		goto error;
@@ -601,7 +601,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 #else
 		MAKE_TS_ELEMENT(udp_source, "ts-udpsrc", "rx-src", ts_ctx);
 #endif
-		g_object_set(udp_source, "buffer-size", 1048576, NULL);
+		MU_g_object_set(udp_source, "buffer-size", 1048576, NULL);
 
 		if (data->rx_codec == L16) {
 			rtpdepay = AL_gst_element_factory_make("rtpL16depay", RTP_DEPAY);
@@ -623,9 +623,9 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map), gst_caps_ref(udp_caps),
 							  destroy_caps, 0);
 
-		g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency, "mode", 0 /* none */, NULL);
+		MU_g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency, "mode", 0 /* none */, NULL);
 		rx_audioconv = AL_gst_element_factory_make("audioconvert", "rx-aconv");
-		g_object_set(rx_audioconv, "dithering", 0 /* none */, NULL);
+		MU_g_object_set(rx_audioconv, "dithering", 0 /* none */, NULL);
 
 		capsfilter = AL_gst_element_factory_make("capsfilter", "rx-caps");
 
@@ -633,12 +633,12 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		rx_caps = gst_caps_new_simple("audio/x-raw", "channels", G_TYPE_INT, data->channels, "format", G_TYPE_STRING,
 									  "S16LE", "layout", G_TYPE_STRING, "interleaved", NULL);
 		AL_cnt_caps(rx_caps);
-		g_object_set(capsfilter, "caps", rx_caps, NULL);
+		MU_g_object_set(capsfilter, "caps", rx_caps, NULL);
 		DA_gst_caps_unref(rx_caps);
 		rx_caps = NULL;
 
 		split = AL_gst_element_factory_make("audiobuffersplit", "rx-split");
-		g_object_set(split, "output-buffer-duration", data->codec_ms, 1000, NULL);
+		MU_g_object_set(split, "output-buffer-duration", data->codec_ms, 1000, NULL);
 
 		deinterleave = AL_gst_element_factory_make("deinterleave", "rx-deinterleave");
 
@@ -654,18 +654,18 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 				DA_dec_objs(tee);
 				continue;
 			}
-			g_object_set(tee, "allow-not-linked", TRUE, NULL);
+			MU_g_object_set(tee, "allow-not-linked", TRUE, NULL);
 
-			gst_bin_add(GST_BIN(pipeline), tee);
+			MU_gst_bin_add(GST_BIN(pipeline), tee);
 			DA_dec_objs(tee);						 // check - assume pipeline will de-alloc
 			// The deinterleave will be linked to the tee dynamically
 		}
 
 		g_signal_connect(deinterleave, "pad-added", G_CALLBACK(deinterleave_pad_added), NULL);
 
-		g_object_set(udp_source, "address", data->rx_ip_addr, "port", data->rx_port, "multicast-iface", data->rtp_iface,
+		MU_g_object_set(udp_source, "address", data->rx_ip_addr, "port", data->rx_port, "multicast-iface", data->rtp_iface,
 					 "retrieve-sender-address", FALSE, NULL);
-		g_object_set(udp_source, "caps", udp_caps, NULL);
+		MU_g_object_set(udp_source, "caps", udp_caps, NULL);
 		DA_gst_caps_unref(udp_caps);
 		udp_caps = NULL;
 
@@ -674,7 +674,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			goto ddirRX_error;
 		}
 
-		gst_bin_add_many(GST_BIN(pipeline), udp_source, rtpdepay, rtpjitbuf, rx_audioconv, capsfilter, split,
+		MU_gst_bin_add_many(GST_BIN(pipeline), udp_source, rtpdepay, rtpjitbuf, rx_audioconv, capsfilter, split,
 						 deinterleave, NULL);
 
 		if (!gst_element_link_many(udp_source, rtpjitbuf, rtpdepay, split, rx_audioconv, capsfilter, deinterleave,
@@ -725,9 +725,9 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		GstCaps	*caps = NULL;
 
 		audiointerleave = AL_gst_element_factory_make("audiointerleave", "audiointerleave"); // allocates memory!
-		gst_bin_add(GST_BIN(pipeline), audiointerleave);
-		g_object_set(audiointerleave, "start-time-selection", GST_AGGREGATOR_START_TIME_SELECTION_FIRST, NULL);
-		g_object_set(audiointerleave, "output-buffer-duration", data->codec_ms * GST_MSECOND, NULL);
+		MU_gst_bin_add(GST_BIN(pipeline), audiointerleave);
+		MU_g_object_set(audiointerleave, "start-time-selection", GST_AGGREGATOR_START_TIME_SELECTION_FIRST, NULL);
+		MU_g_object_set(audiointerleave, "output-buffer-duration", data->codec_ms * GST_MSECOND, NULL);
 
 		if (data->tx_codec == L16) {
 			rtp_pay = AL_gst_element_factory_make("rtpL16pay", "rtp-pay");
@@ -735,10 +735,10 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		} else {
 			rtp_pay = AL_gst_element_factory_make("rtpL24pay", "rtp-pay");
 		}
-		g_object_set(rtp_pay, "pt", data->rtp_payload_type, NULL);
+		MU_g_object_set(rtp_pay, "pt", data->rtp_payload_type, NULL);
 
 		if (data->ptime_ms != -1.0) {
-			g_object_set(rtp_pay, "max-ptime", (gint64)(data->ptime_ms * 1000000), "min-ptime",
+			MU_g_object_set(rtp_pay, "max-ptime", (gint64)(data->ptime_ms * 1000000), "min-ptime",
 						 (gint64)(data->ptime_ms * 1000000), NULL);
 		}
 
@@ -761,16 +761,16 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 									   "format", G_TYPE_STRING, "S16LE", "layout", G_TYPE_STRING, "interleaved",
 									   "channel-mask", GST_TYPE_BITMASK, (guint64)0, NULL);
 			AL_cnt_caps(caps);
-			g_object_set(appsrc, "format", GST_FORMAT_TIME, NULL);
-			g_object_set(appsrc, "do-timestamp", TRUE, NULL);
-			g_object_set(appsrc, "is-live", TRUE, NULL);
+			MU_g_object_set(appsrc, "format", GST_FORMAT_TIME, NULL);
+			MU_g_object_set(appsrc, "do-timestamp", TRUE, NULL);
+			MU_g_object_set(appsrc, "is-live", TRUE, NULL);
 			/* Second * 3 allows a little bit of headroom */
-			g_object_set(appsrc, "max-bytes", data->codec_ms * data->sample_rate * 2 * 3 / 1000, NULL);
+			MU_g_object_set(appsrc, "max-bytes", data->codec_ms * data->sample_rate * 2 * 3 / 1000, NULL);
 
-			g_object_set(appsrc, "caps", caps, NULL);
+			MU_g_object_set(appsrc, "caps", caps, NULL);
 			DA_gst_caps_unref(caps);
 			caps = NULL;
-			gst_bin_add(GST_BIN(pipeline), appsrc);
+			MU_gst_bin_add(GST_BIN(pipeline), appsrc);
 
 			if (!gst_element_link_pads(appsrc, "src", audiointerleave, pad_name)) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -780,12 +780,12 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		}
 
 		tx_valve = AL_gst_element_factory_make("valve", "tx-valve");
-		g_object_set(tx_valve, "drop", data->txdrop, NULL);
+		MU_g_object_set(tx_valve, "drop", data->txdrop, NULL);
 
 		capsfilter = AL_gst_element_factory_make("capsfilter", "tx-capsf");
 
 		tx_audioconv = AL_gst_element_factory_make("audioconvert", "tx-audioconv");
-		g_object_set(tx_audioconv, "dithering", 0 /* none */, NULL);
+		MU_g_object_set(tx_audioconv, "dithering", 0 /* none */, NULL);
 
 		udpsink = AL_gst_element_factory_make("udpsink", "tx-sink");
 
@@ -793,15 +793,15 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 								   data->channels, "format", G_TYPE_STRING, "S16LE", "layout", G_TYPE_STRING,
 								   "interleaved", "channel-mask", GST_TYPE_BITMASK, (guint64)0, NULL);
 		AL_cnt_caps(caps);
-		g_object_set(capsfilter, "caps", caps, NULL);
+		MU_g_object_set(capsfilter, "caps", caps, NULL);
 		DA_gst_caps_unref(caps);
 		caps = NULL;
 
-		g_object_set(udpsink, "host", data->tx_ip_addr, "port", data->tx_port, "multicast-iface", data->rtp_iface,
+		MU_g_object_set(udpsink, "host", data->tx_ip_addr, "port", data->tx_port, "multicast-iface", data->rtp_iface,
 					 NULL);
-		g_object_set(udpsink, "sync", TRUE, "async", FALSE, NULL);
-		g_object_set(udpsink, "qos", TRUE, "qos-dscp", 34, NULL);
-		g_object_set(udpsink, "processing-deadline", 0 * GST_MSECOND, NULL);
+		MU_g_object_set(udpsink, "sync", TRUE, "async", FALSE, NULL);
+		MU_g_object_set(udpsink, "qos", TRUE, "qos-dscp", 34, NULL);
+		MU_g_object_set(udpsink, "processing-deadline", 0 * GST_MSECOND, NULL);
 		if (data->is_backup_sender) {
 #ifndef _WIN32
 			// Disable IP_MULTICAST_LOOP to avoid listening packets from same host
@@ -815,7 +815,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			goto ddirTX_error;
 		}
 
-		gst_bin_add_many(GST_BIN(pipeline), tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL);
+		MU_gst_bin_add_many(GST_BIN(pipeline), tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL);
 
 		if (!gst_element_link_many(audiointerleave, tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements");
@@ -880,17 +880,17 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 							  "Failed to create tx-monitor elements, cannot listen for primary sender\n");
 			goto bksnd_error;
 		} else {
-			g_object_set(udpsrc, "address", data->tx_ip_addr, "port", data->tx_port,
-#ifdef _WIN32
+			MU_g_object_set(udpsrc, "address", data->tx_ip_addr, "port", data->tx_port,
+//#ifdef _WIN32
 						 // Disable IP_MULTICAST_LOOP to avoid listening packets from same host
 						 // For Windows this needs to be set on the receiver's side
 						 "loop", FALSE,
-#endif
+//#endif
 						 "multicast-iface", data->rtp_iface, "caps", caps, NULL);
 
-			g_object_set(fakesink, "async", FALSE, NULL);
+			MU_g_object_set(fakesink, "async", FALSE, NULL);
 
-			gst_bin_add_many(GST_BIN(pipeline), udpsrc, fakesink, NULL);
+			MU_gst_bin_add_many(GST_BIN(pipeline), udpsrc, fakesink, NULL);
 			if (!gst_element_link_many(udpsrc, fakesink, NULL)) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 								  "Failed to link tx-monitor elements, cannot listen for primary sender\n");
@@ -944,7 +944,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	if (rtp_pay) {
 		/* We have data->codec_ms of latency in the audiointerleave, so add that in */
 		/* FIXME: we should be cleverer and apply the pipeline latency as computed instead */
-		g_object_set(rtp_pay, "timestamp-offset",
+		MU_g_object_set(rtp_pay, "timestamp-offset",
 					 gst_util_uint64_scale_int((data->codec_ms + data->rtp_ts_offset) * GST_MSECOND, data->sample_rate,
 											   GST_SECOND) % G_MAXUINT32, NULL);
 	}
@@ -1262,7 +1262,7 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
 		goto error;
 	}
-	g_object_set(valve, "drop", drop, NULL);
+	MU_g_object_set(valve, "drop", drop, NULL);
 	g_snprintf(name, 2*STR_SIZE, "drop-ch%d-%d", ch_idx, drop);		//check increased string size
 	dump_pipeline(stream->pipeline, name);
 error: 
@@ -1306,7 +1306,7 @@ void drop_output_buffers(gboolean drop, g_stream_t *stream)
 		goto error;
 	}
 
-	g_object_set(tx_valve, "drop", drop, NULL);
+	MU_g_object_set(tx_valve, "drop", drop, NULL);
 
 	g_snprintf(name, ELEMENT_NAME_SIZE, "tx-drop-%d", drop);
 	dump_pipeline(stream->pipeline, name);

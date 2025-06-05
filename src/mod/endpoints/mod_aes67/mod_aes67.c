@@ -235,6 +235,8 @@ switch_mutex_t *alloc_mutex_p;
 switch_mutex_t *alloc_mutex_pl;
 switch_mutex_t *alloc_mutex_s;
 switch_mutex_t *gst_lock;
+switch_mutex_t *set_lock;
+switch_mutex_t *add_lock;
 
 
 static struct {
@@ -1675,6 +1677,8 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_mutex_init(&alloc_mutex_pl, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&alloc_mutex_s, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&gst_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&set_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&add_lock, SWITCH_MUTEX_NESTED, module_pool);
 
 	globals.codecs_inited = 0;
 	globals.read_frame.data = globals.databuf;
