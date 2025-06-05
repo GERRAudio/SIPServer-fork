@@ -170,7 +170,7 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 		goto error;
 	}
 	tee_sink_pad = AL_gst_element_get_static_pad(tee, "sink");
-	if (gst_pad_link(pad, tee_sink_pad) != GST_PAD_LINK_OK) {
+	if (MU_gst_pad_link(pad, tee_sink_pad) != GST_PAD_LINK_OK) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link deinterleave %s pad in the rx pipeline",
 						  pad_name);
 	}
@@ -414,7 +414,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		goto error;
 	}
 
-	if (!gst_pad_unlink(tee_src_pad, queue_sink_pad)) {
+	if (!MU_gst_pad_unlink(tee_src_pad, queue_sink_pad)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to unlink tee and queue ch: %d, session: %s",
 						  ch_idx, session);
 	}
