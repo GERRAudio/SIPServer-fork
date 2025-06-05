@@ -25,6 +25,7 @@ extern switch_mutex_t *alloc_mutex_o;
 extern switch_mutex_t *alloc_mutex_p;
 extern switch_mutex_t *alloc_mutex_pl;
 extern switch_mutex_t *alloc_mutex_s;
+extern switch_mutex_t *gst_lock;
 
 // --- Macro for allocation wrappers ---
 #define G_ALLOC_WRAP_ALLOC(ret_type, func, counter, tp1, p1)                                                           \
@@ -162,8 +163,21 @@ inline GstElement *AF_gst_bin_get_by_name(GstBin *bin, gchar *name)
 		if (p) g_alloc_counts.counter--;                                                                               \
 	}
 
+///
+#define MU_WRAP(ret_type, fname, tp1, p1, tp2, p2, l)                                                                   \
+	inline ret_type MU_##fname(tp1 p1, tp2 p2)                                                                         \
+	{                                                                                                                  \
+		switch_mutex_lock(l);                                                                                          \
+		ret_type retval = fname(p1, p2);                                                                               \
+		switch_mutex_unlock(l);                                                                                        \
+		return retval;                                                                                                 \
+	}
 // =================
-
+// gst functions that require mutexes- so wrap
+//GstStateChangeReturn    gst_element_set_state           (GstElement *element, GstState state);
+MU_WRAP(GstStateChangeReturn, gst_element_set_state, GstElement*, e, GstState, s, gst_lock)
+//gboolean gst_pipeline_set_clock(GstPipeline *pipeline, GstClock *clock);
+MU_WRAP(gboolean, gst_pipeline_set_clock, GstPipeline *, p, GstClock *, c, gst_lock)
 // chars
 G_ALLOC_WRAP_INC(chars, cnt_chars, gchar *, p)
 G_ALLOC_WRAP_FREE(g_free, chars, gpointer)
