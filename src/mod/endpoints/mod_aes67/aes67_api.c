@@ -213,11 +213,11 @@ gboolean update_clock(gpointer userdata)
 		internal = gst_clock_get_internal_time(stream->clock);
 		external = gst_util_uint64_scale(rtp_timestamp, GST_SECOND, stream->sample_rate);
 
-		if (gst_clock_add_observation(stream->clock, internal, external, &r_sq) &&
+		if (MU_gst_clock_add_observation(stream->clock, internal, external, &r_sq) &&
 			!g_atomic_int_get(&stream->clock_sync)) {
 			g_atomic_int_set(&stream->clock_sync, 1);
 
-			gst_pipeline_use_clock(GST_PIPELINE(pipeline), stream->clock);
+			MU_gst_pipeline_use_clock(GST_PIPELINE(pipeline), stream->clock);
 			MU_gst_pipeline_set_clock(GST_PIPELINE(pipeline), stream->clock);
 		}
 	}
@@ -1049,10 +1049,10 @@ void stop_pipeline(g_stream_t *stream)
 	DA_gst_object_unref(GST_OBJECT(bus));
 	bus = NULL;
 
-	gst_object_unref(GST_OBJECT(stream->pipeline)); // not allocated here, so no wrapper
+	MUp_gst_object_unref(GST_OBJECT(stream->pipeline)); // not allocated here, so no wrapper
 	stream->pipeline = NULL;
 	if (stream->clock) {
-		gst_object_unref(GST_OBJECT(stream->clock)); // not allocated here, so no wrapper
+		MUc_gst_object_unref(GST_OBJECT(stream->clock)); // not allocated here, so no wrapper
 		stream->clock = NULL;
 	}
 

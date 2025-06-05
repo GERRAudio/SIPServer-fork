@@ -1947,7 +1947,6 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void *data)
 	if (globals.clock != ptp_clock) {
 		if (globals.clock) {
 			DA_gst_object_unref(GST_OBJECT(globals.clock));
-
 			globals.clock = NULL;
 		}
 
