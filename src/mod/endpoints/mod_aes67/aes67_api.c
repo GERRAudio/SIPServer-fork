@@ -71,7 +71,7 @@ static gboolean bus_callback(GstBus *bus, GstMessage *msg, gpointer data)
 
 	case GST_MESSAGE_EOS:
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "End of stream\n");
-		gst_element_set_state(pipeline, GST_STATE_NULL);
+		MU_gst_element_set_state(pipeline, GST_STATE_NULL);
 		break;
 
 	case GST_MESSAGE_ERROR: {
@@ -89,7 +89,7 @@ static gboolean bus_callback(GstBus *bus, GstMessage *msg, gpointer data)
 			stream->error_cb(error->message, stream);
 		DA_g_error_free(error);
 
-		gst_element_set_state(pipeline, GST_STATE_NULL);
+		MU_gst_element_set_state(pipeline, GST_STATE_NULL);
 		break;
 	}
 	case GST_MESSAGE_STATE_CHANGED: {
@@ -218,7 +218,7 @@ gboolean update_clock(gpointer userdata)
 			g_atomic_int_set(&stream->clock_sync, 1);
 
 			gst_pipeline_use_clock(GST_PIPELINE(pipeline), stream->clock);
-			gst_pipeline_set_clock(GST_PIPELINE(pipeline), stream->clock);
+			MU_gst_pipeline_set_clock(GST_PIPELINE(pipeline), stream->clock);
 		}
 	}
 
@@ -435,8 +435,8 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	gst_element_unlink(queue, appsink);
 
 
-	gst_element_set_state(queue, GST_STATE_NULL);
-	gst_element_set_state(appsink, GST_STATE_NULL);
+	MU_gst_element_set_state(queue, GST_STATE_NULL);
+	MU_gst_element_set_state(appsink, GST_STATE_NULL);
 
 	if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -997,7 +997,7 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 {
 	if (!stream) goto error; //added check
 	g_atomic_int_set(&stream->clock_sync, 0);
-	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_READY);
+	MU_gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_READY);
 
 	/* cb_rx_stats_id will be non zero only when
 	Rx is operational and pipeline clock is not ptp*/
@@ -1012,8 +1012,8 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 	}
 
 	gst_pipeline_use_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
-	gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
-	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);
+	MU_gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
+	MU_gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);
 	dump_pipeline(stream->pipeline, "ptp-clock-switch");
 
 	g_atomic_int_set(&stream->clock_sync, 1);
@@ -1023,7 +1023,7 @@ error:;
 void *start_pipeline(void *data)
 {
 	g_stream_t *stream = (g_stream_t *)data;
-	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);
+	MU_gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);
 
 	dump_pipeline(stream->pipeline, "start-pipeline");
 	start_mainloop(stream->mainloop);
@@ -1036,7 +1036,7 @@ void stop_pipeline(g_stream_t *stream)
 
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 	if (!stream) goto error;//added check
-	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
+	MU_gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 
 	/* cb_rx_stats_id will be non zero only when
 	Rx is operational and pipeline clock is not ptp*/

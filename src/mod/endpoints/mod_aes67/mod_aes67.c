@@ -234,6 +234,7 @@ switch_mutex_t *alloc_mutex_o;
 switch_mutex_t *alloc_mutex_p;
 switch_mutex_t *alloc_mutex_pl;
 switch_mutex_t *alloc_mutex_s;
+switch_mutex_t *gst_lock;
 
 
 static struct {
@@ -421,6 +422,7 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 
 				
 				switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
+				switch_mutex_lock(globals.gst_mutex); // around appsinks check added
 				STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
 
 
@@ -430,6 +432,7 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				}
 
 				STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
+				switch_mutex_unlock(globals.gst_mutex); // around appsinks check added
 				switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 			
 			}
@@ -813,11 +816,11 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 		if (endpoint->in_stream) {
 			STREAM_READER_LOCK(endpoint->in_stream);	
 			//gst lock check?
-			//switch_mutex_lock(globals.gst_mutex); // added - check - test
+			switch_mutex_lock(globals.gst_mutex); // added - check - test
 			if (remove_appsink(endpoint->in_stream->stream, endpoint->inchan, session_id)) {
 				endpoint->active_listen_sessions--;
 			}
-			//switch_mutex_unlock(globals.gst_mutex); // added - check - test
+			switch_mutex_unlock(globals.gst_mutex); // added - check - test
 			STREAM_READER_UNLOCK(endpoint->in_stream);	
 		}
 
@@ -899,6 +902,7 @@ static switch_status_t channel_on_exchange_media(switch_core_session_t *session)
 
 	
 		switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
+		switch_mutex_lock(globals.gst_mutex);							//around appsinks check added
 		STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
 
 		if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan, session_id)) {
@@ -906,6 +910,7 @@ static switch_status_t channel_on_exchange_media(switch_core_session_t *session)
 		}
 
 		STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
+		switch_mutex_unlock(globals.gst_mutex); // around appsinks check added
 		switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 		
 	}
@@ -1669,7 +1674,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_mutex_init(&alloc_mutex_p, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&alloc_mutex_pl, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&alloc_mutex_s, SWITCH_MUTEX_NESTED, module_pool);
-
+	switch_mutex_init(&gst_lock, SWITCH_MUTEX_NESTED, module_pool);
 
 	globals.codecs_inited = 0;
 	globals.read_frame.data = globals.databuf;
@@ -1822,7 +1827,8 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 			
 			switch_mutex_lock(tech_pvt->audio_endpoint->mutex);			
 			// stream lock aleady done before calling link_rx_stream
-			STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);		//added check 4
+			switch_mutex_lock(globals.gst_mutex);					 // around appsinks check added
+			STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);		//added check 
 			if (state == CCS_ACTIVE) {
 				if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan,
 								session_id)) {
@@ -1830,7 +1836,8 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 				}
 			}
 
-			STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check 4
+			STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check 
+			switch_mutex_unlock(globals.gst_mutex);					   // around appsinks check added
 			switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 			
 		}
