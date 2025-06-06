@@ -1113,8 +1113,8 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		retval = TRUE;
 		goto done;
 	}
-	buf = gst_buffer_new_allocate(NULL, len, NULL);		//removed mutex for speed - check
-	AL_cnt_bufs(buf);
+	buf = gst_buffer_new_allocate(NULL, len, NULL);		//maybe remove mutex for speed - check
+	//AL_cnt_bufs(buf);
 	if (buf == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
 		goto error;
@@ -1129,7 +1129,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	g_signal_emit_by_name(appsrc, "push-buffer", buf, &result);
 	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pushed buffer\n");
-	DA_gst_buffer_unref(buf);//  check 
+	if (buf) gst_buffer_unref(buf);//  check 
 	buf = NULL;
 
 	if (result == GST_FLOW_ERROR) {
@@ -1142,7 +1142,7 @@ done:
 
 error:
 	DA_gst_object_unref(GST_OBJECT(appsrc));
-	DA_gst_buffer_unref(buf);						// check 
+	if (buf) gst_buffer_unref(buf);						// check 
 	return retval;
 }
 
@@ -1215,7 +1215,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			MU_memcpy(payload + total_bytes, info.data, info.size);
 			total_bytes += info.size;
 		}
-		gst_buffer_unmap(buf, &info);		//revisit the MU if audio suffers
+		gst_buffer_unmap(buf, &info);		//did not bother with MU
 		if (sample != NULL) {
 			DA_gst_sample_unref(sample);
 			sample = NULL;
