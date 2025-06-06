@@ -1124,7 +1124,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get buffer map\n");
 		goto error;
 	}
-	memcpy(info.data, payload, len);
+	MU_memcpy(info.data, payload, len);
 	MU_gst_buffer_unmap(buf, &info);
 
 	g_signal_emit_by_name(appsrc, "push-buffer", buf, &result);
@@ -1181,7 +1181,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// FIXME: revisit this to check whether we need this anymore
 	if (stream->leftover_bytes[ch_idx]) {
 		int copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
-		memcpy(payload, stream->leftover[ch_idx], copy);
+		MU_memcpy(payload, stream->leftover[ch_idx], copy);
 		total_bytes += copy;
 		stream->leftover_bytes[ch_idx] -= copy;
 	}
@@ -1194,7 +1194,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			switch_cond_next();
 			break;
 		}
-		buf = MU_gst_sample_get_buffer(sample); // no alloc
+		buf = gst_sample_get_buffer(sample); // no alloc
 
 		if (!buf) {
 			if (sample != NULL) { // added in case
@@ -1209,15 +1209,13 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 				int want = needed_bytes - total_bytes;
 
 				stream->leftover_bytes[ch_idx] = info.size - want;
-				memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
-
+				MU_memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
 				info.size = want;
 			}
-
-			memcpy(payload + total_bytes, info.data, info.size);
+			MU_memcpy(payload + total_bytes, info.data, info.size);
 			total_bytes += info.size;
 		}
-		MU_gst_buffer_unmap(buf, &info);		//revisit the MU if audio suffers
+		gst_buffer_unmap(buf, &info);		//revisit the MU if audio suffers
 		if (sample != NULL) {
 			DA_gst_sample_unref(sample);
 			sample = NULL;

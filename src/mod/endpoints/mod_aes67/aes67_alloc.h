@@ -29,6 +29,7 @@ extern switch_mutex_t *alloc_pad_lock;
 extern switch_mutex_t *alloc_pipl_lock;
 extern switch_mutex_t *alloc_samp_lock;
 extern switch_mutex_t *alloc_cap_lock;
+extern switch_mutex_t *alloc_mcp_lock;
 // extern switch_mutex_t *alloc_bus_lock;
 // extern switch_mutex_t *alloc_gst_lock;
 // extern switch_mutex_t *alloc_set_lock;
@@ -209,11 +210,19 @@ inline GstElement *AF_gst_bin_get_by_name(GstBin *bin, gchar *name)
 		switch_mutex_unlock(l);                                                                                        \
 	}
 
+#define MU_WRAPV3(fname, tp1, p1, tp2, p2, tp3, p3,l)                                                                          \
+	inline void MU_##fname(tp1 p1, tp2 p2, tp3 p3)                                                                             \
+	{                                                                                                                  \
+		switch_mutex_lock(l);                                                                                          \
+		fname(p1, p2, p3);                                                                                                     \
+		switch_mutex_unlock(l);                                                                                        \
+	}
+
 #define MU_WRAPV2(fname, tp1, p1, tp2, p2, l)                                                                          \
 	inline void MU_##fname(tp1 p1, tp2 p2)                                                                             \
 	{                                                                                                                  \
 		switch_mutex_lock(l);                                                                                          \
-		fname(p1);                                                                                                     \
+		fname(p1, p2);                                                                                                     \
 		switch_mutex_unlock(l);                                                                                        \
 	}
 
@@ -222,6 +231,15 @@ inline GstElement *AF_gst_bin_get_by_name(GstBin *bin, gchar *name)
 	{                                                                                                                  \
 		switch_mutex_lock(l);                                                                                          \
 		fname(p1);                                                                                                     \
+		switch_mutex_unlock(l);                                                                                        \
+	}
+
+
+#define MU_WRAPV2p(fname, tp1, p1, tp2,p2, l)                                                                                  \
+	inline void MUp_##fname(tp1 p1, tp2, p2)                                                                                    \
+	{                                                                                                                  \
+		switch_mutex_lock(l);                                                                                          \
+		fname(p1, p2);                                                                                                     \
 		switch_mutex_unlock(l);                                                                                        \
 	}
 
@@ -243,7 +261,9 @@ inline GstElement *AF_gst_bin_get_by_name(GstBin *bin, gchar *name)
 
 // ===
 // gst functions that require mutexes- so wrap
-// 
+//
+//void *memcpy(void *dest, const void *src, size_t n);
+MU_WRAPV3(memcpy, void *,dest, const void *,src, size_t, n, alloc_mcp_lock)
 // MUp_gst_object_unref(GST_OBJECT(stream->pipeline));
 MU_WRAPV1p(gst_object_unref, gpointer, pipeline, alloc_pipl_lock)
 	// MUc_gst_object_unref(GST_OBJECT(stream->clock));
@@ -397,9 +417,10 @@ inline GstStructure *AL_gst_structure_new(const gchar *name, const gchar *first,
 // --- Error wrappers ---
 G_ALLOC_WRAP_INC(errs, cnt_errs, GError *, p)
 G_ALLOC_WRAP_FREE(g_error_free, errs, GError *)
-
+////////
 // --- Object wrappers ---
 G_ALLOC_WRAP_FREE_L(gst_object_unref, objs, GstObject *, alloc_obj_lock)
+// special for clock objects
 #define DC_gst_object_unref(p1)                                                                                        \
 	do {                                                                                                               \
 		switch_mutex_lock(alloc_clk_lock);                                                                             \
@@ -414,7 +435,7 @@ G_ALLOC_WRAP_ALLOC_L(GstPad *, gst_pad_get_peer, objs, GstPad *, pad, alloc_pad_
 G_ALLOC_WRAP_ALLOC2_L(GstElement *, gst_bin_get_by_name, objs, GstBin *, bin, const gchar *, n, alloc_pipl_lock) 
 G_ALLOC_WRAP_ALLOC2_L(GstElement *, gst_element_request_pad_simple, objs, GstBin *,bin, const gchar *, n, alloc_pad_lock)
 G_ALLOC_WRAP_ALLOC2_L(GstElement *, gst_element_factory_make, objs, const gchar *, factoryname, const gchar *, n, alloc_elem_lock)
-G_ALLOC_WRAP_ALLOC_L(GstClock *, gst_element_get_clock, objs, GstElement *, element, alloc_elem_lock)
+G_ALLOC_WRAP_ALLOC_L(GstClock *, gst_element_get_clock, objs, GstElement *, element, alloc_clk_lock)
 G_ALLOC_WRAP_ALLOC_L(GstElement *, gst_pipeline_new, objs, const gchar *, n, alloc_pipl_lock)
 G_ALLOC_WRAP_ALLOC2_L(GstPad *, gst_element_get_static_pad, objs, GstElement *, e, const gchar *, n, alloc_pad_lock)
 G_ALLOC_WRAP_ALLOC_L(GstObject *, gst_element_get_parent, objs, GstElement *, e, alloc_obj_lock)
