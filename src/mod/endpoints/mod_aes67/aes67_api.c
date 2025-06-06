@@ -1113,18 +1113,19 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		retval = TRUE;
 		goto done;
 	}
-	buf = AL_gst_buffer_new_allocate(NULL, len, NULL);
+	buf = gst_buffer_new_allocate(NULL, len, NULL);		//removed mutex for speed - check
+	AL_cnt_bufs(buf);
 	if (buf == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
 		goto error;
 	}
 
-	if (!gst_buffer_map(buf, &info, GST_MAP_WRITE)) {
+	if (!gst_buffer_map(buf, &info, GST_MAP_WRITE)) {		//MU kills audio from phone to BP
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get buffer map\n");
 		goto error;
 	}
 	memcpy(info.data, payload, len);
-	gst_buffer_unmap(buf, &info);
+	MU_gst_buffer_unmap(buf, &info);
 
 	g_signal_emit_by_name(appsrc, "push-buffer", buf, &result);
 	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pushed buffer\n");
@@ -1193,7 +1194,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			switch_cond_next();
 			break;
 		}
-		buf = gst_sample_get_buffer(sample); // no alloc
+		buf = MU_gst_sample_get_buffer(sample); // no alloc
 
 		if (!buf) {
 			if (sample != NULL) { // added in case
@@ -1203,7 +1204,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			continue;
 		}
 
-		if (gst_buffer_map(buf, &info, GST_MAP_READ)) {
+		if (gst_buffer_map(buf, &info, GST_MAP_READ)) {			//mutex here kills audio
 			if (total_bytes + info.size > needed_bytes) {
 				int want = needed_bytes - total_bytes;
 
@@ -1216,7 +1217,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			memcpy(payload + total_bytes, info.data, info.size);
 			total_bytes += info.size;
 		}
-		gst_buffer_unmap(buf, &info);
+		MU_gst_buffer_unmap(buf, &info);		//revisit the MU if audio suffers
 		if (sample != NULL) {
 			DA_gst_sample_unref(sample);
 			sample = NULL;

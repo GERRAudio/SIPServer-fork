@@ -243,7 +243,7 @@ inline GstElement *AF_gst_bin_get_by_name(GstBin *bin, gchar *name)
 
 // ===
 // gst functions that require mutexes- so wrap
-//
+// 
 // MUp_gst_object_unref(GST_OBJECT(stream->pipeline));
 MU_WRAPV1p(gst_object_unref, gpointer, pipeline, alloc_pipl_lock)
 	// MUc_gst_object_unref(GST_OBJECT(stream->clock));
@@ -274,7 +274,7 @@ MU_WRAP2(gboolean, gst_pad_unlink, GstPad *, srcpad, GstPad *, sinkpad, alloc_pa
 	// *destpadname);
 MU_WRAP4(gboolean, gst_element_link_pads, GstElement *, src, const gchar *, srcpadname, GstElement *, dest, const gchar *, destpadname, alloc_pad_lock)
 // GstBuffer * gst_sample_get_buffer(GstSample *sample);
-MU_WRAP1(GstBuffer *, gst_sample_get_buffer, GstSample *, sample, alloc_buf_lock)
+MU_WRAP1(GstBuffer *, gst_sample_get_buffer, GstSample *, sample, alloc_samp_lock)
 //GstStateChangeReturn gst_element_get_state( GstElement*element, GstState *state,GstState *pending, GstClockTime timeout);
 MU_WRAP4(GstStateChangeReturn, gst_element_get_state,GstElement*, e, GstState *,s,GstState*,p, GstClockTime,t, alloc_pipl_lock)
 //gboolean gst_bin_remove(GstBin *bin, GstElement *element);
@@ -369,6 +369,7 @@ G_ALLOC_WRAP_ALLOC(gchar *, g_strdup, chars, gchar *, str)
 G_ALLOC_WRAP_ALLOC(gchar *, gst_structure_to_string, chars, const GstStructure *, s)
 
 // --- Buffer wrappers ---
+G_ALLOC_WRAP_INC(bufs, cnt_bufs, GstStructure *, p)
 G_ALLOC_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p)
 G_ALLOC_WRAP_FREE_L(gst_buffer_unref, bufs, GstBuffer *, alloc_buf_lock)
 // G_ALLOC_WRAP_REF(gst_buffer_ref, bufs, GstBuffer *)
