@@ -71,7 +71,7 @@ static gboolean bus_callback(GstBus *bus, GstMessage *msg, gpointer data)
 
 	case GST_MESSAGE_EOS:
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "End of stream\n");
-		MU_gst_element_set_state(pipeline, GST_STATE_NULL);
+		gst_element_set_state(pipeline, GST_STATE_NULL);
 		break;
 
 	case GST_MESSAGE_ERROR: {
@@ -89,7 +89,7 @@ static gboolean bus_callback(GstBus *bus, GstMessage *msg, gpointer data)
 			stream->error_cb(error->message, stream);
 		DA_g_error_free(error);
 
-		MU_gst_element_set_state(pipeline, GST_STATE_NULL);
+		gst_element_set_state(pipeline, GST_STATE_NULL);
 		break;
 	}
 	case GST_MESSAGE_STATE_CHANGED: {
@@ -213,12 +213,12 @@ gboolean update_clock(gpointer userdata)
 		internal = gst_clock_get_internal_time(stream->clock);
 		external = gst_util_uint64_scale(rtp_timestamp, GST_SECOND, stream->sample_rate);
 
-		if (MU_gst_clock_add_observation(stream->clock, internal, external, &r_sq) &&
+		if (gst_clock_add_observation(stream->clock, internal, external, &r_sq) &&
 			!g_atomic_int_get(&stream->clock_sync)) {
 			g_atomic_int_set(&stream->clock_sync, 1);
 
-			MU_gst_pipeline_use_clock(GST_PIPELINE(pipeline), stream->clock);
-			MU_gst_pipeline_set_clock(GST_PIPELINE(pipeline), stream->clock);
+			gst_pipeline_use_clock(GST_PIPELINE(pipeline), stream->clock);
+			gst_pipeline_set_clock(GST_PIPELINE(pipeline), stream->clock);
 		}
 	}
 
@@ -435,8 +435,8 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	MU_gst_element_unlink(queue, appsink);
 
 
-	MU_gst_element_set_state(queue, GST_STATE_NULL);
-	MU_gst_element_set_state(appsink, GST_STATE_NULL);
+	gst_element_set_state(queue, GST_STATE_NULL);
+	gst_element_set_state(appsink, GST_STATE_NULL);
 
 	if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -674,7 +674,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			goto ddirRX_error;
 		}
 
-		MU_gst_bin_add_many(GST_BIN(pipeline), udp_source, rtpdepay, rtpjitbuf, rx_audioconv, capsfilter, split,
+		gst_bin_add_many(GST_BIN(pipeline), udp_source, rtpdepay, rtpjitbuf, rx_audioconv, capsfilter, split,
 						 deinterleave, NULL);
 
 		if (!gst_element_link_many(udp_source, rtpjitbuf, rtpdepay, split, rx_audioconv, capsfilter, deinterleave,
@@ -815,7 +815,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			goto ddirTX_error;
 		}
 
-		MU_gst_bin_add_many(GST_BIN(pipeline), tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL);
+		gst_bin_add_many(GST_BIN(pipeline), tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL);
 
 		if (!gst_element_link_many(audiointerleave, tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements");
@@ -890,7 +890,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 			MU_g_object_set(fakesink, "async", FALSE, NULL);
 
-			MU_gst_bin_add_many(GST_BIN(pipeline), udpsrc, fakesink, NULL);
+			gst_bin_add_many(GST_BIN(pipeline), udpsrc, fakesink, NULL);
 			if (!gst_element_link_many(udpsrc, fakesink, NULL)) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 								  "Failed to link tx-monitor elements, cannot listen for primary sender\n");
@@ -997,7 +997,7 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 {
 	if (!stream) goto error; //added check
 	g_atomic_int_set(&stream->clock_sync, 0);
-	MU_gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_READY);
+	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_READY);
 
 	/* cb_rx_stats_id will be non zero only when
 	Rx is operational and pipeline clock is not ptp*/
@@ -1012,8 +1012,8 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 	}
 
 	gst_pipeline_use_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
-	MU_gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
-	MU_gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);
+	gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
+	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);
 	dump_pipeline(stream->pipeline, "ptp-clock-switch");
 
 	g_atomic_int_set(&stream->clock_sync, 1);
@@ -1023,7 +1023,7 @@ error:;
 void *start_pipeline(void *data)
 {
 	g_stream_t *stream = (g_stream_t *)data;
-	MU_gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);
+	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);
 
 	dump_pipeline(stream->pipeline, "start-pipeline");
 	start_mainloop(stream->mainloop);
@@ -1036,7 +1036,7 @@ void stop_pipeline(g_stream_t *stream)
 
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 	if (!stream) goto error;//added check
-	MU_gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
+	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 
 	/* cb_rx_stats_id will be non zero only when
 	Rx is operational and pipeline clock is not ptp*/
@@ -1262,7 +1262,7 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
 		goto error;
 	}
-	MU_g_object_set(valve, "drop", drop, NULL);
+	g_object_set(valve, "drop", drop, NULL);
 	g_snprintf(name, 2*STR_SIZE, "drop-ch%d-%d", ch_idx, drop);		//check increased string size
 	dump_pipeline(stream->pipeline, name);
 error: 
@@ -1306,7 +1306,7 @@ void drop_output_buffers(gboolean drop, g_stream_t *stream)
 		goto error;
 	}
 
-	MU_g_object_set(tx_valve, "drop", drop, NULL);
+	g_object_set(tx_valve, "drop", drop, NULL);
 
 	g_snprintf(name, ELEMENT_NAME_SIZE, "tx-drop-%d", drop);
 	dump_pipeline(stream->pipeline, name);
