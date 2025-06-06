@@ -1198,7 +1198,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 		if (!buf) {
 			if (sample != NULL) { // added in case
-				DA_gst_sample_unref(sample);
+				gst_sample_unref(sample);
 				sample = NULL;
 			}
 			continue;
