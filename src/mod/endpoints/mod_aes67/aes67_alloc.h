@@ -411,29 +411,28 @@ G_ALLOC_WRAP_INC(objs, cnt_objs, GstObject *, p) G_ALLOC_WRAP_ALLOC_M(GstBus *, 
 																	  GstPipeline *, b, alloc_pipl_lock)
 G_ALLOC_WRAP_ALLOC2_M(GstElement *, gst_bin_get_by_name, objs, GstBin *, bin, const gchar *, n, alloc_pipl_lock)
 G_ALLOC_WRAP_ALLOC_M(GstElement *, gst_pipeline_new, objs, const gchar *, n, alloc_pipl_lock)
-	// ===pipeline locks
-	// gboolean gst_pipeline_set_clock(GstPipeline *pipeline, GstClock *clock);
-	MU_WRAP2(gboolean, gst_pipeline_set_clock, GstPipeline *, p, GstClock *, c, alloc_pipl_lock)
-	// void gst_pipeline_use_clock(GstPipeline *pipeline, GstClock *clock);
-	MU_WRAPV2(gst_pipeline_use_clock, GstPipeline *, pipeline, GstClock *, clock, alloc_pipl_lock)
-	// MUp_gst_object_unref(GST_OBJECT(stream->pipeline));
-	MU_WRAPV1p(gst_object_unref, gpointer, pipeline, alloc_pipl_lock)
-	// gboolean gst_bin_remove(GstBin *bin, GstElement *element);
-	MU_WRAP2(gboolean, gst_bin_remove, GstBin *, bin, GstElement *, element, alloc_pipl_lock)
-	// GstStateChangeReturn gst_element_get_state(GstElement *e, GstState *s,GstState *pending, GstClockTime timeout);
-	MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime,
-			 t, alloc_pipl_lock)
-	// gboolean gst_bus_remove_watch(GstBus *bus);
-	MU_WRAP1(gboolean, gst_bus_remove_watch, GstBus *, bus, alloc_pipl_lock)
-	// void gst_element_set_base_time(GstElement *element, GstClockTime time);
-	// MU_WRAPV2( gst_element_set_base_time,GstElement *,element, GstClockTime, time, alloc_pipl_lock)
-	// void gst_element_set_start_time(GstElement *element, GstClockTime time);
-	// MU_WRAPV2(gst_element_set_start_time, GstElement *, element, GstClockTime, time,alloc_pipl_lock)
-	// MU_WRAP8S(gboolean, gst_element_link_many, GstElement *, e1, GstElement *, e2, GstElement *, e3, GstElement *,
-	// e4,
-	//		  GstElement *, e5, GstElement *, e6, GstElement *, e7, GstElement *, e8, alloc_pipl_lock)
-	// gboolean gst_element_link_many(GstElement *element_1, GstElement *element_2, ..., NULL);
-	// MU_WRAP3S(gboolean,gst_element_link_many,GstElement*,e1,GstElement*,e2,GstElement*,e3,alloc_pipl_lock)
+// ===pipeline locks
+// gboolean gst_pipeline_set_clock(GstPipeline *pipeline, GstClock *clock);
+MU_WRAP2(gboolean, gst_pipeline_set_clock, GstPipeline *, p, GstClock *, c, alloc_pipl_lock)
+// void gst_pipeline_use_clock(GstPipeline *pipeline, GstClock *clock);
+MU_WRAPV2(gst_pipeline_use_clock, GstPipeline *, pipeline, GstClock *, clock, alloc_pipl_lock)
+// MUp_gst_object_unref(GST_OBJECT(stream->pipeline));
+MU_WRAPV1p(gst_object_unref, gpointer, pipeline, alloc_pipl_lock)
+// gboolean gst_bin_remove(GstBin *bin, GstElement *element);
+MU_WRAP2(gboolean, gst_bin_remove, GstBin *, bin, GstElement *, element, alloc_pipl_lock)
+// GstStateChangeReturn gst_element_get_state(GstElement *e, GstState *s,GstState *pending, GstClockTime timeout);
+MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime, t, alloc_pipl_lock)
+// gboolean gst_bus_remove_watch(GstBus *bus);
+MU_WRAP1(gboolean, gst_bus_remove_watch, GstBus *, bus, alloc_pipl_lock)
+// void gst_element_set_base_time(GstElement *element, GstClockTime time);
+// MU_WRAPV2( gst_element_set_base_time,GstElement *,element, GstClockTime, time, alloc_pipl_lock)
+// void gst_element_set_start_time(GstElement *element, GstClockTime time);
+// MU_WRAPV2(gst_element_set_start_time, GstElement *, element, GstClockTime, time,alloc_pipl_lock)
+// MU_WRAP8S(gboolean, gst_element_link_many, GstElement *, e1, GstElement *, e2, GstElement *, e3, GstElement *,
+// e4,
+//		  GstElement *, e5, GstElement *, e6, GstElement *, e7, GstElement *, e8, alloc_pipl_lock)
+// gboolean gst_element_link_many(GstElement *element_1, GstElement *element_2, ..., NULL);
+// MU_WRAP3S(gboolean,gst_element_link_many,GstElement*,e1,GstElement*,e2,GstElement*,e3,alloc_pipl_lock)
 
 
 
