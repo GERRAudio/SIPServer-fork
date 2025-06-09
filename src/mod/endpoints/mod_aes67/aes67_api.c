@@ -1164,14 +1164,14 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		NAME_ELEMENT(name, "appsink", ch_idx);
 	else
 		NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
-	appsink = gst_bin_get_by_name(GST_BIN(stream->pipeline), name);		//check removed for speed
+	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);		//check removed for speed
 	if (appsink == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
 		goto error;
 		
 	}
 
-	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0);
+	MU_gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0);
 	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) goto out;
 
 	if (gst_app_sink_is_eos(GST_APP_SINK(appsink))) goto out;
@@ -1243,10 +1243,10 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// stream->leftover_bytes[ch_idx]);
 
 out:
-	gst_object_unref(GST_OBJECT(appsink));		//check removed for speed
+	DA_gst_object_unref(GST_OBJECT(appsink));		//check removed for speed
 	return total_bytes;
 error:
-	gst_object_unref(GST_OBJECT(appsink));		//check removed for speed
+	DA_gst_object_unref(GST_OBJECT(appsink));		//check removed for speed
 	return 0;
 }
 
