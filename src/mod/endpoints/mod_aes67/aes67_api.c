@@ -1256,7 +1256,7 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	GstElement *valve = NULL;
 	if (!stream) goto error;			//added check
 	NAME_ELEMENT(name, "valve", ch_idx);
-	valve = gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count check - removed
+	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count check - removed
 	if (valve == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
 		goto error;
@@ -1265,7 +1265,7 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	g_snprintf(name, 2*STR_SIZE, "drop-ch%d-%d", ch_idx, drop);		//check increased string size
 	dump_pipeline(stream->pipeline, name);
 error: 
-	gst_object_unref(GST_OBJECT(valve));		//check removed
+	DA_gst_object_unref(GST_OBJECT(valve));		//check removed
 	return;
 }
 
