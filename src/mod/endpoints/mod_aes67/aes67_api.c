@@ -1090,7 +1090,9 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *appsrc = NULL;
 	if (!stream) goto error;		//added check
+	switch_mutex_lock(alloc_pipl_lock);				//added check
 	GstPipeline *pipeline = stream->pipeline;
+	switch_mutex_unlock(alloc_pipl_lock);		//added check
 
 	if (!pipeline) goto error;		//added check
 
@@ -1179,13 +1181,14 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// Note: assumes leftover_bytes will never be more than buflen, which is
 	// likely true (packet is limited to MTU, while buflen is 8192)
 	// FIXME: revisit this to check whether we need this anymore
+	switch_mutex_lock(alloc_pipl_lock); // added check
 	if (stream->leftover_bytes[ch_idx]) {
 		int copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
 		MU_memcpy(payload, stream->leftover[ch_idx], copy);
 		total_bytes += copy;
 		stream->leftover_bytes[ch_idx] -= copy;
 	}
-
+	switch_mutex_unlock(alloc_pipl_lock); // added check
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
 		sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 10 * GST_MSECOND);		//check
@@ -1207,10 +1210,11 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		if (gst_buffer_map(buf, &info, GST_MAP_READ)) {			//mutex here kills audio
 			if (total_bytes + info.size > needed_bytes) {
 				int want = needed_bytes - total_bytes;
-
+				switch_mutex_lock(alloc_pipl_lock); // added check
 				stream->leftover_bytes[ch_idx] = info.size - want;
-				MU_memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
+				memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
 				info.size = want;
+				switch_mutex_unlock(alloc_pipl_lock); // added check
 			}
 			MU_memcpy(payload + total_bytes, info.data, info.size);
 			total_bytes += info.size;
