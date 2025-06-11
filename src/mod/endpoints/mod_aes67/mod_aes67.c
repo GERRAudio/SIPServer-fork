@@ -947,13 +947,13 @@ static switch_status_t channel_endpoint_read(private_t *tech_pvt, switch_frame_t
 			STREAM_READER_UNLOCK(endpoint->in_stream); // added
 			return SWITCH_STATUS_FALSE;
 		}
-		switch_mutex_lock(globals.device_lock);  //added check to match the other pull buffer
+		//switch_mutex_lock(globals.device_lock);  //added check to match the other pull buffer
 		// switch_mutex_lock(globals.gst_mutex);	 // added check
 		bytes = pull_buffers(endpoint->in_stream->stream, (unsigned char *)tech_pvt->read_frame.data,
 							 STREAM_SAMPLES_PER_PACKET(endpoint->in_stream) * 2 /* FIXME: non-S16LE */,
 							 endpoint->inchan, &tech_pvt->read_timer, session_id);
 		// switch_mutex_unlock(globals.gst_mutex);	  // added check
-		switch_mutex_unlock(globals.device_lock); // added check to match
+		//switch_mutex_unlock(globals.device_lock); // added check to match
 		STREAM_READER_UNLOCK(endpoint->in_stream);
 	} else {
 		// Pipeline is being reset, feed some silence
