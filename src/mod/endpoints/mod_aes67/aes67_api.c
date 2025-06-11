@@ -1095,7 +1095,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	if (!pipeline) goto error;		//added check
 
 	NAME_ELEMENT(name, "appsrc", ch_idx);
-	appsrc = gst_bin_get_by_name(GST_BIN(pipeline), name);	//check removed for speed
+	appsrc = gst_bin_get_by_name(GST_BIN(pipeline), name);	//check 
 	switch_core_timer_next(timer);	//wait a bit
 
 	if (appsrc == NULL) {
@@ -1113,7 +1113,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		retval = TRUE;
 		goto done;
 	}
-	buf = gst_buffer_new_allocate(NULL, len, NULL);		//maybe remove mutex for speed - check
+	buf = gst_buffer_new_allocate(NULL, len, NULL);		// check
 	//AL_cnt_bufs(buf);
 	if (buf == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
@@ -1141,7 +1141,7 @@ done:
 	retval = TRUE;
 
 error:
-	gst_object_unref(GST_OBJECT(appsrc));				//check removed for speed
+	gst_object_unref(GST_OBJECT(appsrc));				//check 
 	if (buf) gst_buffer_unref(buf);						// check 
 	return retval;
 }
@@ -1164,7 +1164,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		NAME_ELEMENT(name, "appsink", ch_idx);
 	else
 		NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
-	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);		//check removed for speed
+	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);		//check 
 	if (appsink == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
 		goto error;
@@ -1188,7 +1188,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
-		sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 10 * GST_MSECOND);		//check removed
+		sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 10 * GST_MSECOND);		//check
 		if (!sample) {
 			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Failed to pull sample\n");
 			switch_cond_next();
@@ -1215,9 +1215,9 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			MU_memcpy(payload + total_bytes, info.data, info.size);
 			total_bytes += info.size;
 		}
-		gst_buffer_unmap(buf, &info);		//did not bother with MU
+		gst_buffer_unmap(buf, &info);		//check
 		if (sample != NULL) {
-			gst_sample_unref(sample);			//check removed
+			gst_sample_unref(sample);			//check 
 			sample = NULL;
 		}
 
@@ -1243,10 +1243,10 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// stream->leftover_bytes[ch_idx]);
 
 out:
-	DA_gst_object_unref(GST_OBJECT(appsink));		//check removed for speed
+	DA_gst_object_unref(GST_OBJECT(appsink));		//check 
 	return total_bytes;
 error:
-	DA_gst_object_unref(GST_OBJECT(appsink));		//check removed for speed
+	DA_gst_object_unref(GST_OBJECT(appsink));		//check 
 	return 0;
 }
 
@@ -1256,7 +1256,7 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	GstElement *valve = NULL;
 	if (!stream) goto error;			//added check
 	NAME_ELEMENT(name, "valve", ch_idx);
-	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count check - removed
+	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count check 
 	if (valve == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
 		goto error;
@@ -1265,7 +1265,7 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	g_snprintf(name, 2*STR_SIZE, "drop-ch%d-%d", ch_idx, drop);		//check increased string size
 	dump_pipeline(stream->pipeline, name);
 error: 
-	DA_gst_object_unref(GST_OBJECT(valve));		//check removed
+	DA_gst_object_unref(GST_OBJECT(valve));		//check 
 	return;
 }
 
