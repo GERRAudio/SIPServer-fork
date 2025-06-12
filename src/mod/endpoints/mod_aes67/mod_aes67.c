@@ -3206,8 +3206,8 @@ SWITCH_STANDARD_API(aes_cmd)
 
 	} else if (!strcasecmp(argv[0], "allocs")) {
 		stream->write_function(stream, "\tbufs: %d\n", g_alloc_counts.bufs);
-		stream->write_function(stream, "\tcaps: %d\n", g_alloc_counts.caps);
-		stream->write_function(stream, "\tchars: %d\n", g_alloc_counts.chars);
+		//stream->write_function(stream, "\tcaps: %d\n", g_alloc_counts.caps);
+		//stream->write_function(stream, "\tchars: %d\n", g_alloc_counts.chars);
 		stream->write_function(stream, "\terrs: %d\n", g_alloc_counts.errs);
 		stream->write_function(stream, "\tstructs: %d\n", g_alloc_counts.structs);
 		stream->write_function(stream, "\tsamples: %d\n", g_alloc_counts.samples);
@@ -3216,7 +3216,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		stream->write_function(stream, "\tobjs: %d\n", g_alloc_counts.objs);
 		stream->write_function(stream, "\tdebugs: %d\n", g_alloc_counts.debugs);
 		stream->write_function(stream, "\tstats: %d\n", g_alloc_counts.stats);
-		stream->write_function(stream, "\tgobjects: %d\n", g_alloc_counts.gobjects);
+		//stream->write_function(stream, "\tgobjects: %d\n", g_alloc_counts.gobjects);
 		stream->write_function(stream, "\tFDA: %d\n", g_alloc_counts.FDA);
 		stream->write_function(stream, "\tFAL: %d\n", g_alloc_counts.FAL);
 	}

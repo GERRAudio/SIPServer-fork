@@ -625,7 +625,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map), gst_caps_ref(udp_caps),
 							  destroy_caps, 0);
 
-		MU_g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency, "mode", 0 /* none */, NULL);
+		g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency, "mode", 0 /* none */, NULL);
 		rx_audioconv = gst_element_factory_make("audioconvert", "rx-aconv");
 		g_object_set(rx_audioconv, "dithering", 0 /* none */, NULL);
 
@@ -953,7 +953,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 	if (rtpdepay && data->synthetic_ptp) {
 		if (stream->clock) {
-			gst_object_unref(GST_OBJECT(stream->clock)); // check - added - no wrapper, since not alloc here
+			DA_gst_object_unref(GST_OBJECT(stream->clock)); // check - added - no wrapper, since not alloc here
 		}
 		stream->clock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "name", "SyntheticPtpClock", NULL);
 		//AL_cnt_objs(stream->clock);	//count it
@@ -962,7 +962,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		/* We'll set the pipeline clock once it's synced */
 	} else {
 		if (stream->clock) {
-			gst_object_unref(GST_OBJECT(stream->clock)); // no wrapper, not alloc here
+			DA_gst_object_unref(GST_OBJECT(stream->clock)); // no wrapper, not alloc here
 			stream->clock = NULL;
 		}
 		gst_pipeline_use_clock(GST_PIPELINE(pipeline), data->clock);
@@ -1009,7 +1009,7 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 	}
 
 	if (stream->clock) {
-		gst_object_unref(GST_OBJECT(stream->clock)); // no wrapper, not alloc here
+		DA_gst_object_unref(GST_OBJECT(stream->clock)); // no wrapper, not alloc here
 		stream->clock = NULL;
 	}
 
@@ -1051,10 +1051,10 @@ void stop_pipeline(g_stream_t *stream)
 	DA_gst_object_unref(GST_OBJECT(bus));
 	bus = NULL;
 
-	MUp_gst_object_unref(GST_OBJECT(stream->pipeline)); // not allocated here, so no wrapper
+	gst_object_unref(GST_OBJECT(stream->pipeline)); // not allocated here, so no wrapper
 	stream->pipeline = NULL;
 	if (stream->clock) {
-		MUc_gst_object_unref(GST_OBJECT(stream->clock)); // not allocated here, so no wrapper
+		gst_object_unref(GST_OBJECT(stream->clock)); // not allocated here, so no wrapper
 		stream->clock = NULL;
 	}
 
@@ -1145,7 +1145,7 @@ done:
 	retval = TRUE;
 
 error:
-	gst_object_unref(GST_OBJECT(appsrc));				//check 
+	DA_gst_object_unref(GST_OBJECT(appsrc));				//check 
 	if (buf) gst_buffer_unref(buf);						// check 
 	return retval;
 }
@@ -1250,10 +1250,10 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// stream->leftover_bytes[ch_idx]);
 
 out:
-	gst_object_unref(GST_OBJECT(appsink));		//check 
+	DA_gst_object_unref(GST_OBJECT(appsink));		//check 
 	return total_bytes;
 error:
-	gst_object_unref(GST_OBJECT(appsink));		//check 
+	DA_gst_object_unref(GST_OBJECT(appsink));		//check 
 	return 0;
 }
 
