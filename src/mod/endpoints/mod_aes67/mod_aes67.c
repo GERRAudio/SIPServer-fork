@@ -947,13 +947,13 @@ static switch_status_t channel_endpoint_read(private_t *tech_pvt, switch_frame_t
 			STREAM_READER_UNLOCK(endpoint->in_stream); // added
 			return SWITCH_STATUS_FALSE;
 		}
-		switch_mutex_lock(globals.device_lock);  //added check to match the other pull buffer
+		//switch_mutex_lock(globals.device_lock);  //added check to match the other pull buffer
 		// switch_mutex_lock(globals.gst_mutex);	 // added check
 		bytes = pull_buffers(endpoint->in_stream->stream, (unsigned char *)tech_pvt->read_frame.data,
-							 STREAM_SAMPLES_PER_PACKET(endpoint->in_stream) * 2 /* FIXME: non-S16LE */,
+							 STREAM_SAMPLES_PER_PACKET(endpoint->in_stream) * 2  /* FIXME: non-S16LE */,
 							 endpoint->inchan, &tech_pvt->read_timer, session_id);
 		// switch_mutex_unlock(globals.gst_mutex);	  // added check
-		switch_mutex_unlock(globals.device_lock); // added check to match
+		//switch_mutex_unlock(globals.device_lock); // added check to match
 		STREAM_READER_UNLOCK(endpoint->in_stream);
 	} else {
 		// Pipeline is being reset, feed some silence
@@ -1110,8 +1110,11 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 		goto cng_wait;
 	}
 
-	if (tech_pvt->hfh) { tech_close_file(tech_pvt); }
+	if (tech_pvt->hfh) { 
+		tech_close_file(tech_pvt);
+	}
 
+	/*
 	audio_endpoint_t *endpoint = tech_pvt->audio_endpoint; // added check
 	if (!endpoint) return SWITCH_STATUS_FALSE;			   // added check
 
@@ -1120,11 +1123,13 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 		*frame = &globals.cng_frame;
 		return SWITCH_STATUS_SUCCESS;
 	}
+	
+	
 	if (STREAM_READER_TRYLOCK(endpoint->in_stream)) { // check if required
 		if (!endpoint->in_stream->stream) {
 			STREAM_READER_UNLOCK(endpoint->in_stream);
 			return SWITCH_STATUS_FALSE;
-		}
+		}*/
 		switch_mutex_lock(globals.device_lock);
 		// switch_mutex_lock(globals.gst_mutex); //added check
 		bytes = pull_buffers(globals.main_stream->stream, (unsigned char *)globals.read_frame.data,
@@ -1134,12 +1139,12 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 		samples = bytes / sizeof(int16_t);
 		// switch_mutex_unlock(globals.gst_mutex); // added check
 		switch_mutex_unlock(globals.device_lock);
-		STREAM_READER_UNLOCK(endpoint->in_stream); // added check if required
-	} else {									   // added check
+		// STREAM_READER_UNLOCK(endpoint->in_stream); // added check if required
+		/*}  else { // added check
 		// Pipeline is being reset, feed some silence
 		bytes = STREAM_SAMPLES_PER_PACKET(endpoint->in_stream) * 2;
 		memset(tech_pvt->read_frame.data, 0, bytes);
-	}
+	}*/
 
 	if (samples) {
 		globals.read_frame.datalen = bytes;
@@ -1226,21 +1231,21 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 		if (switch_test_flag((&globals), GFLAG_EAR)) {
 			// Note: 0 is passed as the channel index because main stream can have only one out channel
 			// switch_mutex_lock(globals.main_stream->stream); // added - check
-			audio_endpoint_t *endpoint = tech_pvt->audio_endpoint; // added check
-			if (!endpoint) return SWITCH_STATUS_FALSE;			   // added check
-			if (endpoint->out_stream && STREAM_READER_TRYLOCK(endpoint->out_stream)) {
-				if (!endpoint->out_stream->stream) {
-					STREAM_READER_UNLOCK(endpoint->out_stream); // added, check if required
-					return SWITCH_STATUS_FALSE;
-				}
-			}
+			//audio_endpoint_t *endpoint = tech_pvt->audio_endpoint; // added check
+			//if (!endpoint) return SWITCH_STATUS_FALSE;			   // added check
+			//if (endpoint->out_stream && STREAM_READER_TRYLOCK(endpoint->out_stream)) {
+				//if (!endpoint->out_stream->stream) {
+					//STREAM_READER_UNLOCK(endpoint->out_stream); // added, check if required
+					//return SWITCH_STATUS_FALSE;
+				//}
+			//}
 			// switch_mutex_lock(globals.device_lock); // added check  match frame pull
 			// switch_mutex_lock(globals.gst_mutex);	// added check
 			push_buffer(globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
 						&(globals.main_stream->write_timer));
 			// switch_mutex_unlock(globals.gst_mutex);		// added check
 			// switch_mutex_unlock(globals.device_lock);		// added check to match frame pull
-			STREAM_READER_UNLOCK(endpoint->out_stream); // added check if required
+			//STREAM_READER_UNLOCK(endpoint->out_stream); // added check if required
 		}
 		status = SWITCH_STATUS_SUCCESS;
 	}
@@ -1579,7 +1584,7 @@ static void gst_logger(GstDebugCategory *category, GstDebugLevel level, const gc
 		} else {
 			obj = g_strdup_printf("<%p>", (void *)object);
 		}
-		AL_cnt_chars(obj); // obj incr counter
+		//AL_cnt_chars(obj); // obj incr counter
 
 		switch_log_printf(SWITCH_CHANNEL_LOG, fs_log_level, "%s %p %s:%d:%s:%s %s\n", tag, (void *)g_thread_self(),
 						  file, line, function, obj, gst_debug_message_get(message));
