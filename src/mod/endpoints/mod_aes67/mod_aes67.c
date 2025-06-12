@@ -1371,7 +1371,7 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 													switch_core_session_t **new_session, switch_memory_pool_t **pool,
 													switch_originate_flag_t flags, switch_call_cause_t *cancel_cause)
 {
-	boolean endpoint_locked = FALSE; // added
+	//boolean endpoint_locked = FALSE; // added check
 	char name[128];
 	const char *id = NULL;
 	private_t *tech_pvt = NULL;
@@ -1433,7 +1433,7 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 						  new_sess_id);
 
 		switch_mutex_lock(endpoint->mutex);
-		endpoint_locked = TRUE; // for error handling cleanup
+		//endpoint_locked = TRUE; // for error handling cleanup
 
 		if (endpoint->active_listen_sessions) {
 			// someone already has this endpoint
@@ -1508,7 +1508,7 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 
 		tech_pvt->audio_endpoint = endpoint;
 		switch_mutex_unlock(endpoint->mutex);
-		endpoint_locked = FALSE;
+		//endpoint_locked = FALSE;
 	} else {
 		id = !zstr(outbound_profile->caller_id_number) ? outbound_profile->caller_id_number : "na";
 		switch_snprintf(name, sizeof(name), "aes67/%s", id);
@@ -1538,7 +1538,7 @@ error:
 		if (tech_pvt->write_codec.codec_interface) { switch_core_codec_destroy(&tech_pvt->write_codec); }
 	}
 
-	if (endpoint && endpoint_locked) switch_mutex_unlock(endpoint->mutex);
+	if (endpoint /* && endpoint_locked*/) switch_mutex_unlock(endpoint->mutex);		//check
 
 	if (new_session && *new_session) { switch_core_session_destroy(new_session); }
 	return retcause;
@@ -1660,18 +1660,19 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_mutex_init(&globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
 
-	switch_mutex_init(&alloc_buf_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_clk_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_elem_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_obj_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_pad_lock, SWITCH_MUTEX_NESTED, module_pool);
+	//switch_mutex_init(&alloc_buf_lock, SWITCH_MUTEX_NESTED, module_pool);		//check
+	//switch_mutex_init(&alloc_clk_lock, SWITCH_MUTEX_NESTED, module_pool);
+	//switch_mutex_init(&alloc_elem_lock, SWITCH_MUTEX_NESTED, module_pool);
+	//switch_mutex_init(&alloc_obj_lock, SWITCH_MUTEX_NESTED, module_pool);
+	//switch_mutex_init(&alloc_pad_lock, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&alloc_pipl_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_samp_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_gst_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_set_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_add_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_cap_lock, SWITCH_MUTEX_NESTED, module_pool);
+	//switch_mutex_init(&alloc_samp_lock, SWITCH_MUTEX_NESTED, module_pool);
+	//switch_mutex_init(&alloc_gst_lock, SWITCH_MUTEX_NESTED, module_pool);
+	//switch_mutex_init(&alloc_set_lock, SWITCH_MUTEX_NESTED, module_pool);
+	//switch_mutex_init(&alloc_add_lock, SWITCH_MUTEX_NESTED, module_pool);
+	//switch_mutex_init(&alloc_cap_lock, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&alloc_mcp_lock, SWITCH_MUTEX_NESTED, module_pool);
+
 	globals.codecs_inited = 0;
 	globals.read_frame.data = globals.databuf;
 	globals.read_frame.buflen = sizeof(globals.databuf);
