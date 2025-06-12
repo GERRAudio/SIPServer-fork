@@ -1822,7 +1822,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 			switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
 			// stream lock aleady done before calling link_rx_stream
 			// switch_mutex_lock(globals.gst_mutex);					 // around appsinks check added
-			STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream); // added check if required
+			//STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream); // added check if required
 			if (state == CCS_ACTIVE) {
 				if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan,
 								session_id)) {
@@ -1830,7 +1830,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 				}
 			}
 
-			STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check if required
+			//STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check if required
 			// switch_mutex_unlock(globals.gst_mutex);					   // around appsinks check added
 			switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 		}
@@ -2191,13 +2191,13 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 				// Signal intent-to-reload to prevent writer starvation
 				g_atomic_int_set(&curr_stream->reloading, 1);
 				STREAM_WRITER_LOCK(curr_stream);
-				STREAM_READER_LOCK(curr_stream); // added check if required
+				//STREAM_READER_LOCK(curr_stream); // added check if required
 				clear_shared_audio_stream(curr_stream);
 				create_shared_audio_stream(curr_stream);
 				link_rx_stream(curr_stream);
 
 				g_atomic_int_set(&curr_stream->reloading, 0);
-				STREAM_READER_UNLOCK(curr_stream); // added check if required
+				//STREAM_READER_UNLOCK(curr_stream); // added check if required
 				STREAM_WRITER_UNLOCK(curr_stream);
 			}
 			/* dont insert the allocated stream to the sh_streams list*/
