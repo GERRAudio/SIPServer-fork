@@ -181,7 +181,7 @@ error:
 	// these need to be unconditionally deref'd
 	DA_gst_object_unref(GST_OBJECT(tee_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(tee));
-	//gst_element_set_state(pipeline, GST_STATE_NULL);		//added check
+	//gst_element_set_state(pipeline, GST_STATE_NULL);		//check if needed
 	DA_gst_object_unref(GST_OBJECT(pipeline));
 	DA_g_free(pad_name);
 }
@@ -653,13 +653,13 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			if (!tee) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 								  "Failed to create tee element in rx pipeline\n");
-				DA_dec_objs(tee);
+				//DA_dec_objs(tee);
 				continue;
 			}
 			g_object_set(tee, "allow-not-linked", TRUE, NULL);
 
 			gst_bin_add(GST_BIN(pipeline), tee);
-			DA_dec_objs(tee);						 // check - assume pipeline will de-alloc
+			//DA_dec_objs(tee);						 // check - assume pipeline will de-alloc
 			// The deinterleave will be linked to the tee dynamically
 		}
 
@@ -707,6 +707,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		goto error;
 
 	ddirRX_exit:
+		/*
 		DA_dec_objs(udp_source);			// check if all of this is deallocated elsewhere
 		DA_dec_objs(deinterleave);			 // for now I just decr counters
 		DA_dec_objs(rx_audioconv);
@@ -715,6 +716,8 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		DA_dec_objs(split);
 		DA_dec_objs(rtpjitbuf);
 		DA_dec_objs(rtpdepay);
+		*/
+		;
 	}
 
 	if (data->direction & DIRECTION_TX) {
@@ -852,78 +855,81 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	/* if this stream is configured to be a backup sender, we pause our Tx if we find another sender doing Tx
 	  on the same multicast address and resume once the remote sender stops
 	*/
-	if (data->is_backup_sender) {
-		GstElement *udpsrc = NULL;
-		GstElement *fakesink = NULL;
-		GstCaps *caps = NULL;
+		if (data->is_backup_sender) {
+			GstElement *udpsrc = NULL;
+			GstElement *fakesink = NULL;
+			GstCaps *caps = NULL;
 
-		/* create a dummy pipeline with `udpsrc ! fakesink` just to receive on udp and read the last-sample from
-		 * fakesink */
+			/* create a dummy pipeline with `udpsrc ! fakesink` just to receive on udp and read the last-sample from
+			 * fakesink */
 #ifndef ENABLE_THREADSHARE
-		udpsrc = gst_element_factory_make("udpsrc", "tx-monitor-udpsrc");
+			udpsrc = gst_element_factory_make("udpsrc", "tx-monitor-udpsrc");
 #else
-		MAKE_TS_ELEMENT(udpsrc, "ts-udpsrc", "tx-monitor-udpsrc", ts_ctx);
+			MAKE_TS_ELEMENT(udpsrc, "ts-udpsrc", "tx-monitor-udpsrc", ts_ctx);
 #endif
 
-		fakesink = gst_element_factory_make("fakesink", "tx-monitor-fakesink");
+			fakesink = gst_element_factory_make("fakesink", "tx-monitor-fakesink");
 
-		if (data->tx_codec == L16) {
-			caps = gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
-									   G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
-									   "encoding-name", G_TYPE_STRING, "L16", "media", G_TYPE_STRING, "audio", NULL);
-		} else {
-			caps = gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
-									   G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
-									   "encoding-name", G_TYPE_STRING, "L24", "media", G_TYPE_STRING, "audio", NULL);
-		}
+			if (data->tx_codec == L16) {
+				caps =
+					gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
+										G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
+										"encoding-name", G_TYPE_STRING, "L16", "media", G_TYPE_STRING, "audio", NULL);
+			} else {
+				caps =
+					gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
+										G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
+										"encoding-name", G_TYPE_STRING, "L24", "media", G_TYPE_STRING, "audio", NULL);
+			}
 
-		if (!udpsrc || !fakesink) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-							  "Failed to create tx-monitor elements, cannot listen for primary sender\n");
-			goto bksnd_error;
-		} else {
-			g_object_set(udpsrc, "address", data->tx_ip_addr, "port", data->tx_port,
-//#ifdef _WIN32
-						 // Disable IP_MULTICAST_LOOP to avoid listening packets from same host
-						 // For Windows this needs to be set on the receiver's side
-						 "loop", FALSE,
-//#endif
-						 "multicast-iface", data->rtp_iface, "caps", caps, NULL);
-
-			g_object_set(fakesink, "async", FALSE, NULL);
-
-			gst_bin_add_many(GST_BIN(pipeline), udpsrc, fakesink, NULL);
-			if (!gst_element_link_many(udpsrc, fakesink, NULL)) {
+			if (!udpsrc || !fakesink) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-								  "Failed to link tx-monitor elements, cannot listen for primary sender\n");
+								  "Failed to create tx-monitor elements, cannot listen for primary sender\n");
 				goto bksnd_error;
 			} else {
-				stream->pause_backup_sender = FALSE;
-				stream->backup_sender_idle_wait_ms = data->backup_sender_idle_wait_ms;
+				g_object_set(udpsrc, "address", data->tx_ip_addr, "port", data->tx_port,
+							 // #ifdef _WIN32
+							 //  Disable IP_MULTICAST_LOOP to avoid listening packets from same host
+							 //  For Windows this needs to be set on the receiver's side
+							 "loop", FALSE,
+							 // #endif
+							 "multicast-iface", data->rtp_iface, "caps", caps, NULL);
 
-				/* add a timer to check for remote sender's buffers every `backup_sender_idle_wait_ms` to resumek
-				  our Tx as soon as possible once the remote Tx stops */
-				stream->backup_sender_idle_timer = g_timeout_add_full(
-					G_PRIORITY_DEFAULT, data->backup_sender_idle_wait_ms, backup_sender_timeout_cb, stream, NULL);
+				g_object_set(fakesink, "async", FALSE, NULL);
+
+				gst_bin_add_many(GST_BIN(pipeline), udpsrc, fakesink, NULL);
+				if (!gst_element_link_many(udpsrc, fakesink, NULL)) {
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+									  "Failed to link tx-monitor elements, cannot listen for primary sender\n");
+					goto bksnd_error;
+				} else {
+					stream->pause_backup_sender = FALSE;
+					stream->backup_sender_idle_wait_ms = data->backup_sender_idle_wait_ms;
+
+					/* add a timer to check for remote sender's buffers every `backup_sender_idle_wait_ms` to resumek
+					  our Tx as soon as possible once the remote Tx stops */
+					stream->backup_sender_idle_timer = g_timeout_add_full(
+						G_PRIORITY_DEFAULT, data->backup_sender_idle_wait_ms, backup_sender_timeout_cb, stream, NULL);
+				}
 			}
+			gst_caps_unref(caps);
+			caps = NULL;
+			goto bksnd_exit;
+
+		bksnd_error:
+			DA_gst_caps_unref(caps);
+			caps = NULL;
+			DA_gst_object_unref(GST_OBJECT(udpsrc));
+			udpsrc = NULL;
+			DA_gst_object_unref(GST_OBJECT(fakesink));
+			fakesink = NULL;
+			goto error;
+
+		bksnd_exit:
+			// DA_dec_objs(udpsrc);		//check
+			// DA_dec_objs(fakesink);		//check
+			;
 		}
-		DA_gst_caps_unref(caps);
-		caps = NULL;
-		goto bksnd_exit;
-
-	bksnd_error:
-		DA_gst_caps_unref(caps);
-		caps = NULL;
-		DA_gst_object_unref(GST_OBJECT(udpsrc));
-		udpsrc = NULL;
-		DA_gst_object_unref(GST_OBJECT(fakesink));
-		fakesink = NULL;
-		goto error;
-
-	bksnd_exit:
-		DA_dec_objs(udpsrc);		//check 
-		DA_dec_objs(fakesink);		//check 
-	}
 
 	// ---
 
@@ -953,7 +959,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 	if (rtpdepay && data->synthetic_ptp) {
 		if (stream->clock) {
-			DA_gst_object_unref(GST_OBJECT(stream->clock)); // check - added - no wrapper, since not alloc here
+			DA_gst_object_unref(GST_OBJECT(stream->clock)); // check - added 
 		}
 		stream->clock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "name", "SyntheticPtpClock", NULL);
 		//AL_cnt_objs(stream->clock);	//count it
@@ -980,7 +986,7 @@ error:
 	DA_gst_object_unref(GST_OBJECT(rtpdepay));
 	if (stream != NULL) {
 		if (stream->clock != NULL)
-			DA_gst_object_unref(GST_OBJECT(stream->clock));					// added missing unref no wrapper, not alloc here
+			DA_gst_object_unref(GST_OBJECT(stream->clock));					// added - check
 		if (stream->mainloop != NULL) g_main_loop_unref(stream->mainloop);	// added - check
 		if (stream->thread != NULL) g_thread_join(stream->thread);			// added - check
 		DA_g_free(stream);
@@ -1124,7 +1130,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		goto error;
 	}
 
-	if (!gst_buffer_map(buf, &info, GST_MAP_WRITE)) {		//MU kills audio from phone to BP
+	if (!gst_buffer_map(buf, &info, GST_MAP_WRITE)) {		//MU here kills audio from phone to BP
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get buffer map\n");
 		goto error;
 	}
@@ -1183,14 +1189,14 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// Note: assumes leftover_bytes will never be more than buflen, which is
 	// likely true (packet is limited to MTU, while buflen is 8192)
 	// FIXME: revisit this to check whether we need this anymore
-	switch_mutex_lock(alloc_pipl_lock); // added check
+	switch_mutex_lock(alloc_mcp_lock); // added check
 	if (stream->leftover_bytes[ch_idx]) {
 		int copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
 		memcpy(payload, stream->leftover[ch_idx], copy);		//no need for mutex - check
 		total_bytes += copy;
 		stream->leftover_bytes[ch_idx] -= copy;
 	}
-	switch_mutex_unlock(alloc_pipl_lock); // added check
+	switch_mutex_unlock(alloc_mcp_lock); // added check
 
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
@@ -1213,11 +1219,11 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		if (gst_buffer_map(buf, &info, GST_MAP_READ)) {			//mutex here kills audio
 			if (total_bytes + info.size > needed_bytes) {
 				int want = needed_bytes - total_bytes;
-				switch_mutex_lock(alloc_pipl_lock); // added check
+				switch_mutex_lock(alloc_mcp_lock); // added check
 				stream->leftover_bytes[ch_idx] = info.size - want;
 				memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
 				info.size = want;
-				switch_mutex_unlock(alloc_pipl_lock); // added check
+				switch_mutex_unlock(alloc_mcp_lock); // added check
 			}
 			MU_memcpy(payload + total_bytes, info.data, info.size);
 			total_bytes += info.size;

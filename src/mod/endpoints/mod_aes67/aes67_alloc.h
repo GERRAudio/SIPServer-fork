@@ -384,7 +384,7 @@ G_ALLOC_WRAP_FREE(g_error_free, errs, GError *)
 
 ////////
 // --- Object wrappers ---
-G_ALLOC_WRAP_FREE(gst_object_unref, objs, GstObject *, alloc_elem_lock)
+G_ALLOC_WRAP_FREE(gst_object_unref, objs, GstObject *)
 
 G_ALLOC_WRAP_DEC(objs, dec_objs, GstObject *, p)
 G_ALLOC_WRAP_INC(objs, cnt_objs, GstObject *, p)
