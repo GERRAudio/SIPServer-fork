@@ -114,6 +114,7 @@ extern switch_mutex_t *alloc_mcp_lock;
 		}                                                                                                              \
 	}
 //with mutex
+/*
 #define G_ALLOC_WRAP_FREE_M(fname, counter, arg_type, l)                                                                \
 	inline void DA_##fname(arg_type p)                                                                                  \
 	{                                                                                                                  \
@@ -124,7 +125,7 @@ extern switch_mutex_t *alloc_mcp_lock;
 			switch_mutex_unlock(l);                                                                                    \
 		}                                                                                                              \
 	}
-
+*/
 /*
 // --special test case ----
 inline void DF_gst_object_unref(GstObject *p)
@@ -373,7 +374,7 @@ G_ALLOC_WRAP_ALLOC(gchar *, gst_structure_to_string, chars, const GstStructure *
 // --- Buffer wrappers ---
 G_ALLOC_WRAP_INC(bufs, cnt_bufs, GstStructure *, p)
 G_ALLOC_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p)
-G_ALLOC_WRAP_FREE_M(gst_buffer_unref, bufs, GstBuffer *, alloc_buf_lock)
+G_ALLOC_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *, alloc_buf_lock)
 // G_ALLOC_WRAP_REF(gst_buffer_ref, bufs, GstBuffer *)
 G_ALLOC_WRAP_ALLOC3_M(GstBuffer *, gst_buffer_new_allocate, bufs, GstAllocator *, allocator, gsize, size,
 					  GstAllocationParams *, params, alloc_buf_lock)
@@ -404,7 +405,7 @@ G_ALLOC_WRAP_FREE(g_error_free, errs, GError *)
 
 ////////
 // --- Object wrappers ---
-G_ALLOC_WRAP_FREE_M(gst_object_unref, objs, GstObject *, alloc_elem_lock)
+G_ALLOC_WRAP_FREE(gst_object_unref, objs, GstObject *, alloc_elem_lock)
 
 G_ALLOC_WRAP_DEC(objs, dec_objs, GstObject *, p)
 G_ALLOC_WRAP_INC(objs, cnt_objs, GstObject *, p) G_ALLOC_WRAP_ALLOC_M(GstBus *, gst_pipeline_get_bus, objs,
@@ -465,7 +466,7 @@ G_ALLOC_WRAP_ALLOC_M(GstClock *, gst_element_get_clock, objs, GstElement *, elem
 
 // --- Sample  wrappers ---
 G_ALLOC_WRAP_INC(samples, cnt_samples, GstSample *, p)
-G_ALLOC_WRAP_FREE_M(gst_sample_unref, samples, GstSample *, alloc_samp_lock)
+G_ALLOC_WRAP_FREE(gst_sample_unref, samples, GstSample *, alloc_samp_lock)
 G_ALLOC_WRAP_ALLOC2_M(GstSample *, gst_app_sink_try_pull_sample, samples, GstAppSink *, appsink, guint64, timeout, alloc_samp_lock)
 // G_ALLOC_WRAP_ALLOC(GstSample*, gst_app_sink_pull_sample, samples, GstAppSink *,appsink)
 // G_ALLOC_WRAP_ALLOC(GstSample*, gst_app_sink_pull_preroll, samples, GstAppSink *,appsink)
@@ -473,8 +474,8 @@ G_ALLOC_WRAP_ALLOC2_M(GstSample *, gst_app_sink_try_pull_sample, samples, GstApp
 // *,segment, GstStructure *,info) G_ALLOC_WRAP_REF(gst_sample_ref, samples, GstSample *)
 
 // --- caps wrappers ---
-G_ALLOC_WRAP_INC(caps, cnt_caps, GstCaps *, p) G_ALLOC_WRAP_FREE_M(gst_caps_unref, caps, GstCaps *, alloc_cap_lock)
-G_ALLOC_WRAP_ALLOC_M(GstCaps *, gst_caps_from_string, caps, const gchar *, string, alloc_cap_lock)
+G_ALLOC_WRAP_INC(caps, cnt_caps, GstCaps *, p) G_ALLOC_WRAP_FREE(gst_caps_unref, caps, GstCaps *, alloc_cap_lock)
+G_ALLOC_WRAP_ALLOC(GstCaps *, gst_caps_from_string, caps, const gchar *, string, alloc_cap_lock)
 MU_WRAP1(GstCaps*, gst_caps_copy, const GstCaps*,c , alloc_cap_lock) 
 //void gst_caps_set_simple(GstCaps *caps, const char *field, ...);
 #define MU_gst_caps_set_simple(caps, field, ...)                                                                       \
