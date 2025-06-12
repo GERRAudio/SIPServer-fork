@@ -1660,17 +1660,8 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_mutex_init(&globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
 
-	//switch_mutex_init(&alloc_buf_lock, SWITCH_MUTEX_NESTED, module_pool);		//check
-	//switch_mutex_init(&alloc_clk_lock, SWITCH_MUTEX_NESTED, module_pool);
-	//switch_mutex_init(&alloc_elem_lock, SWITCH_MUTEX_NESTED, module_pool);
-	//switch_mutex_init(&alloc_obj_lock, SWITCH_MUTEX_NESTED, module_pool);
-	//switch_mutex_init(&alloc_pad_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&alloc_pipl_lock, SWITCH_MUTEX_NESTED, module_pool);
-	//switch_mutex_init(&alloc_samp_lock, SWITCH_MUTEX_NESTED, module_pool);
-	//switch_mutex_init(&alloc_gst_lock, SWITCH_MUTEX_NESTED, module_pool);
-	//switch_mutex_init(&alloc_set_lock, SWITCH_MUTEX_NESTED, module_pool);
-	//switch_mutex_init(&alloc_add_lock, SWITCH_MUTEX_NESTED, module_pool);
-	//switch_mutex_init(&alloc_cap_lock, SWITCH_MUTEX_NESTED, module_pool);
+
+	switch_mutex_init(&alloc_pipl_lock, SWITCH_MUTEX_NESTED, module_pool);		//check
 	switch_mutex_init(&alloc_mcp_lock, SWITCH_MUTEX_NESTED, module_pool);
 
 	globals.codecs_inited = 0;
