@@ -1,5 +1,5 @@
-﻿Build started 6/10/2025 10:09:58 AM.
-Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" on node 3 (Build target(s)).
+﻿Build started 6/6/2025 11:15:14 AM.
+Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" on node 2 (Build target(s)).
      1>PrepareForBuild:
          Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
      1>C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(2389,5): warning MSB3274: The primary reference "C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\FreeSWITCH.Managed.dll" could not be resolved because it was built against the ".NETFramework,Version=v4.8" framework. This is a higher version than the currently targeted framework ".NETFramework,Version=v4.7.2".
@@ -20,12 +20,9 @@ Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAu
             Creating library C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_managed.lib and object C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_managed.exp
          LINK : /LTCG specified but no code generation required; remove /LTCG from the link command line to improve linker performance
          mod_managed.2017.vcxproj -> C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\mod_managed.dll
-       FinalizeBuildStatus:
-         Deleting file "x64\\mod_managed.tlog\unsuccessfulbuild".
-         Touching "x64\\mod_managed.tlog\mod_managed.lastbuildstate".
-     1>Done Building Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" (Build target(s)).
+     1>Done Building Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" (Build target(s)) -- FAILED.
 
-Build succeeded.
+Build FAILED.
 
        "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" (Build target) (1) ->
        (ResolveAssemblyReferences target) -> 
@@ -34,4 +31,4 @@ Build succeeded.
     1 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:12.15
+Time Elapsed 00:00:09.56
