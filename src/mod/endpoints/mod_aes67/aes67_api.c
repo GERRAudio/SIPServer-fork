@@ -4,8 +4,8 @@
 #include <gst/audio/audio-channels.h>
 #include <gst/net/net.h>
 
-#include "aes67_alloc.h" //allocation tracker wrappers
-G_alloc_counts g_alloc_counts; // counters for allocation
+#include "aes67_alloc.h"		// allocation trackerand mutex wrappers
+G_alloc_counts g_alloc_counts;	// debug counters for allocation
 
 #define ELEMENT_NAME_SIZE 30 + SESSION_ID_LEN
 #define STR_SIZE 15
@@ -29,7 +29,7 @@ G_alloc_counts g_alloc_counts; // counters for allocation
 
 #define ENABLE_THREADSHARE
 #define DEFAULT_CONTEXT_NAME "ts"
-#define DEFAULT_CONTEXT_WAIT 10 // ms
+#define DEFAULT_CONTEXT_WAIT 10		// ms
 
 #define MAKE_TS_ELEMENT(var, factory, name, context)                                                                   \
 	do {                                                                                                               \
@@ -56,7 +56,6 @@ channel_remap_t channel_remaps[] = {
 void dump_pipeline(GstPipeline *pipe, const char *name)
 {
 	char *tmp = g_strdup_printf("%s-%s", gst_element_get_name(pipe), name);
-	//AL_cnt_chars(tmp);
 	GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(pipe), GST_DEBUG_GRAPH_SHOW_ALL, tmp);
 
 	g_free(tmp);
@@ -64,7 +63,6 @@ void dump_pipeline(GstPipeline *pipe, const char *name)
 
 static gboolean bus_callback(GstBus *bus, GstMessage *msg, gpointer data)
 {
-
 	g_stream_t *stream = (g_stream_t *)data;
 	GstElement *pipeline = (GstElement *)stream->pipeline;
 	switch (GST_MESSAGE_TYPE(msg)) {
@@ -79,8 +77,6 @@ static gboolean bus_callback(GstBus *bus, GstMessage *msg, gpointer data)
 		GError *error = NULL;
 
 		gst_message_parse_error(msg, &error, &debug);
-		//AL_cnt_errs(error);		
-		//AL_cnt_chars(debug);		
 		g_free(debug);
 		debug = NULL;
 
@@ -155,7 +151,6 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 	guint ch_idx;
 
 	pad_name = gst_pad_get_name(pad);
-	//AL_cnt_chars(pad_name);		
 	if(sscanf(pad_name, "src_%u", &ch_idx) != 1)
 	{
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pad name format unexpected: %s", pad_name);
@@ -164,7 +159,7 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 
 	NAME_ELEMENT(name, "tee", ch_idx);
 	tee = gst_bin_get_by_name(GST_BIN(pipeline), name); 
-	//g_assert_nonnull(tee);		//warning, will abort! - changed to below check
+	//g_assert_nonnull(tee);		//warning, will abort! - changed to below, check
 	if (!tee) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Tee element not found for %s", name);
 		goto error;
@@ -205,7 +200,6 @@ gboolean update_clock(gpointer userdata)
 	}
 
 	g_object_get(G_OBJECT(rtpdepay), "stats", &stats, NULL);
-	//AL_cnt_structs(stats);
 
 	if (gst_structure_get_uint(stats, "timestamp", &rtp_timestamp)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "rtp timestamp in rtpdepay %u\n", rtp_timestamp);
@@ -351,10 +345,6 @@ error:
 	return ret;
 
 done:
-	// to account for ones we do not dealloc above
-	if (appsink) DA_dec_objs(appsink);	
-	if (queue) DA_dec_objs(queue);	
-	if (tee) DA_dec_objs(tee);	
 
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
@@ -440,7 +430,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	gst_element_set_state(queue, GST_STATE_NULL);
 	gst_element_set_state(appsink, GST_STATE_NULL);
 
-	if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal
+	if (!MU_gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal //check mutex
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to remove appsink from the pipeline ch: %d, session: %s", ch_idx, session);
 	}
@@ -492,7 +482,6 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			GstClockTime max_delta = stream->backup_sender_idle_wait_ms * GST_MSECOND;
 
 			g_object_get(G_OBJECT(fakesink), "last-sample", &last_sample, NULL);//allocates!
-			//AL_cnt_samples(last_sample);
 			if (!last_sample) goto exit;
 
 			// no memory allocated
@@ -503,7 +492,6 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 
 			sock_addr = meta->addr;
 			host = g_inet_address_to_string(g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS(sock_addr))); //allocates!
-			//AL_cnt_chars(host); //just count it
 			/* If the buffer timestamp is after the previous callback or before the next callback
 			  we know that new buffers are arriving and so pause our Tx */
 			delta = timestamp < current_time ? current_time - timestamp : timestamp - current_time;
@@ -567,7 +555,6 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	char *pipeline_name = NULL;
 
 	g_stream_t *stream = g_new(g_stream_t, 1);
-	//AL_cnt_chars(stream);			//g_new allocates chars for the stream, so count
 
 	char fixed_name[25] = {"pipeline"};
 	char *ts_ctx = DEFAULT_CONTEXT_NAME;
@@ -611,14 +598,12 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 				gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
 									G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
 									"encoding-name", G_TYPE_STRING, "L16", "media", G_TYPE_STRING, "audio", NULL);
-			//AL_cnt_caps(udp_caps);
 		} else {
 			rtpdepay = gst_element_factory_make("rtpL24depay", RTP_DEPAY);
 			udp_caps =
 				gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
 									G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
 									"encoding-name", G_TYPE_STRING, "L24", "media", G_TYPE_STRING, "audio", NULL);
-			//AL_cnt_caps(udp_caps);
 		}
 
 		rtpjitbuf = gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
@@ -653,13 +638,11 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			if (!tee) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 								  "Failed to create tee element in rx pipeline\n");
-				//DA_dec_objs(tee);
 				continue;
 			}
 			g_object_set(tee, "allow-not-linked", TRUE, NULL);
 
 			gst_bin_add(GST_BIN(pipeline), tee);
-			//DA_dec_objs(tee);						 // check - assume pipeline will de-alloc
 			// The deinterleave will be linked to the tee dynamically
 		}
 
@@ -696,7 +679,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		rx_audioconv = NULL;
 		DA_gst_object_unref(GST_OBJECT(capsfilter));
 		capsfilter = NULL;
-		DA_gst_object_unref(GST_OBJECT(tee));		//the other tees will be de-aloc when pipeline is
+		DA_gst_object_unref(GST_OBJECT(tee));		//the other tees will be de-aloc when pipeline does
 		tee = NULL;
 		DA_gst_object_unref(GST_OBJECT(split));
 		split = NULL;
@@ -707,16 +690,6 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		goto error;
 
 	ddirRX_exit:
-		/*
-		DA_dec_objs(udp_source);			// check if all of this is deallocated elsewhere
-		DA_dec_objs(deinterleave);			 // for now I just decr counters
-		DA_dec_objs(rx_audioconv);
-		DA_dec_objs(capsfilter);
-		DA_dec_objs(tee);
-		DA_dec_objs(split);
-		DA_dec_objs(rtpjitbuf);
-		DA_dec_objs(rtpdepay);
-		*/
 		;
 	}
 
@@ -797,7 +770,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		caps = gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, data->sample_rate, "channels", G_TYPE_INT,
 								   data->channels, "format", G_TYPE_STRING, "S16LE", "layout", G_TYPE_STRING,
 								   "interleaved", "channel-mask", GST_TYPE_BITMASK, (guint64)0, NULL);
-		//AL_cnt_caps(caps);
+
 		g_object_set(capsfilter, "caps", caps, NULL);
 		DA_gst_caps_unref(caps);
 		caps = NULL;
@@ -844,13 +817,8 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		goto error;
 
 	ddirTX_exit:
-		DA_dec_objs(udpsink);				// these should be de-allocated in the pipeline
-		DA_dec_objs(tx_audioconv);			// for now I just decr counters to track
-		DA_dec_objs(audiointerleave);
-		DA_dec_objs(capsfilter);
-		DA_dec_objs(tx_valve);
-		DA_dec_objs(appsrc);
-		}
+		;
+	}
 
 	/* if this stream is configured to be a backup sender, we pause our Tx if we find another sender doing Tx
 	  on the same multicast address and resume once the remote sender stops
@@ -926,8 +894,6 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			goto error;
 
 		bksnd_exit:
-			// DA_dec_objs(udpsrc);		//check
-			// DA_dec_objs(fakesink);		//check
 			;
 		}
 
@@ -962,14 +928,13 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			DA_gst_object_unref(GST_OBJECT(stream->clock)); // check - added 
 		}
 		stream->clock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "name", "SyntheticPtpClock", NULL);
-		//AL_cnt_objs(stream->clock);	//count it
+
 		stream->cb_rx_stats_id =
 			g_timeout_add_full(G_PRIORITY_DEFAULT, SYNTHETIC_CLOCK_INTERVAL_MS, update_clock, stream, NULL);
 		/* We'll set the pipeline clock once it's synced */
 	} else {
 		if (stream->clock) {
-			DA_gst_object_unref(GST_OBJECT(stream->clock)); // no wrapper, not alloc here
-			stream->clock = NULL;
+			DA_gst_object_unref(GST_OBJECT(stream->clock));			// added check
 		}
 		gst_pipeline_use_clock(GST_PIPELINE(pipeline), data->clock);
 		g_atomic_int_set(&stream->clock_sync, 1);
@@ -994,10 +959,6 @@ error:
 	return NULL;
 
 exit:
-	DA_dec_objs(pipeline);	//check if real dealloc is required
-	DA_dec_objs(rtp_pay);	
-	DA_dec_objs(rtpdepay);	
-	DA_dec_objs(stream->clock);
 	return stream;
 }
 
@@ -1015,17 +976,20 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 	}
 
 	if (stream->clock) {
-		DA_gst_object_unref(GST_OBJECT(stream->clock)); // no wrapper, not alloc here
+		DA_gst_object_unref(GST_OBJECT(stream->clock)); // added check
 		stream->clock = NULL;
 	}
 
-	gst_pipeline_use_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
-	gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);
-	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);
+	switch_mutex_lock(alloc_pipl_lock); //added check
+	gst_pipeline_use_clock(GST_PIPELINE(stream->pipeline), ptp_clock);		
+	gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);		
+	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);	
 	dump_pipeline(stream->pipeline, "ptp-clock-switch");
-
 	g_atomic_int_set(&stream->clock_sync, 1);
-error:;
+	switch_mutex_unlock(alloc_pipl_lock);  //added check
+
+error:
+	;
 }
 
 void *start_pipeline(void *data)
@@ -1068,12 +1032,12 @@ void stop_pipeline(g_stream_t *stream)
 	if (stream->thread !=NULL) g_thread_join(stream->thread);
 	DA_g_free(stream);					//allocated elsewhere
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
-error:;
+error:
+	;
 }
 
 void teardown_mainloop(GMainLoop *mainloop)
 {
-
 	g_main_loop_quit(mainloop);
 	g_main_loop_unref(mainloop);
 }
@@ -1098,6 +1062,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *appsrc = NULL;
 	if (!stream) goto error;						//added check
+
 	switch_mutex_lock(alloc_pipl_lock);				//added check
 	GstPipeline *pipeline = stream->pipeline;
 	switch_mutex_unlock(alloc_pipl_lock);			//added check
@@ -1124,7 +1089,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		goto done;
 	}
 	buf = gst_buffer_new_allocate(NULL, len, NULL);			// check
-	//AL_cnt_bufs(buf);
+
 	if (buf == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
 		goto error;
@@ -1135,12 +1100,14 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		goto error;
 	}
 	MU_memcpy(info.data, payload, len);
-	gst_buffer_unmap(buf, &info);			//check
+	gst_buffer_unmap(buf, &info);			
 
 	g_signal_emit_by_name(appsrc, "push-buffer", buf, &result);
 	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pushed buffer\n");
-	if (buf) gst_buffer_unref(buf);//  check 
-	buf = NULL;
+	if (buf) {
+		gst_buffer_unref(buf);
+		buf = NULL;
+	}
 
 	if (result == GST_FLOW_ERROR) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to do 'push-buffer' \n");
@@ -1152,7 +1119,7 @@ done:
 
 error:
 	DA_gst_object_unref(GST_OBJECT(appsrc));				//check 
-	if (buf) gst_buffer_unref(buf);						// check 
+	if (buf) gst_buffer_unref(buf);							// check 
 	return retval;
 }
 
@@ -1174,6 +1141,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		NAME_ELEMENT(name, "appsink", ch_idx);
 	else
 		NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
+
 	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);		//check 
 	if (appsink == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
@@ -1181,7 +1149,8 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		
 	}
 
-	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0);
+	MU_gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0);		//check
+
 	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) goto out;
 
 	if (gst_app_sink_is_eos(GST_APP_SINK(appsink))) goto out;
@@ -1189,14 +1158,15 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// Note: assumes leftover_bytes will never be more than buflen, which is
 	// likely true (packet is limited to MTU, while buflen is 8192)
 	// FIXME: revisit this to check whether we need this anymore
-	switch_mutex_lock(alloc_mcp_lock); // added check
+
+	switch_mutex_lock(alloc_pipl_lock); // added check
 	if (stream->leftover_bytes[ch_idx]) {
 		int copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
-		memcpy(payload, stream->leftover[ch_idx], copy);		//no need for mutex - check
+		MU_memcpy(payload, stream->leftover[ch_idx], copy);		//no need for mutex - check
 		total_bytes += copy;
 		stream->leftover_bytes[ch_idx] -= copy;
 	}
-	switch_mutex_unlock(alloc_mcp_lock); // added check
+	switch_mutex_unlock(alloc_pipl_lock); // added check
 
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
@@ -1219,11 +1189,11 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		if (gst_buffer_map(buf, &info, GST_MAP_READ)) {			//mutex here kills audio
 			if (total_bytes + info.size > needed_bytes) {
 				int want = needed_bytes - total_bytes;
-				switch_mutex_lock(alloc_mcp_lock); // added check
+				switch_mutex_lock(alloc_pipl_lock);		//added check
 				stream->leftover_bytes[ch_idx] = info.size - want;
-				memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
+				switch_mutex_unlock(alloc_pipl_lock); // added check
+				MU_memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
 				info.size = want;
-				switch_mutex_unlock(alloc_mcp_lock); // added check
 			}
 			MU_memcpy(payload + total_bytes, info.data, info.size);
 			total_bytes += info.size;
@@ -1268,6 +1238,7 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *valve = NULL;
 	if (!stream) goto error;			//added check
+
 	NAME_ELEMENT(name, "valve", ch_idx);
 	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count check 
 	if (valve == NULL) {
@@ -1285,16 +1256,15 @@ error:
 //caller must free returned string!!
 gchar *get_rtp_stats(g_stream_t *stream)
 {
-
 	GstElement *rtpjitbuf = NULL;
 	gchar *stats_str = NULL;		//fixed: dynamic allocation required since this is NOT on the stack
 	if (!stream) goto error; //added check
+
 	rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
 
 	if (rtpjitbuf) {
 		GstStructure *stats = NULL;
 		g_object_get(G_OBJECT(rtpjitbuf), "stats", &stats, NULL);
-		//AL_cnt_structs(stats);	//stats
 		stats_str = gst_structure_to_string(stats);								
 		gst_structure_free(stats);			// Added missing free
 		stats = NULL;
@@ -1312,6 +1282,7 @@ void drop_output_buffers(gboolean drop, g_stream_t *stream)
 	GstElement *tx_valve = NULL;
 	gchar name[ELEMENT_NAME_SIZE];
 	if (!stream) goto error;
+
 	tx_valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-valve"); 
 	if (tx_valve == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
