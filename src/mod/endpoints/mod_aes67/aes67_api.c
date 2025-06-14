@@ -980,13 +980,13 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 		stream->clock = NULL;
 	}
 
-	switch_mutex_lock(alloc_pipl_lock); //added check
+	//switch_mutex_lock(alloc_pipl_lock); //added check
 	gst_pipeline_use_clock(GST_PIPELINE(stream->pipeline), ptp_clock);		
 	gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);		
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);	
 	dump_pipeline(stream->pipeline, "ptp-clock-switch");
 	g_atomic_int_set(&stream->clock_sync, 1);
-	switch_mutex_unlock(alloc_pipl_lock);  //added check
+	//switch_mutex_unlock(alloc_pipl_lock);  //added check
 
 error:
 	;
@@ -1149,7 +1149,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		
 	}
 
-	MU_gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0);		//check
+	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0);		//check
 
 	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) goto out;
 
@@ -1159,14 +1159,14 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// likely true (packet is limited to MTU, while buflen is 8192)
 	// FIXME: revisit this to check whether we need this anymore
 
-	switch_mutex_lock(alloc_pipl_lock); // added check
+	//switch_mutex_lock(alloc_pipl_lock); // added check
 	if (stream->leftover_bytes[ch_idx]) {
 		int copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
 		MU_memcpy(payload, stream->leftover[ch_idx], copy);		//no need for mutex - check
 		total_bytes += copy;
 		stream->leftover_bytes[ch_idx] -= copy;
 	}
-	switch_mutex_unlock(alloc_pipl_lock); // added check
+	//switch_mutex_unlock(alloc_pipl_lock); // added check
 
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
@@ -1189,9 +1189,9 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		if (gst_buffer_map(buf, &info, GST_MAP_READ)) {			//mutex here kills audio
 			if (total_bytes + info.size > needed_bytes) {
 				int want = needed_bytes - total_bytes;
-				switch_mutex_lock(alloc_pipl_lock);		//added check
+				//switch_mutex_lock(alloc_pipl_lock);		//added check
 				stream->leftover_bytes[ch_idx] = info.size - want;
-				switch_mutex_unlock(alloc_pipl_lock); // added check
+				//switch_mutex_unlock(alloc_pipl_lock); // added check
 				MU_memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
 				info.size = want;
 			}

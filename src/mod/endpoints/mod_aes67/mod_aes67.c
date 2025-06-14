@@ -584,12 +584,11 @@ static switch_status_t validate_main_audio_stream()
 	return SWITCH_STATUS_FALSE;
 }
 
-static switch_status_t destroy_actual_stream(audio_stream_t *stream)
+static switch_status_t destroy_actual_stream(audio_stream_t *stream)		
 {
 	if (stream == NULL) { return SWITCH_STATUS_FALSE; }
 
-	switch_mutex_lock(alloc_pipl_lock);						//added - check
-	if (globals.main_stream == stream) { 
+	if (globals.main_stream == stream) {	//locked at caller
 		globals.main_stream = NULL; }
 
 	stop_pipeline(stream->stream);
@@ -602,7 +601,6 @@ static switch_status_t destroy_actual_stream(audio_stream_t *stream)
 	switch_safe_free(stream->outdev);
 
 	switch_safe_free(stream);
-	switch_mutex_unlock(alloc_pipl_lock);					 // added - check
 	return SWITCH_STATUS_SUCCESS;
 }
 
@@ -1484,9 +1482,9 @@ error:
 		if (tech_pvt->read_codec.codec_interface) { switch_core_codec_destroy(&tech_pvt->read_codec); }
 		if (tech_pvt->write_codec.codec_interface) { switch_core_codec_destroy(&tech_pvt->write_codec); }
 	}
-
-	if (new_session && *new_session) { switch_core_session_destroy(new_session); }
 	if (endpoint && endpoint_locked) switch_mutex_unlock(endpoint->mutex); // check
+	if (new_session && *new_session) { switch_core_session_destroy(new_session); }
+
 	return retcause;
 }
 
@@ -1963,9 +1961,9 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 				goto again;
 			}
 		}
-		switch_mutex_unlock(globals.sh_shtreams_lock);
 
 		globals.destroying_streams = 0;
+		switch_mutex_unlock(globals.sh_shtreams_lock);
 	}
 
 	for (mystream = switch_xml_child(streams, "stream"); mystream; mystream = mystream->next) {
@@ -3148,7 +3146,7 @@ done:
  * mode:c
  * indent-tabs-mode:t
  * tab-width:4
- * c-basic-offset:4
+ * c-basic-offset:4g
  * End:
  * For VIM:
  * vim:set softtabstop=4 shiftwidth=4 tabstop=4 noet:
