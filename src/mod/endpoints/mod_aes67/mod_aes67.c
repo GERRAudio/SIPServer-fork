@@ -414,7 +414,7 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(session));
 
 				switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
-				switch_mutex_lock(globals.pvt_lock); /// around appsinks check added
+				///switch_mutex_lock(globals.pvt_lock); /// around appsinks check added
 				STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
 
 				if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan,
@@ -423,7 +423,7 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				}
 
 				STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
-				switch_mutex_unlock(globals.pvt_lock); /// around appsinks check added
+				///switch_mutex_unlock(globals.pvt_lock); /// around appsinks check added
 				switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 			}
 
@@ -694,7 +694,7 @@ static void add_pvt(private_t *tech_pvt, int master)
 	switch_mutex_lock(globals.pvt_lock);
 
 	if (*tech_pvt->call_id == '\0') {
-		switch_mutex_lock(globals.gst_mutex);
+		switch_mutex_lock(globals.gst_mutex);		///check should this be pvt mutex?
 		switch_snprintf(tech_pvt->call_id, sizeof(tech_pvt->call_id), "%d", ++globals.call_id);
 		switch_channel_set_variable(switch_core_session_get_channel(tech_pvt->session), SWITCH_PA_CALL_ID_VARIABLE,
 									tech_pvt->call_id);
@@ -1348,7 +1348,7 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 	switch_core_session_add_stream(*new_session, NULL);		///check need for mutex
 	if ((tech_pvt = (private_t *)switch_core_session_alloc(*new_session, sizeof(private_t))) != 0) {
 		memset(tech_pvt, 0, sizeof(*tech_pvt));
-		switch_mutex_init(&tech_pvt->flag_mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(*new_session));
+		switch_mutex_init(&tech_pvt->flag_mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(*new_session));			///check why this is here?
 		channel = switch_core_session_get_channel(*new_session);
 		switch_core_session_set_private(*new_session, tech_pvt);
 		tech_pvt->session = *new_session;
@@ -2808,8 +2808,10 @@ static audio_stream_t *create_audio_stream(udp_sock_t *indev, udp_sock_t *outdev
 	memset(stream, 0, sizeof(*stream));
 	stream->next = NULL;
 	stream->stream = NULL;
+	switch_mutex_lock(globals.device_lock);		///added check
 	stream->indev = indev;
 	stream->outdev = outdev;
+	switch_mutex_unlock(globals.device_lock); /// added check
 	if (!stream->write_timer.timer_interface) {
 		if (switch_core_timer_init(&(stream->write_timer), globals.timer_name, globals.codec_ms,
 								   globals.read_codec.implementation->samples_per_packet,

@@ -263,9 +263,9 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 #ifndef ENABLE_THREADSHARE
 	queue = gst_element_factory_make("queue", name);
 #else
-	switch_mutex_lock(alloc_pipl_lock);		//added
+	//switch_mutex_lock(alloc_pipl_lock);		///added check
 	MAKE_TS_ELEMENT(queue, "ts-queue", name, stream->ts_ctx);
-	switch_mutex_unlock(alloc_pipl_lock); // added
+	//switch_mutex_unlock(alloc_pipl_lock); /// added check
 #endif
 
 	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
