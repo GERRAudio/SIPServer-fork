@@ -1757,9 +1757,11 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 			switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
 			// stream lock aleady done before calling link_rx_stream
 			if (state == CCS_ACTIVE) {
+				STREAM_READER_LOCK(stream); ///added check
 				if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan,
 								session_id)) {
 					tech_pvt->audio_endpoint->active_listen_sessions++;
+					STREAM_READER_UNLOCK(stream); /// added check
 				}
 			}
 			switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
@@ -2867,7 +2869,7 @@ static int is_sock_equal(udp_sock_t *a, udp_sock_t *b)		///check where used
 void error_callback(char *msg, g_stream_t *stream)
 {
 	// switch_event_t *event;
-	switch_channel_t *channel;
+	switch_channel_t *channel;			///check do we need mutex since reading call_list?
 	private_t *tp;
 	if (msg) switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Stream error: %s\n", msg); // added check
 
