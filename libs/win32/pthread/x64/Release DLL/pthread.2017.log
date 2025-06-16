@@ -1,5 +1,5 @@
-﻿Build started 6/9/2025 10:29:20 AM.
-Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\pthread\pthread.2017.vcxproj" on node 2 (Rebuild target(s)).
+﻿Build started 6/16/2025 10:12:35 AM.
+Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\pthread\pthread.2017.vcxproj" on node 5 (Rebuild target(s)).
      1>_PrepareForClean:
          Deleting file "x64\Release DLL\pthread.tlog\pthread.lastbuildstate".
        PrepareForBuild:
@@ -26,4 +26,4 @@ Build succeeded.
     0 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:07.69
+Time Elapsed 00:00:23.17

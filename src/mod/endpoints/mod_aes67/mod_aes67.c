@@ -1767,7 +1767,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 
 static switch_bool_t stream_compare(shared_audio_stream_t *current, shared_audio_stream_t *new)
 {
-	STREAM_READER_LOCK(current); /// check if required
+	STREAM_WRITER_LOCK(current); /// check if required
 	switch_bool_t stream_changed = FALSE;
 
 	if (current->sample_rate != new->sample_rate) {
@@ -1864,7 +1864,7 @@ static switch_bool_t stream_compare(shared_audio_stream_t *current, shared_audio
 		strcpy(current->rtp_iface, new->rtp_iface);
 		stream_changed = TRUE;
 	}
-	STREAM_READER_UNLOCK(current); /// check if required
+	STREAM_WRITER_UNLOCK(current); /// check if required
 	return stream_changed;
 }
 
