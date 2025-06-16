@@ -1191,8 +1191,10 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 	if (globals.main_stream) {
 		if (switch_test_flag((&globals), GFLAG_EAR)) {
 			// Note: 0 is passed as the channel index because main stream can have only one out channel
+			switch_mutex_lock(globals.streams_lock);		///check added to avoid contention on globals stream - should it be device_lock as in pull for similar parms?
 			push_buffer(globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
 						&(globals.main_stream->write_timer));
+			switch_mutex_unlock(globals.streams_lock); /// check added
 		}
 		status = SWITCH_STATUS_SUCCESS;
 	}
