@@ -426,9 +426,13 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 	gst_element_unlink(queue, appsink);
 
+  if (!gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+        "Failed to remove queue from the pipeline ch: %d, session: %s", ch_idx, session);
+  }
 
-	gst_element_set_state(queue, GST_STATE_NULL);
-	gst_element_set_state(appsink, GST_STATE_NULL);
+	if (queue) gst_element_set_state(queue, GST_STATE_NULL);
+	if (appsink) gst_element_set_state(appsink, GST_STATE_NULL);
 
 	if (!MU_gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal //check mutex
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -594,32 +598,40 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		if (data->rx_codec == L16) {
 			rtpdepay = gst_element_factory_make("rtpL16depay", RTP_DEPAY);
-			udp_caps =
-				gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
-									G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
-									"encoding-name", G_TYPE_STRING, "L16", "media", G_TYPE_STRING, "audio", NULL);
+			udp_caps = gst_caps_new_simple("application/x-rtp", 
+					"clock-rate", G_TYPE_INT, data->sample_rate, 
+					"channels",	G_TYPE_INT, data->channels, 
+					"channel-order", G_TYPE_STRING, "unpositioned",
+					"encoding-name", G_TYPE_STRING, "L16", 
+					"media", G_TYPE_STRING, "audio", NULL);
 		} else {
 			rtpdepay = gst_element_factory_make("rtpL24depay", RTP_DEPAY);
-			udp_caps =
-				gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
-									G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
-									"encoding-name", G_TYPE_STRING, "L24", "media", G_TYPE_STRING, "audio", NULL);
+			udp_caps =	gst_caps_new_simple("application/x-rtp", 
+			"clock-rate", G_TYPE_INT, data->sample_rate, 
+			"channels",	G_TYPE_INT, data->channels, 
+			"channel-order", G_TYPE_STRING, "unpositioned",
+			"encoding-name", G_TYPE_STRING, "L24", 
+			"media", G_TYPE_STRING, "audio", NULL);
 		}
 
 		rtpjitbuf = gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
-		g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map), gst_caps_ref(udp_caps),
-							  destroy_caps, 0);
+		g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map), 
+		gst_caps_ref(udp_caps),  destroy_caps, 0);
 
-		g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency, "mode", 0 /* none */, NULL);
+		g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency,
+		 "mode", 0 /* none */, 
+		 NULL);
 		rx_audioconv = gst_element_factory_make("audioconvert", "rx-aconv");
 		g_object_set(rx_audioconv, "dithering", 0 /* none */, NULL);
 
 		capsfilter = gst_element_factory_make("capsfilter", "rx-caps");
 
 		/*Always feed S16LE to the FS*/
-		rx_caps = gst_caps_new_simple("audio/x-raw", "channels", G_TYPE_INT, data->channels, "format", G_TYPE_STRING,
-									  "S16LE", "layout", G_TYPE_STRING, "interleaved", NULL);
-		//AL_cnt_caps(rx_caps);
+		rx_caps = gst_caps_new_simple("audio/x-raw", 
+			"channels", G_TYPE_INT, data->channels, 
+			"format", G_TYPE_STRING, "S16LE",
+			"layout", G_TYPE_STRING, "interleaved",
+			 NULL);
 		g_object_set(capsfilter, "caps", rx_caps, NULL);
 		DA_gst_caps_unref(rx_caps);
 		rx_caps = NULL;
@@ -646,10 +658,13 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			// The deinterleave will be linked to the tee dynamically
 		}
 
-		g_signal_connect(deinterleave, "pad-added", G_CALLBACK(deinterleave_pad_added), NULL);
+		g_signal_connect(deinterleave, "pad-added", 
+			G_CALLBACK(deinterleave_pad_added), NULL);
 
-		g_object_set(udp_source, "address", data->rx_ip_addr, "port", data->rx_port, "multicast-iface", data->rtp_iface,
-					 "retrieve-sender-address", FALSE, NULL);
+		g_object_set(udp_source, "address", data->rx_ip_addr, "port", data->rx_port, 
+			"multicast-iface", data->rtp_iface,
+			"retrieve-sender-address", FALSE, 
+			NULL);
 		g_object_set(udp_source, "caps", udp_caps, NULL);
 		DA_gst_caps_unref(udp_caps);
 		udp_caps = NULL;
@@ -735,10 +750,13 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			}
 
 			/*Always accept S16LE from the FS*/
-			caps = gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, data->sample_rate, "channels", G_TYPE_INT, 1,
-									   "format", G_TYPE_STRING, "S16LE", "layout", G_TYPE_STRING, "interleaved",
-									   "channel-mask", GST_TYPE_BITMASK, (guint64)0, NULL);
-			//AL_cnt_caps(caps);
+			caps = gst_caps_new_simple("audio/x-raw", 
+				"rate", G_TYPE_INT, data->sample_rate, 
+				"channels", G_TYPE_INT, 1,
+				"format", G_TYPE_STRING, "S16LE", 
+				"layout", G_TYPE_STRING, "interleaved",
+			   "channel-mask", GST_TYPE_BITMASK, (guint64)0, NULL);
+
 			g_object_set(appsrc, "format", GST_FORMAT_TIME, NULL);
 			g_object_set(appsrc, "do-timestamp", TRUE, NULL);
 			g_object_set(appsrc, "is-live", TRUE, NULL);
@@ -767,15 +785,22 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		udpsink = gst_element_factory_make("udpsink", "tx-sink");
 
-		caps = gst_caps_new_simple("audio/x-raw", "rate", G_TYPE_INT, data->sample_rate, "channels", G_TYPE_INT,
-								   data->channels, "format", G_TYPE_STRING, "S16LE", "layout", G_TYPE_STRING,
-								   "interleaved", "channel-mask", GST_TYPE_BITMASK, (guint64)0, NULL);
+		caps = gst_caps_new_simple("audio/x-raw", 
+			"rate", G_TYPE_INT, data->sample_rate, 
+			"channels", G_TYPE_INT,  data->channels, 
+			"format", G_TYPE_STRING, "S16LE", 
+			"layout", G_TYPE_STRING, "interleaved", 
+			"channel-mask", GST_TYPE_BITMASK, (guint64)0, 
+			NULL);
 
 		g_object_set(capsfilter, "caps", caps, NULL);
 		DA_gst_caps_unref(caps);
 		caps = NULL;
 
-		g_object_set(udpsink, "host", data->tx_ip_addr, "port", data->tx_port, "multicast-iface", data->rtp_iface,
+		g_object_set(udpsink, 
+		"host", data->tx_ip_addr, 
+		"port", data->tx_port, 
+		"multicast-iface", data->rtp_iface,
 					 NULL);
 		g_object_set(udpsink, "sync", TRUE, "async", FALSE, NULL);
 		g_object_set(udpsink, "qos", TRUE, "qos-dscp", 34, NULL);
@@ -828,8 +853,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			GstElement *fakesink = NULL;
 			GstCaps *caps = NULL;
 
-			/* create a dummy pipeline with `udpsrc ! fakesink` just to receive on udp and read the last-sample from
-			 * fakesink */
+			/* create a dummy pipeline with `udpsrc ! fakesink` just to receive on udp and read the last-sample from fakesink */
 #ifndef ENABLE_THREADSHARE
 			udpsrc = gst_element_factory_make("udpsrc", "tx-monitor-udpsrc");
 #else
@@ -839,15 +863,19 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			fakesink = gst_element_factory_make("fakesink", "tx-monitor-fakesink");
 
 			if (data->tx_codec == L16) {
-				caps =
-					gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
-										G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
-										"encoding-name", G_TYPE_STRING, "L16", "media", G_TYPE_STRING, "audio", NULL);
+				caps =	gst_caps_new_simple("application/x-rtp", 
+				"clock-rate", G_TYPE_INT, data->sample_rate, 
+				"channels",	G_TYPE_INT, data->channels, 
+				"channel-order", G_TYPE_STRING, "unpositioned",
+				"encoding-name", G_TYPE_STRING, "L16", 
+				"media", G_TYPE_STRING, "audio", NULL);
 			} else {
-				caps =
-					gst_caps_new_simple("application/x-rtp", "clock-rate", G_TYPE_INT, data->sample_rate, "channels",
-										G_TYPE_INT, data->channels, "channel-order", G_TYPE_STRING, "unpositioned",
-										"encoding-name", G_TYPE_STRING, "L24", "media", G_TYPE_STRING, "audio", NULL);
+				caps = gst_caps_new_simple("application/x-rtp", 
+				"clock-rate", G_TYPE_INT, data->sample_rate, 
+				"channels",	G_TYPE_INT, data->channels, 
+				"channel-order", G_TYPE_STRING, "unpositioned",
+				"encoding-name", G_TYPE_STRING, "L24", 
+				"media", G_TYPE_STRING, "audio", NULL);
 			}
 
 			if (!udpsrc || !fakesink) {
@@ -1017,9 +1045,11 @@ void stop_pipeline(g_stream_t *stream)
 
 	/* cb_rx_stats_id will be non zero only when
 	Rx is operational and pipeline clock is not ptp*/
-	if (stream->cb_rx_stats_id) g_source_remove(stream->cb_rx_stats_id);
+	if (stream->cb_rx_stats_id) 
+		g_source_remove(stream->cb_rx_stats_id);
 
-	if (stream->backup_sender_idle_timer) g_source_remove(stream->backup_sender_idle_timer);
+	if (stream->backup_sender_idle_timer) 
+		g_source_remove(stream->backup_sender_idle_timer);
 
 	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(stream->pipeline));
 	gst_bus_remove_watch(bus);
@@ -1034,7 +1064,8 @@ void stop_pipeline(g_stream_t *stream)
 	}
 
 	teardown_mainloop(stream->mainloop);
-	if (stream->thread !=NULL) g_thread_join(stream->thread);
+	if (stream->thread !=NULL) 
+		g_thread_join(stream->thread);		
 	DA_g_free(stream);					//allocated elsewhere
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 error:
@@ -1151,14 +1182,14 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	if (appsink == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
 		goto error;
-		
-	}
 
 	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0);		//check
 
-	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) goto out;
+	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) 
+		goto out;
 
-	if (gst_app_sink_is_eos(GST_APP_SINK(appsink))) goto out;
+	if (gst_app_sink_is_eos(GST_APP_SINK(appsink))) 
+		goto out;
 
 	// Note: assumes leftover_bytes will never be more than buflen, which is
 	// likely true (packet is limited to MTU, while buflen is 8192)
