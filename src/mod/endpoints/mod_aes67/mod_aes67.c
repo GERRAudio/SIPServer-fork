@@ -414,7 +414,6 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(session));
 
 				switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
-				///switch_mutex_lock(globals.pvt_lock); /// around appsinks check 
 				STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
 
 				if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan,
@@ -423,7 +422,6 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				}
 
 				STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
-				///switch_mutex_unlock(globals.pvt_lock); /// around appsinks check
 				switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 			}
 
@@ -1762,7 +1760,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 								session_id)) {
 					tech_pvt->audio_endpoint->active_listen_sessions++;
 				}
-			STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check
+				STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check
 			}
 			switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 		}
@@ -2122,13 +2120,11 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 				// Signal intent-to-reload to prevent writer starvation
 				g_atomic_int_set(&curr_stream->reloading, 1);
 				STREAM_WRITER_LOCK(curr_stream);
-				//STREAM_READER_LOCK(curr_stream); //check if required
 				clear_shared_audio_stream(curr_stream);
 				create_shared_audio_stream(curr_stream);
 				link_rx_stream(curr_stream);
 
 				g_atomic_int_set(&curr_stream->reloading, 0);
-				//STREAM_READER_UNLOCK(curr_stream); // check if required
 				STREAM_WRITER_UNLOCK(curr_stream);
 			}
 			/* dont insert the allocated stream to the sh_streams list*/
