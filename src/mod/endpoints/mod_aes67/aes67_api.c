@@ -176,7 +176,7 @@ error:
 	// these need to be unconditionally deref'd
 	DA_gst_object_unref(GST_OBJECT(tee_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(tee));
-	//gst_element_set_state(pipeline, GST_STATE_NULL);		//check if needed
+	if (pipeline) gst_element_set_state(pipeline, GST_STATE_NULL);		//check if needed
 	DA_gst_object_unref(GST_OBJECT(pipeline));
 	DA_g_free(pad_name);
 }
@@ -926,6 +926,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	if (rtpdepay && data->synthetic_ptp) {
 		if (stream->clock) {
 			DA_gst_object_unref(GST_OBJECT(stream->clock)); // check - added 
+			stream->clock = NULL;
 		}
 		stream->clock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "name", "SyntheticPtpClock", NULL);
 
@@ -935,8 +936,8 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	} else {
 		if (stream->clock) {
 			DA_gst_object_unref(GST_OBJECT(stream->clock));			/// added check
+			stream->clock = NULL;
 		}
-		stream->clock = NULL;
 		gst_pipeline_use_clock(GST_PIPELINE(pipeline), data->clock);
 		g_atomic_int_set(&stream->clock_sync, 1);
 	}
@@ -946,13 +947,16 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	goto exit;
 
 error:
-	//gst_element_set_state(pipeline, GST_STATE_NULL);				//added check
+	gst_element_set_state(pipeline, GST_STATE_NULL);				//added check
 	DA_gst_object_unref(GST_OBJECT(pipeline));
 	DA_gst_object_unref(GST_OBJECT(rtp_pay));
 	DA_gst_object_unref(GST_OBJECT(rtpdepay));
 	if (stream != NULL) {
-		if (stream->clock != NULL)
-			DA_gst_object_unref(GST_OBJECT(stream->clock));					// added - check
+		if (stream->clock != NULL) {
+			DA_gst_object_unref(GST_OBJECT(stream->clock)); // added - check
+			stream->clock = NULL;
+		}
+		teardown_mainloop(stream->mainloop);								// added - check
 		if (stream->mainloop != NULL) g_main_loop_unref(stream->mainloop);	// added - check
 		if (stream->thread != NULL) g_thread_join(stream->thread);			// added - check
 		DA_g_free(stream);
@@ -1089,7 +1093,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		retval = TRUE;
 		goto done;
 	}
-	buf = gst_buffer_new_allocate(NULL, len, NULL);			// check
+	buf = gst_buffer_new_allocate(NULL, len, NULL);			
 
 	if (buf == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
@@ -1163,7 +1167,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	//switch_mutex_lock(alloc_pipl_lock); // added check
 	if (stream->leftover_bytes[ch_idx]) {
 		int copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
-		MU_memcpy(payload, stream->leftover[ch_idx], copy);		//no need for mutex - check
+		MU_memcpy(payload, stream->leftover[ch_idx], copy);		// check
 		total_bytes += copy;
 		stream->leftover_bytes[ch_idx] -= copy;
 	}
@@ -1196,7 +1200,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 				MU_memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
 				info.size = want;
 			}
-			MU_memcpy(payload + total_bytes, info.data, info.size);
+			MU_memcpy(payload + total_bytes, info.data, info.size);		//check
 			total_bytes += info.size;
 		}
 		gst_buffer_unmap(buf, &info);		//check
