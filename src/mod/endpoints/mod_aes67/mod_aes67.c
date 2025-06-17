@@ -1037,7 +1037,7 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 
 	if (tech_pvt->audio_endpoint) {
 		status = channel_endpoint_read(tech_pvt, frame, session_id);
-		goto normal_return;				///check need for mutex
+		goto normal_return;				
 	}
 
 	if (!globals.main_stream) { goto normal_return; }
@@ -1136,7 +1136,7 @@ error:
 
 static switch_status_t channel_endpoint_write(private_t *tech_pvt, switch_frame_t *frame)
 {
-	audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;			///check need for mutexg
+	audio_endpoint_t *endpoint = tech_pvt->audio_endpoint;			///check need for mutex
 	if (!endpoint) return SWITCH_STATUS_FALSE;
 	if (!endpoint->out_stream) {
 		switch_core_timer_next(&tech_pvt->write_timer);
@@ -1348,7 +1348,7 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 	switch_core_session_add_stream(*new_session, NULL);		///check need for mutex
 	if ((tech_pvt = (private_t *)switch_core_session_alloc(*new_session, sizeof(private_t))) != 0) {
 		memset(tech_pvt, 0, sizeof(*tech_pvt));
-		switch_mutex_init(&tech_pvt->flag_mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(*new_session));			///check why this is here?
+		switch_mutex_init(&tech_pvt->flag_mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(*new_session));			///new stream, new mutex
 		channel = switch_core_session_get_channel(*new_session);
 		switch_core_session_set_private(*new_session, tech_pvt);
 		tech_pvt->session = *new_session;
@@ -1455,8 +1455,8 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 		}
 
 		tech_pvt->audio_endpoint = endpoint;
+		endpoint_locked = FALSE;				//check placement
 		switch_mutex_unlock(endpoint->mutex);
-		endpoint_locked = FALSE;
 	} else {
 		id = !zstr(outbound_profile->caller_id_number) ? outbound_profile->caller_id_number : "na";
 		switch_snprintf(name, sizeof(name), "aes67/%s", id);
