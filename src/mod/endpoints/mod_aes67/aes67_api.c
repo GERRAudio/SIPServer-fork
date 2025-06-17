@@ -1171,42 +1171,40 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	int total_bytes = 0;
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *appsink = NULL;
-	if (!stream) goto error;		//added check
+	if (!stream) goto error; // added check
 
 	if (session == NULL)
 		NAME_ELEMENT(name, "appsink", ch_idx);
 	else
 		NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 
-	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);		//check 
+	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // check
 	if (appsink == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
 		goto error;
+	}
+	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0); // check
 
-	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0);		//check
+	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) goto out;
 
-	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) 
-		goto out;
-
-	if (gst_app_sink_is_eos(GST_APP_SINK(appsink))) 
-		goto out;
+	if (gst_app_sink_is_eos(GST_APP_SINK(appsink))) goto out;
 
 	// Note: assumes leftover_bytes will never be more than buflen, which is
 	// likely true (packet is limited to MTU, while buflen is 8192)
 	// FIXME: revisit this to check whether we need this anymore
 
-	//switch_mutex_lock(alloc_pipl_lock); // added check
+	// switch_mutex_lock(alloc_pipl_lock); // added check
 	if (stream->leftover_bytes[ch_idx]) {
 		int copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
-		MU_memcpy(payload, stream->leftover[ch_idx], copy);		// check
+		MU_memcpy(payload, stream->leftover[ch_idx], copy); // check
 		total_bytes += copy;
 		stream->leftover_bytes[ch_idx] -= copy;
 	}
-	//switch_mutex_unlock(alloc_pipl_lock); // added check
+	// switch_mutex_unlock(alloc_pipl_lock); // added check
 
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
-		sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 10 * GST_MSECOND);		//check
+		sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 10 * GST_MSECOND); // check
 		if (!sample) {
 			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Failed to pull sample\n");
 			switch_cond_next();
@@ -1222,21 +1220,21 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			continue;
 		}
 
-		if (gst_buffer_map(buf, &info, GST_MAP_READ)) {			//mutex here kills audio
+		if (gst_buffer_map(buf, &info, GST_MAP_READ)) { // mutex here kills audio
 			if (total_bytes + info.size > needed_bytes) {
 				int want = needed_bytes - total_bytes;
-				//switch_mutex_lock(alloc_pipl_lock);		//added check
+				// switch_mutex_lock(alloc_pipl_lock);		//added check
 				stream->leftover_bytes[ch_idx] = info.size - want;
-				//switch_mutex_unlock(alloc_pipl_lock); // added check
+				// switch_mutex_unlock(alloc_pipl_lock); // added check
 				MU_memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
 				info.size = want;
 			}
-			MU_memcpy(payload + total_bytes, info.data, info.size);		//check
+			MU_memcpy(payload + total_bytes, info.data, info.size); // check
 			total_bytes += info.size;
 		}
-		gst_buffer_unmap(buf, &info);		//check
+		gst_buffer_unmap(buf, &info); // check
 		if (sample != NULL) {
-			gst_sample_unref(sample);			//check 
+			gst_sample_unref(sample); // check
 			sample = NULL;
 		}
 
@@ -1262,10 +1260,10 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// stream->leftover_bytes[ch_idx]);
 
 out:
-	DA_gst_object_unref(GST_OBJECT(appsink));		//check 
+	DA_gst_object_unref(GST_OBJECT(appsink)); // check
 	return total_bytes;
 error:
-	DA_gst_object_unref(GST_OBJECT(appsink));		//check 
+	DA_gst_object_unref(GST_OBJECT(appsink)); // check
 	return 0;
 }
 
