@@ -414,7 +414,7 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(session));
 
 				switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
-				///switch_mutex_lock(globals.pvt_lock); /// around appsinks check added
+				///switch_mutex_lock(globals.pvt_lock); /// around appsinks check 
 				STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);
 
 				if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan,
@@ -423,7 +423,7 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				}
 
 				STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
-				///switch_mutex_unlock(globals.pvt_lock); /// around appsinks check added
+				///switch_mutex_unlock(globals.pvt_lock); /// around appsinks check
 				switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 			}
 
@@ -576,9 +576,9 @@ static switch_status_t validate_main_audio_stream()
 
 		return SWITCH_STATUS_SUCCESS;
 	}
-
-	globals.main_stream = get_audio_stream(globals.indev, globals.outdev);		///check need for mutex
-
+	switch_mutex_lock(globals.device_lock);///check need for mutex
+	globals.main_stream = get_audio_stream(globals.indev, globals.outdev);		
+	switch_mutex_unlock(globals.device_lock);		/// check need for mutex
 	if (globals.main_stream) { return SWITCH_STATUS_SUCCESS; }
 
 	return SWITCH_STATUS_FALSE;
@@ -1755,14 +1755,14 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 			switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(tech_pvt->session));
 
 			switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
-			// stream lock aleady done before calling link_rx_stream
+			// stream write lock aleady done before calling link_rx_stream
 			if (state == CCS_ACTIVE) {
-				STREAM_READER_LOCK(stream); ///added check
+				STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);//added check
 				if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan,
 								session_id)) {
 					tech_pvt->audio_endpoint->active_listen_sessions++;
-					STREAM_READER_UNLOCK(stream); /// added check
 				}
+			STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added check
 			}
 			switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 		}
@@ -1926,7 +1926,7 @@ static void *init_ptp(int domain, char *iface)
 	}
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Creating ptp clock client\n");
-	clock = gst_ptp_clock_new("ptp-clock", domain); // mem leak??
+	clock = gst_ptp_clock_new("ptp-clock", domain); 
 	if (!gst_clock_wait_for_sync(GST_CLOCK(clock), timeout)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Timed out waiting for the clock to sync\n");
 		g_signal_connect(G_OBJECT(clock), "synced", G_CALLBACK(clock_synced_cb), NULL);
@@ -1952,10 +1952,8 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 		switch_hash_index_t *hi;
 		shared_audio_stream_t *stream;
 
+		switch_mutex_lock(globals.sh_shtreams_lock); // moved out of the again - check
 		globals.destroying_streams = 1;
-
-
-		switch_mutex_lock(globals.sh_shtreams_lock);		//moved out of the again - check
 	again:
 		for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 

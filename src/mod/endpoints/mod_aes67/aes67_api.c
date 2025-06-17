@@ -934,7 +934,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		/* We'll set the pipeline clock once it's synced */
 	} else {
 		if (stream->clock) {
-			DA_gst_object_unref(GST_OBJECT(stream->clock));			// added check
+			DA_gst_object_unref(GST_OBJECT(stream->clock));			/// added check
 		}
 		gst_pipeline_use_clock(GST_PIPELINE(pipeline), data->clock);
 		g_atomic_int_set(&stream->clock_sync, 1);
