@@ -176,7 +176,7 @@ error:
 	// these need to be unconditionally deref'd
 	DA_gst_object_unref(GST_OBJECT(tee_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(tee));
-	if (pipeline) gst_element_set_state(pipeline, GST_STATE_NULL);		//check if needed
+	//if (pipeline) gst_element_set_state(pipeline, GST_STATE_NULL);		//check if needed
 	DA_gst_object_unref(GST_OBJECT(pipeline));
 	DA_g_free(pad_name);
 }
@@ -947,7 +947,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	goto exit;
 
 error:
-	gst_element_set_state(pipeline, GST_STATE_NULL);				//added check
+	//gst_element_set_state(pipeline, GST_STATE_NULL);				//added check
 	DA_gst_object_unref(GST_OBJECT(pipeline));
 	DA_gst_object_unref(GST_OBJECT(rtp_pay));
 	DA_gst_object_unref(GST_OBJECT(rtpdepay));
