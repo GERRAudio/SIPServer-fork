@@ -3,6 +3,7 @@
 !/x64/Release/mod/managed/*.csx
 !*.csx
 *~
+*.log
 *.o
 *.so
 *.lo
