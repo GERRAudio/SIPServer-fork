@@ -483,7 +483,9 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			// GstNetAddressMeta *meta=NULL;
 			// GSocketAddress * sock_addr=NULL;
 			// gchar *host=NULL;
+			switch_mutex_lock(alloc_bkup_lock);				///added check
 			GstClockTime max_delta = stream->backup_sender_idle_wait_ms * GST_MSECOND;
+			switch_mutex_unlock(alloc_bkup_lock);			///added check
 
 			g_object_get(G_OBJECT(fakesink), "last-sample", &last_sample, NULL);//allocates!
 			if (!last_sample) goto exit;
@@ -500,6 +502,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			  we know that new buffers are arriving and so pause our Tx */
 			delta = timestamp < current_time ? current_time - timestamp : timestamp - current_time;
 
+			switch_mutex_lock(alloc_bkup_lock); /// added check
 			if (delta < max_delta && FALSE == stream->pause_backup_sender) {
 				stream->pause_backup_sender = TRUE;
 
@@ -526,6 +529,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 								  "; last-sample timestamp - %" GST_TIME_FORMAT "\n",
 								  GST_TIME_ARGS(delta), GST_TIME_ARGS(current_time), GST_TIME_ARGS(timestamp));
 			}
+			switch_mutex_unlock(alloc_bkup_lock); /// added check
 
 			DA_gst_sample_unref(last_sample);
 			last_sample = NULL;
@@ -1041,6 +1045,10 @@ void stop_pipeline(g_stream_t *stream)
 
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 	if (!stream) goto error;//added check
+
+	if (stream->backup_sender_idle_timer)							//check - do first
+		g_source_remove(stream->backup_sender_idle_timer);
+
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 
 	/* cb_rx_stats_id will be non zero only when
@@ -1048,8 +1056,8 @@ void stop_pipeline(g_stream_t *stream)
 	if (stream->cb_rx_stats_id) 
 		g_source_remove(stream->cb_rx_stats_id);
 
-	if (stream->backup_sender_idle_timer) 
-		g_source_remove(stream->backup_sender_idle_timer);
+	/* moved up  if (stream->backup_sender_idle_timer) 
+		g_source_remove(stream->backup_sender_idle_timer);*/
 
 	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(stream->pipeline));
 	gst_bus_remove_watch(bus);
@@ -1302,9 +1310,9 @@ gchar *get_rtp_stats(g_stream_t *stream)
 		stats_str = gst_structure_to_string(stats);								
 		gst_structure_free(stats);			// Added missing free
 		stats = NULL;
-		gst_object_unref(GST_OBJECT(rtpjitbuf));
+		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
 	} else {
-		gst_object_unref(GST_OBJECT(rtpjitbuf));
+		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
 		stats_str = g_strdup_printf(""); // must be heap
 	}
 error:

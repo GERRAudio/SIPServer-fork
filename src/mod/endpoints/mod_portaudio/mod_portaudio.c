@@ -514,9 +514,11 @@ static void destroy_audio_streams()
 	globals.destroying_streams = 1;
 
 	while (globals.stream_in_use && close_wait--) { switch_yield(250000); }
+	switch_mutex_lock(&globals.streams_lock);  //added check
 	while (globals.stream_list != NULL) {
-		destroy_audio_stream(globals.stream_list->indev, globals.stream_list->outdev);
+		destroy_audio_stream(globals.stream_list->indev, globals.stream_list->outdev);		//FIXME: is switch_mutex_lock(&globals.streams_lock) required here given that pvt_lock is set in caller?
 	}
+	switch_mutex_unlock(&globals.streams_lock); // added check
 	globals.destroying_streams = 0;
 }
 
@@ -1003,8 +1005,8 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 	if (samples) {
 		globals.read_frame.datalen = samples * 2;
 		globals.read_frame.samples = samples;
+		*frame = &globals.read_frame; /// can we use tech_pvt readframe instead?
 
-		*frame = &globals.read_frame;
 
 		if (!switch_test_flag((&globals), GFLAG_MOUTH)) {
 			memset(globals.read_frame.data, 255, globals.read_frame.datalen);
