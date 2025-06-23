@@ -229,6 +229,7 @@ struct private_object {
 // added checks
 switch_mutex_t *alloc_pipl_lock;
 switch_mutex_t *alloc_mcp_lock;
+switch_mutex_t *alloc_bkup_lock;
 
 static struct {
 	int debug;
@@ -278,7 +279,7 @@ static struct {
 	int dual_streams;
 	int no_auto_resume_call;
 	int codecs_inited;
-	int destroying_streams;
+	volatile gint destroying_streams;			//was int, no volatile, check if this slows things down
 	double ptime_ms;
 	void *clock;
 	int synthetic_ptp;
@@ -372,7 +373,7 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 	switch_time_t waitsec = globals.ring_interval * 1000000; // not int (check)
 	switch_file_handle_t fh = {0};
 	const char *val = NULL;
-	const char *ring_file = NULL; // never assigned check
+	const char *ring_file = NULL;
 	const char *hold_file = NULL;
 	int16_t abuf[2048];
 
@@ -521,12 +522,14 @@ static audio_stream_t *find_audio_stream(udp_sock_t *indev, udp_sock_t *outdev, 
 
 static void destroy_audio_streams()
 {
-	globals.destroying_streams = 1;
+	//globals.destroying_streams = 1;
+	g_atomic_int_set(&globals.destroying_streams,1); //added
 
 	while (globals.stream_list != NULL) {
 		destroy_audio_stream(globals.stream_list->indev, globals.stream_list->outdev);
 	}
-	globals.destroying_streams = 0;
+	//globals.destroying_streams = 0;
+	g_atomic_int_set(&globals.destroying_streams, 0); // added
 }
 
 static int clear_shared_audio_stream(shared_audio_stream_t *stream);
@@ -548,7 +551,8 @@ static void destroy_shared_audio_streams()
 	switch_hash_index_t *hi;
 	shared_audio_stream_t *stream;
 
-	globals.destroying_streams = 1;
+	//globals.destroying_streams = 1;
+	g_atomic_int_set(&globals.destroying_streams, 1); // added
 
 	switch_mutex_lock(globals.sh_shtreams_lock);
 
@@ -560,7 +564,8 @@ static void destroy_shared_audio_streams()
 	}
 
 	switch_mutex_unlock(globals.sh_shtreams_lock);
-	globals.destroying_streams = 0;
+	g_atomic_int_set(&globals.destroying_streams, 0); // added
+	//globals.destroying_streams = 0;
 }
 
 static switch_status_t validate_main_audio_stream()
@@ -1604,9 +1609,9 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_mutex_init(&globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
 
-
 	switch_mutex_init(&alloc_pipl_lock, SWITCH_MUTEX_NESTED, module_pool);		//added check
 	switch_mutex_init(&alloc_mcp_lock, SWITCH_MUTEX_NESTED, module_pool);		//added check
+	switch_mutex_init(&alloc_bkup_lock, SWITCH_MUTEX_NESTED, module_pool);		// added check
 
 	globals.codecs_inited = 0;
 	globals.read_frame.data = globals.databuf;
@@ -1738,6 +1743,7 @@ static gboolean ptp_stats_cb(guint8 d, const GstStructure *stats, gpointer user_
 static void link_rx_stream(shared_audio_stream_t *stream)
 {
 	switch_hash_index_t *hi;
+	switch_mutex_lock(globals.gst_mutex);	//added check
 	for (hi = switch_core_hash_first(globals.call_hash); hi; hi = switch_core_hash_next(&hi)) {
 		const void *var;
 		void *val;
@@ -1765,6 +1771,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 			switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 		}
 	}
+	switch_mutex_lock(globals.gst_mutex); // added check
 }
 
 static switch_bool_t stream_compare(shared_audio_stream_t *current, shared_audio_stream_t *new)
@@ -1951,7 +1958,8 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 		shared_audio_stream_t *stream;
 
 		switch_mutex_lock(globals.sh_shtreams_lock); // moved out of the again - check
-		globals.destroying_streams = 1;
+		g_atomic_int_set(&globals.destroying_streams, 1); // added
+		//globals.destroying_streams = 1;
 	again:
 		for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 
@@ -1959,14 +1967,16 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 
 			if (NULL == switch_xml_find_child(streams, "stream", "name", stream->name)) {
 				// FIXME: Prevent crash due to removal of stream currently used in active call/session
-				switch_core_hash_delete(globals.sh_streams, stream->name);
+				//if (endpoint_in_use())  /// FIXME to prevent stream in use -add if (enpoint_in_use - need to get endpoint for that stream)
+				switch_core_hash_delete(globals.sh_streams, stream->name); 
 				free_shared_audio_stream(stream);
 				// FIXME: this is a bit ugly, but if we delete, the iterator is invalidated, so we restart
 				goto again;
 			}
 		}
 
-		globals.destroying_streams = 0;
+		//globals.destroying_streams = 0;
+		g_atomic_int_set(&globals.destroying_streams, 0); // added
 		switch_mutex_unlock(globals.sh_shtreams_lock);
 	}
 
@@ -2138,7 +2148,9 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 			switch_core_hash_insert_locked(globals.sh_streams, stream->name, stream, globals.sh_shtreams_lock);
 
 			/* Create ahead-of-time to start clock sync, etc. */
-			create_shared_audio_stream(stream);
+			if (-1 == create_shared_audio_stream(stream)) {		 /// added if - check : FIXME: stream add failure - deallocate?)
+				status = SWITCH_STATUS_FALSE;
+			}
 		}
 	}
 	return status;
@@ -2585,7 +2597,7 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 	switch_safe_free(globals.timer_name);
 
 	// todo clean cng_frame.codec
-	switch_core_codec_destroy(globals.cng_frame.codec);
+	switch_core_codec_destroy(globals.cng_frame.codec);		///FIXME: check if initialized
 	free(globals.cng_frame.codec);
 
 	return SWITCH_STATUS_SUCCESS;
@@ -2854,19 +2866,37 @@ audio_stream_t *get_audio_stream(udp_sock_t *indev, udp_sock_t *outdev)
 	return stream;
 }
 
-static int is_sock_equal(udp_sock_t *a, udp_sock_t *b)		///check where used
+
+static int is_sock_equal(udp_sock_t *a, udp_sock_t *b)		
 {
-	/* FIXME: strcasecmp can fail if one of the `ip_addr` strings has preceeding 0s */
-	return ((a->port == b->port) && (!strcasecmp(a->ip_addr, b->ip_addr)));
+	/* fixed- FIXME: strcasecmp can fail if one of the `ip_addr` strings has preceeding 0s */
+	//return ((a->port == b->port) && (!strcasecmp(a->ip_addr, b->ip_addr)));
+	// Convert IP address strings to binary form
+	struct in_addr addr_a;
+	struct in_addr addr_b;
+
+	// inet_pton returns 1 on success, 0 if the address is invalid, -1 on error
+	// It's good practice to check the return value.
+	if (inet_pton(AF_INET, a->ip_addr, &addr_a) != 1 || inet_pton(AF_INET, b->ip_addr, &addr_b) != 1) {
+		// Handle invalid IP address strings.
+		// This could mean logging an error, returning a specific error code,
+		// or deciding how to treat invalid IPs (e.g., they are never equal).
+		// For now, we'll assume they're not equal if conversion fails.
+		return 0;
+	}
+
+	// Compare the binary representations of the IP addresses and the ports
+	return (a->port == b->port) && (addr_a.s_addr == addr_b.s_addr);
 }
+
 
 void error_callback(char *msg, g_stream_t *stream)
 {
 	// switch_event_t *event;
-	switch_channel_t *channel;			///check do we need mutex since reading call_list?
+	switch_channel_t *channel;			
 	private_t *tp;
 	if (msg) switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Stream error: %s\n", msg); // added check
-
+	switch_mutex_lock(globals.pvt_lock);			//added check
 	for (tp = globals.call_list; tp; tp = tp->next) {
 		if (!tp->audio_endpoint) continue;
 		if ((tp->audio_endpoint->in_stream && (tp->audio_endpoint->in_stream->stream == stream)) ||
@@ -2875,9 +2905,11 @@ void error_callback(char *msg, g_stream_t *stream)
 			goto hangup;
 		}
 	}
+	switch_mutex_unlock(globals.pvt_lock); // added check
 	return;
 
 hangup:
+	switch_mutex_unlock(globals.pvt_lock); // added check
 	// Note: this could be sync blocking call, would prefer a more asyn event kind which will call channel_kill
 	// switch_channel_hangup(channel, SWITCH_CAUSE_PROTOCOL_ERROR);
 	if (channel) switch_channel_hangup(channel, SWITCH_CAUSE_PROTOCOL_ERROR); // check

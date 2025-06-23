@@ -1,10 +1,6 @@
-﻿Build started 6/16/2025 10:12:07 AM.
-Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" on node 2 (Rebuild target(s)).
-     1>_PrepareForClean:
-         Deleting file "x64\Release_Generic\libmpg123.tlog\libmpg123.lastbuildstate".
-       CoreClean:
-         Deleting file "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\x64\Release_Generic\libmpg123.lib".
-       PrepareForBuild:
+﻿Build started 6/20/2025 12:51:44 PM.
+Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" on node 5 (Build target(s)).
+     1>PrepareForBuild:
          Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
        InitializeBuildStatus:
          Creating "x64\Release_Generic\libmpg123.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
@@ -26,8 +22,8 @@ Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAu
          layer3.c
          libmpg123.c
          msvc.c
-     1>C:\Development\GitHub\GERRAudio\SIPServer\libs\libmpg123\ports\MSVC++\msvc.c(24,34): warning C4113: 'int (__cdecl *)(int,void *,unsigned int)' differs in parameter lists from 'ssize_t (__cdecl *)(int,void *,size_t)'
          ntom.c
+     1>C:\Development\GitHub\GERRAudio\SIPServer\libs\libmpg123\ports\MSVC++\msvc.c(24,34): warning C4113: 'int (__cdecl *)(int,void *,unsigned int)' differs in parameter lists from 'ssize_t (__cdecl *)(int,void *,size_t)'
          optimize.c
          parse.c
          readers.c
@@ -68,15 +64,15 @@ Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAu
        FinalizeBuildStatus:
          Deleting file "x64\Release_Generic\libmpg123.tlog\unsuccessfulbuild".
          Touching "x64\Release_Generic\libmpg123.tlog\libmpg123.lastbuildstate".
-     1>Done Building Project "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" (Rebuild target(s)).
+     1>Done Building Project "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" (Build target(s)).
 
 Build succeeded.
 
-       "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" (Rebuild target) (1) ->
+       "C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\libmpg123.2017.vcxproj" (Build target) (1) ->
        (ClCompile target) -> 
          C:\Development\GitHub\GERRAudio\SIPServer\libs\libmpg123\ports\MSVC++\msvc.c(24,34): warning C4113: 'int (__cdecl *)(int,void *,unsigned int)' differs in parameter lists from 'ssize_t (__cdecl *)(int,void *,size_t)'
 
     1 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:05.53
+Time Elapsed 00:00:07.88
