@@ -1,10 +1,6 @@
-﻿Build started 6/16/2025 10:17:19 AM.
-Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" on node 3 (Rebuild target(s)).
-     1>_PrepareForClean:
-         Deleting file "x64\\mod_managed.tlog\mod_managed.lastbuildstate".
-       CoreClean:
-         Deleting file "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\x64\mod_managed.2017.vcxproj.AssemblyReference.cache".
-       PrepareForBuild:
+﻿Build started 6/20/2025 12:55:53 PM.
+Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" on node 2 (Build target(s)).
+     1>PrepareForBuild:
          Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
      1>C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(2389,5): warning MSB3274: The primary reference "C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\FreeSWITCH.Managed.dll" could not be resolved because it was built against the ".NETFramework,Version=v4.8" framework. This is a higher version than the currently targeted framework ".NETFramework,Version=v4.7.2".
        InitializeBuildStatus:
@@ -32,7 +28,7 @@ Logging verbosity is set to: Normal.     1>Project "C:\Development\GitHub\GERRAu
        FinalizeBuildStatus:
          Deleting file "x64\\mod_managed.tlog\unsuccessfulbuild".
          Touching "x64\\mod_managed.tlog\mod_managed.lastbuildstate".
-     1>Done Building Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" (Rebuild target(s)).
+     1>Done Building Project "C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\mod_managed.2017.vcxproj" (Build target(s)).
 
 Build succeeded.
 
@@ -43,4 +39,4 @@ Build succeeded.
     1 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:24.12
+Time Elapsed 00:00:17.52
