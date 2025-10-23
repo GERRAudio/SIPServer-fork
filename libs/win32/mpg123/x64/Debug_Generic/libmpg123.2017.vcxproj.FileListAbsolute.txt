@@ -1,0 +1,1 @@
+C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\x64\Debug_Generic\libmpg123.lib
