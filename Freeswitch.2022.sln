@@ -611,6 +611,13 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "external", "external", "{B4
 		conf\Bruce\conf\sip_profiles\external\Remote.xml = conf\Bruce\conf\sip_profiles\external\Remote.xml
 	EndProjectSection
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{134A96EE-8017-42C2-B53D-D0AA1D8D8C8C}"
+	ProjectSection(SolutionItems) = preProject
+		src\mod\managed\FreeSwitch.Modules.Tests\FreeSwitch.Modules.Tests.csproj = src\mod\managed\FreeSwitch.Modules.Tests\FreeSwitch.Modules.Tests.csproj
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "NewFolder1", "NewFolder1", "{56DCFDE4-4000-4BDB-A4D3-5A1E183842B4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		All|Any CPU = All|Any CPU
@@ -10979,6 +10986,7 @@ Global
 		{E08A6E29-084A-462B-84FE-DDCB198D7618} = {5DAEE21C-6B03-4E6B-81D5-A03927B6222F}
 		{F0299164-A342-49AD-8620-1E33A3E8C23C} = {C8FF8DCB-F5F7-49BA-B445-B522207DFB2E}
 		{B45EB22F-987D-40B8-B3F0-8C933B87317A} = {F0299164-A342-49AD-8620-1E33A3E8C23C}
+		{56DCFDE4-4000-4BDB-A4D3-5A1E183842B4} = {134A96EE-8017-42C2-B53D-D0AA1D8D8C8C}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {09840DE7-9208-45AA-9667-1A71EE93BD1E}
