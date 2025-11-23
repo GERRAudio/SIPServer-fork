@@ -3,7 +3,7 @@ using System;
 using System.Net;
 using System.Text;
 using System.Xml;
-//using FreeSWITCH.Native;
+using FreeSWITCH.Native;
 using Moq;
 using Xunit;
 

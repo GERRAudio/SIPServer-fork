@@ -1608,11 +1608,11 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_mutex_init(&globals.flag_mutex, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
-
 	switch_mutex_init(&alloc_pipl_lock, SWITCH_MUTEX_NESTED, module_pool);		//added check
 	switch_mutex_init(&alloc_mcp_lock, SWITCH_MUTEX_NESTED, module_pool);		//added check
 	switch_mutex_init(&alloc_bkup_lock, SWITCH_MUTEX_NESTED, module_pool);		// added check
 
+	
 	globals.codecs_inited = 0;
 	globals.read_frame.data = globals.databuf;
 	globals.read_frame.buflen = sizeof(globals.databuf);
@@ -3073,7 +3073,7 @@ SWITCH_STANDARD_API(aes_cmd)
 			rtp_stats = get_rtp_stats(astream->stream);
 			if (rtp_stats) {
 				stream->write_function(stream, "%s\n", rtp_stats);
-				DA_g_free(rtp_stats); // counting of allocation occurs get_rtp_stats
+				free(rtp_stats); // counting of allocation occurs get_rtp_stats
 				rtp_stats = NULL;
 			}
 

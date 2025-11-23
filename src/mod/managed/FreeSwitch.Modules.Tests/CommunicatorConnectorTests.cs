@@ -1,7 +1,7 @@
 // FreeSwitch.Modules.Tests/CommunicatorConnectorTests.cs
 using System;
 using System.Threading.Tasks;
-//using FreeSWITCH.Native;
+using FreeSWITCH.Native;
 using Moq;
 using Xunit;
 

@@ -29,7 +29,10 @@
 extern switch_mutex_t *alloc_pipl_lock;
 extern switch_mutex_t *alloc_mcp_lock;
 extern switch_mutex_t *alloc_bkup_lock;
+extern switch_mutex_t *alloc_elem_lock = NULL;
 
+
+G_alloc_counts g_alloc_counts;
 // --- Macro for allocation wrappers ---
 #define G_WRAP_ALLOC(ret_type, func, counter, tp1, p1)                                                           \
 	inline ret_type AL_##func(tp1 p1)                                                                                  \
