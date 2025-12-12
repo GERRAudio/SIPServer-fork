@@ -426,7 +426,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 	gst_element_unlink(queue, appsink);
 
-  if (!gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
+  if (!MU_gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
         "Failed to remove queue from the pipeline ch: %d, session: %s", ch_idx, session);
   }
@@ -567,6 +567,8 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	char fixed_name[25] = {"pipeline"};
 	char *ts_ctx = DEFAULT_CONTEXT_NAME;
 
+	stream->bus_watch_id = gst_bus_add_watch(bus, bus_callback, stream);		//added
+
 	if (data->name)
 		pipeline_name = data->name;
 	else
@@ -619,8 +621,9 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		}
 
 		rtpjitbuf = gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
-		g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map), 
-		gst_caps_ref(udp_caps),  destroy_caps, 0);
+		stream->jitterbuf_signal_id = g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map), 
+			gst_caps_ref(udp_caps),  destroy_caps, 0);
+
 
 		g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency,
 		 "mode", 0 /* none */, 
@@ -662,7 +665,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			// The deinterleave will be linked to the tee dynamically
 		}
 
-		g_signal_connect(deinterleave, "pad-added", 
+		stream->deinterleave_signal_id = g_signal_connect(deinterleave, "pad-added", 
 			G_CALLBACK(deinterleave_pad_added), NULL);
 
 		g_object_set(udp_source, "address", data->rx_ip_addr, "port", data->rx_port, 
@@ -1042,7 +1045,7 @@ void *start_pipeline(void *data)
 void stop_pipeline(g_stream_t *stream)
 {
 	GstBus *bus = NULL;
-
+	
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 	if (!stream) goto error;//added check
 
@@ -1060,7 +1063,33 @@ void stop_pipeline(g_stream_t *stream)
 		g_source_remove(stream->backup_sender_idle_timer);*/
 
 	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(stream->pipeline));
-	gst_bus_remove_watch(bus);
+
+
+	//gst_bus_remove_watch(bus);
+	// added
+	if (stream->bus_watch_id > 0) { // added
+		g_source_remove(stream->bus_watch_id);
+		stream->bus_watch_id = 0;
+	}
+
+	if (stream->deinterleave_signal_id > 0) {
+		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
+		if (deinterleave) {
+			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
+			DA_gst_object_unref(GST_OBJECT(deinterleave));
+		}
+		stream->deinterleave_signal_id = 0;
+	}
+	if (stream->jitterbuf_signal_id > 0) {
+		GstElement *rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
+		if (rtpjitbuf) {
+			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
+			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+		}
+		stream->jitterbuf_signal_id = 0;
+	}
+	// added
+
 	DA_gst_object_unref(GST_OBJECT(bus));
 	bus = NULL;
 
@@ -1149,7 +1178,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	g_signal_emit_by_name(appsrc, "push-buffer", buf, &result);
 	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pushed buffer\n");
 	if (buf) {
-		gst_buffer_unref(buf);
+		DA_gst_buffer_unref(buf);
 		buf = NULL;
 	}
 

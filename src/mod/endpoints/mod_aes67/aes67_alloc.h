@@ -11,8 +11,8 @@
 // todo:
 // - use flags to remove mutexes
 // - use flags to disable counters
-// 
-// Copyright GERR Audio 2025
+//
+// Copyright GERRAudio 2025
 //
 #ifndef G_WRAP
 #define G_WRAP
@@ -31,86 +31,110 @@ extern switch_mutex_t *alloc_mcp_lock;
 extern switch_mutex_t *alloc_bkup_lock;
 
 // --- Macro for allocation wrappers ---
-#define G_WRAP_ALLOC(ret_type, func, counter, tp1, p1)                                                           \
+#define G_WRAP_ALLOC(ret_type, func, counter, tp1, p1)                                                                 \
 	inline ret_type AL_##func(tp1 p1)                                                                                  \
 	{                                                                                                                  \
 		ret_type _ret = func(p1);                                                                                      \
+		if (_ret) g_alloc_counts.counter++;                                                                            \
 		return _ret;                                                                                                   \
 	}
 
 // with mutex
-#define G_WRAP_ALLOC_M(ret_type, func, counter, tp1, p1, l)                                                      \
+#define G_WRAP_ALLOC_M(ret_type, func, counter, tp1, p1, l)                                                            \
 	inline ret_type AL_##func(tp1 p1)                                                                                  \
 	{                                                                                                                  \
 		switch_mutex_lock(l);                                                                                          \
 		ret_type _ret = func(p1);                                                                                      \
+		if (_ret) g_alloc_counts.counter++;                                                                            \
 		switch_mutex_unlock(l);                                                                                        \
 		return _ret;                                                                                                   \
 	}
 
 // allocators
-#define G_WRAP_ALLOC2(ret_type, func, counter, tp1, p1, tp2, p2)                                                 \
+#define G_WRAP_ALLOC2(ret_type, func, counter, tp1, p1, tp2, p2)                                                       \
 	inline ret_type AL_##func(tp1 p1, tp2 p2)                                                                          \
 	{                                                                                                                  \
 		ret_type _ret = func(p1, p2);                                                                                  \
+		if (_ret) g_alloc_counts.counter++;                                                                            \
 		return _ret;                                                                                                   \
 	}
 // with mutex
-#define G_WRAP_ALLOC2_M(ret_type, func, counter, tp1, p1, tp2, p2, l)                                            \
+#define G_WRAP_ALLOC2_M(ret_type, func, counter, tp1, p1, tp2, p2, l)                                                  \
 	inline ret_type AL_##func(tp1 p1, tp2 p2)                                                                          \
 	{                                                                                                                  \
 		switch_mutex_lock(l);                                                                                          \
 		ret_type _ret = func(p1, p2);                                                                                  \
+		if (_ret) g_alloc_counts.counter++;                                                                            \
 		switch_mutex_unlock(l);                                                                                        \
 		return _ret;                                                                                                   \
 	}
 
-#define G_WRAP_ALLOC3(ret_type, func, counter, tp1, p1, tp2, p2, tp3, p3)                                        \
+#define G_WRAP_ALLOC3(ret_type, func, counter, tp1, p1, tp2, p2, tp3, p3)                                              \
 	inline ret_type AL_##func(tp1 p1, tp2 p2, tp3 p3)                                                                  \
 	{                                                                                                                  \
 		ret_type _ret = func(p1, p2, p3);                                                                              \
+		if (_ret) g_alloc_counts.counter++;                                                                            \
 		return _ret;                                                                                                   \
 	}
 // with mutex
-#define G_WRAP_ALLOC3_M(ret_type, func, counter, tp1, p1, tp2, p2, tp3, p3, l)                                   \
+#define G_WRAP_ALLOC3_M(ret_type, func, counter, tp1, p1, tp2, p2, tp3, p3, l)                                         \
 	inline ret_type AL_##func(tp1 p1, tp2 p2, tp3 p3)                                                                  \
 	{                                                                                                                  \
 		switch_mutex_lock(l);                                                                                          \
 		ret_type _ret = func(p1, p2, p3);                                                                              \
+		if (_ret) g_alloc_counts.counter++;                                                                            \
 		switch_mutex_unlock(l);                                                                                        \
 		return _ret;                                                                                                   \
 	}
 
-#define G_WRAP_ALLOC4(ret_type, func, counter, tp1, p1, tp2, p2, tp3, p3, tp4, p4)                               \
+#define G_WRAP_ALLOC4(ret_type, func, counter, tp1, p1, tp2, p2, tp3, p3, tp4, p4)                                     \
 	inline ret_type AL_##func(tp1 p1, tp2 p2, tp3 p3, tp4 p4)                                                          \
 	{                                                                                                                  \
 		ret_type _ret = func(p1, p2, p3, p4);                                                                          \
+		if (_ret) g_alloc_counts.counter++;                                                                            \
 		return _ret;                                                                                                   \
 	}
 
-#define G_WRAP_ALLOC7(ret_type, func, counter, tp1, p1, tp2, p2, tp3, p3, tp4, p4, tp5, p5, tp6, p6, tp7, p7)    \
+#define G_WRAP_ALLOC7(ret_type, func, counter, tp1, p1, tp2, p2, tp3, p3, tp4, p4, tp5, p5, tp6, p6, tp7, p7)          \
 	inline ret_type AL_##func(tp1 p1, tp2 p2, tp3 p3, tp4 p4, tp5 p5, tp6 p6, tp7 p7)                                  \
 	{                                                                                                                  \
 		ret_type _ret = func(p1, p2, p3, p4, p5, p6, p7);                                                              \
+		if (_ret) g_alloc_counts.counter++;                                                                            \
 		return _ret;                                                                                                   \
 	}
 
-// --- Macro for deallocation wrappers ---
-#define G_WRAP_FREE(fname, counter, arg_type)                                                                    \
+#define G_WRAP_FREE(fname, counter, arg_type)                                                                          \
 	inline void DA_##fname(arg_type p)                                                                                 \
 	{                                                                                                                  \
-		if (p != NULL) { fname(p); }                                                                                   \
+		if (p != NULL) {                                                                                               \
+			fname(p);                                                                                                  \
+			g_alloc_counts.counter--;                                                                                  \
+		}                                                                                                              \
 	}
 
+// TODO define
+// G_WRAP_ALLOC2(GstPad *, gst_element_get_request_pad, pads, GstElement *, e, const gchar *, n)
+// G_WRAP_ALLOC2(GstPad *, gst_element_get_static_pad, pads, GstElement *, e, const gchar *, n)
+// G_WRAP_ALLOC(GstPad *, gst_pad_get_peer, pads, GstPad *, p)
+
+// --- Macro for deallocation wrappers ---
+#define G_WRAP_FREE(fname, counter, arg_type)                                                                          \
+	inline void DA_##fname(arg_type p)                                                                                 \
+	{                                                                                                                  \
+		if (p != NULL) {                                                                                               \
+			fname(p);                                                                                                  \
+			g_alloc_counts.counter--;                                                                                  \
+		}                                                                                                              \
+	}
 
 //
 // ==== incr/decr to use when wrapping is undesired
 // --- Macro for increment-only wrappers (for manual tracking) ---
-#define G_WRAP_INC(counter, name, t, p)                                                                          \
+#define G_WRAP_INC(counter, name, t, p)                                                                                \
 	inline void AL_##name(t p) { ; }
 
 // --- Macro for decrement-only wrappers (for manual tracking) ---
-#define G_WRAP_DEC(counter, name, t, p)                                                                          \
+#define G_WRAP_DEC(counter, name, t, p)                                                                                \
 	inline void DA_##name(t p) { ; }
 
 //==== Mutex wrappers
@@ -124,7 +148,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 		return retval;                                                                                                 \
 	}
 
-//void return
+// void return
 #define MU_WRAPV1c(fname, tp1, p1, l)                                                                                  \
 	inline void MUc_##fname(tp1 p1)                                                                                    \
 	{                                                                                                                  \
@@ -184,7 +208,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 		return _result;                                                                                                \
 	}
 
-//void return
+// void return
 #define MU_WRAPV3(fname, tp1, p1, tp2, p2, tp3, p3, l)                                                                 \
 	inline void MU_##fname(tp1 p1, tp2 p2, tp3 p3)                                                                     \
 	{                                                                                                                  \
@@ -291,23 +315,27 @@ G_WRAP_ALLOC_M(GstElement *, gst_pipeline_new, objs, const gchar *, n, alloc_pip
 
 // gboolean gst_pipeline_set_clock(GstPipeline *pipeline, GstClock *clock);
 MU_WRAP2(gboolean, gst_pipeline_set_clock, GstPipeline *, p, GstClock *, c, alloc_pipl_lock)
-	// void gst_pipeline_use_clock(GstPipeline *pipeline, GstClock *clock);
+// void gst_pipeline_use_clock(GstPipeline *pipeline, GstClock *clock);
 MU_WRAPV2(gst_pipeline_use_clock, GstPipeline *, pipeline, GstClock *, clock, alloc_pipl_lock)
-	// gst_object_unref(GST_OBJECT(stream->pipeline));
+// gst_object_unref(GST_OBJECT(stream->pipeline));
 MU_WRAPV1p(gst_object_unref, gpointer, pipeline, alloc_pipl_lock)
 	// gboolean gst_bin_remove(GstBin *bin, GstElement *element);
-MU_WRAP2(gboolean, gst_bin_remove, GstBin *, bin, GstElement *, element, alloc_pipl_lock)
+	MU_WRAP2(gboolean, gst_bin_remove, GstBin *, bin, GstElement *, element, alloc_pipl_lock)
 	// GstStateChangeReturn gst_element_get_state(GstElement *e, GstState *s,GstState *pending, GstClockTime timeout);
-MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime,	 t, alloc_pipl_lock)
+	MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime,
+			 t, alloc_pipl_lock)
 	// gboolean gst_bus_remove_watch(GstBus *bus);
-MU_WRAP1(gboolean, gst_bus_remove_watch, GstBus *, bus, alloc_pipl_lock)
-	//GstObject* gst_element_get_parent(GstElement *element);
-G_WRAP_ALLOC_M(GstObject *, gst_element_get_parent, objs, GstElement *, e, alloc_pipl_lock)
+	MU_WRAP1(gboolean, gst_bus_remove_watch, GstBus *, bus, alloc_pipl_lock)
+	// GstObject* gst_element_get_parent(GstElement *element);
+	G_WRAP_ALLOC_M(GstObject *, gst_element_get_parent, objs, GstElement *, e, alloc_pipl_lock)
 
-// --- Sample  wrappers ---
-G_WRAP_FREE(gst_sample_unref, samples, GstSample *)
+	// --- Sample  wrappers ---
+	G_WRAP_FREE(gst_sample_unref, samples, GstSample *)
 
-// --- caps wrappers ---
-G_WRAP_FREE(gst_caps_unref, caps, GstCaps *)
+	// --- caps wrappers ---
+	G_WRAP_FREE(gst_caps_unref, caps, GstCaps *)
+
+	// --- buffer wrapper ---
+	G_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *)
 
 #endif

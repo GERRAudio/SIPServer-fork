@@ -65,6 +65,9 @@ struct g_stream
   gboolean txdrop;
   guint backup_sender_idle_timer;
   int backup_sender_idle_wait_ms;
+  guint bus_watch_id;                   //added
+  gulong deinterleave_signal_id;        //added
+  guint jitterbuf_signal_id;
 };
 
 g_stream_t *create_pipeline (pipeline_data_t *data, event_callback_t * error_cb);
