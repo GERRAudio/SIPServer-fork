@@ -33,7 +33,7 @@ G_alloc_counts g_alloc_counts;	// debug counters for allocation
 
 #define MAKE_TS_ELEMENT(var, factory, name, context)                                                                   \
 	do {                                                                                                               \
-		var = gst_element_factory_make(factory, name);                                                              \
+		var = AL_gst_element_factory_make(factory, name);                                                              \
 		g_object_set(var, "context-wait", DEFAULT_CONTEXT_WAIT, "context", context, NULL);                             \
 	} while (0)
 
@@ -150,7 +150,7 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 	gchar *pad_name = NULL;
 	guint ch_idx;
 
-	pad_name = gst_pad_get_name(pad);
+	pad_name = AL_gst_pad_get_name(pad);
 	if(sscanf(pad_name, "src_%u", &ch_idx) != 1)
 	{
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pad name format unexpected: %s", pad_name);
@@ -158,13 +158,13 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 	}
 
 	NAME_ELEMENT(name, "tee", ch_idx);
-	tee = gst_bin_get_by_name(GST_BIN(pipeline), name); 
+	tee = AL_gst_bin_get_by_name(GST_BIN(pipeline), name); 
 	//g_assert_nonnull(tee);		//warning, will abort! - changed to below, check
 	if (!tee) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Tee element not found for %s", name);
 		goto error;
 	}
-	tee_sink_pad = gst_element_get_static_pad(tee, "sink");
+	tee_sink_pad = AL_gst_element_get_static_pad(tee, "sink");
 	if (gst_pad_link(pad, tee_sink_pad) != GST_PAD_LINK_OK) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link deinterleave %s pad in the rx pipeline",
 						  pad_name);
@@ -192,7 +192,7 @@ gboolean update_clock(gpointer userdata)
 	GstElement *rtpdepay = NULL;
 
 	pipeline = (GstElement *)stream->pipeline;
-	rtpdepay = gst_bin_get_by_name(GST_BIN(pipeline), RTP_DEPAY);
+	rtpdepay = AL_gst_bin_get_by_name(GST_BIN(pipeline), RTP_DEPAY);
 	if (!rtpdepay) {
 		DA_dec_objs(rtpdepay); //dec count
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "rtpdepay not found in pipeline");
@@ -261,7 +261,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		goto error;
 	}
 #ifndef ENABLE_THREADSHARE
-	queue = gst_element_factory_make("queue", name);
+	queue = AL_gst_element_factory_make("queue", name);
 #else
 	//switch_mutex_lock(alloc_pipl_lock);		///added check
 	MAKE_TS_ELEMENT(queue, "ts-queue", name, stream->ts_ctx);
@@ -269,7 +269,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 #endif
 
 	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
-	appsink = gst_element_factory_make("appsink", name);
+	appsink = AL_gst_element_factory_make("appsink", name);
 
 	if (!queue || !appsink) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -304,7 +304,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		goto error;
 	}
 
-	if (NULL == (queue_sink_pad = gst_element_get_static_pad(queue, "sink"))) {
+	if (NULL == (queue_sink_pad = AL_gst_element_get_static_pad(queue, "sink"))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to get sink pad from the queue element ch: %d, session: %s", ch_idx, session);
 		goto error;
@@ -394,13 +394,13 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		goto error;
 	}
 
-	if (NULL == (queue_sink_pad = gst_element_get_static_pad(queue, "sink"))) {
+	if (NULL == (queue_sink_pad = AL_gst_element_get_static_pad(queue, "sink"))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to get sink pad from the queue element ch: %d, session: %s", ch_idx, session);
 		goto error;
 	}
 
-	if (NULL == (tee_src_pad = gst_pad_get_peer(queue_sink_pad))) {
+	if (NULL == (tee_src_pad = AL_gst_pad_get_peer(queue_sink_pad))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to get src pad from the tee element ch: %d, session: %s", ch_idx, session);
 		goto error;
@@ -460,7 +460,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 	gboolean retval = TRUE;
 
 	g_stream_t *stream = (g_stream_t *)userdata;
-	GstElement *fakesink = gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-monitor-fakesink");
+	GstElement *fakesink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-monitor-fakesink");
 
 	GstClock *clock = NULL;
 	GstBuffer *buffer = NULL;
@@ -471,7 +471,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 	gchar *host = NULL;
 
 	if (fakesink) {
-		clock = gst_element_get_clock(fakesink);
+		clock = AL_gst_element_get_clock(fakesink);
 
 		if (!clock) {
 			//switch_log_printf(...);
@@ -502,7 +502,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			//
 
 			sock_addr = meta->addr;
-			host = g_inet_address_to_string(g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS(sock_addr))); //allocates!
+			host = AL_g_inet_address_to_string(g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS(sock_addr))); //allocates!
 			/* If the buffer timestamp is after the previous callback or before the next callback
 			  we know that new buffers are arriving and so pause our Tx */
 			delta = timestamp < current_time ? current_time - timestamp : timestamp - current_time;
@@ -609,14 +609,14 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		GstCaps *rx_caps = NULL;
 
 #ifndef ENABLE_THREADSHARE
-		udp_source = gst_element_factory_make("udpsrc", "rx-src");
+		udp_source = AL_gst_element_factory_make("udpsrc", "rx-src");
 #else
 		MAKE_TS_ELEMENT(udp_source, "ts-udpsrc", "rx-src", ts_ctx);
 #endif
 		g_object_set(udp_source, "buffer-size", 1048576, NULL);
 
 		if (data->rx_codec == L16) {
-			rtpdepay = gst_element_factory_make("rtpL16depay", RTP_DEPAY);
+			rtpdepay = AL_gst_element_factory_make("rtpL16depay", RTP_DEPAY);
 			udp_caps = gst_caps_new_simple("application/x-rtp", 
 					"clock-rate", G_TYPE_INT, data->sample_rate, 
 					"channels",	G_TYPE_INT, data->channels, 
@@ -631,7 +631,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 				goto ddirRX_error;
 			}
 		} else {
-			rtpdepay = gst_element_factory_make("rtpL24depay", RTP_DEPAY);
+			rtpdepay = AL_gst_element_factory_make("rtpL24depay", RTP_DEPAY);
 			udp_caps =	gst_caps_new_simple("application/x-rtp", 
 			"clock-rate", G_TYPE_INT, data->sample_rate, 
 			"channels",	G_TYPE_INT, data->channels, 
@@ -647,7 +647,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			}
 		}
 
-		rtpjitbuf = gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
+		rtpjitbuf = AL_gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
 		stream->jitterbuf_signal_id = g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map), 
 			gst_caps_ref(udp_caps),  destroy_caps, 0);
 
@@ -655,10 +655,10 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency,
 		 "mode", 0 /* none */, 
 		 NULL);
-		rx_audioconv = gst_element_factory_make("audioconvert", "rx-aconv");
+		rx_audioconv = AL_gst_element_factory_make("audioconvert", "rx-aconv");
 		g_object_set(rx_audioconv, "dithering", 0 /* none */, NULL);
 
-		capsfilter = gst_element_factory_make("capsfilter", "rx-caps");
+		capsfilter = AL_gst_element_factory_make("capsfilter", "rx-caps");
 
 		/*Always feed S16LE to the FS*/
 		rx_caps = gst_caps_new_simple("audio/x-raw", 
@@ -677,16 +677,16 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		DA_gst_caps_unref(rx_caps);
 		rx_caps = NULL;
 
-		split = gst_element_factory_make("audiobuffersplit", "rx-split");
+		split = AL_gst_element_factory_make("audiobuffersplit", "rx-split");
 		g_object_set(split, "output-buffer-duration", data->codec_ms, 1000, NULL);
 
-		deinterleave = gst_element_factory_make("deinterleave", "rx-deinterleave");
+		deinterleave = AL_gst_element_factory_make("deinterleave", "rx-deinterleave");
 
 		for (guint ch = 0; ch < data->channels; ch++) {
 			gchar name[ELEMENT_NAME_SIZE];
 
 			NAME_ELEMENT(name, "tee", ch);
-			tee = gst_element_factory_make("tee", name);
+			tee = AL_gst_element_factory_make("tee", name);
 
 			if (!tee) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -762,16 +762,16 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		GstElement *appsrc = NULL;
 		GstCaps	*caps = NULL;
 
-		audiointerleave = gst_element_factory_make("audiointerleave", "audiointerleave"); // allocates memory!
+		audiointerleave = AL_gst_element_factory_make("audiointerleave", "audiointerleave"); // allocates memory!
 		gst_bin_add(GST_BIN(pipeline), audiointerleave);
 		g_object_set(audiointerleave, "start-time-selection", GST_AGGREGATOR_START_TIME_SELECTION_FIRST, NULL);
 		g_object_set(audiointerleave, "output-buffer-duration", data->codec_ms * GST_MSECOND, NULL);
 
 		if (data->tx_codec == L16) {
-			rtp_pay = gst_element_factory_make("rtpL16pay", "rtp-pay");
+			rtp_pay = AL_gst_element_factory_make("rtpL16pay", "rtp-pay");
 
 		} else {
-			rtp_pay = gst_element_factory_make("rtpL24pay", "rtp-pay");
+			rtp_pay = AL_gst_element_factory_make("rtpL24pay", "rtp-pay");
 		}
 		g_object_set(rtp_pay, "pt", data->rtp_payload_type, NULL);
 
@@ -788,7 +788,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			NAME_ELEMENT(name, "appsrc", ch);
 			g_snprintf(pad_name, STR_SIZE, "sink_%u", ch);
 
-			appsrc = gst_element_factory_make("appsrc", name);
+			appsrc = AL_gst_element_factory_make("appsrc", name);
 			if (!appsrc) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create %s \n", name);
 				continue;
@@ -820,15 +820,15 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			}
 		}
 
-		tx_valve = gst_element_factory_make("valve", "tx-valve");
+		tx_valve = AL_gst_element_factory_make("valve", "tx-valve");
 		g_object_set(tx_valve, "drop", data->txdrop, NULL);
 
-		capsfilter = gst_element_factory_make("capsfilter", "tx-capsf");
+		capsfilter = AL_gst_element_factory_make("capsfilter", "tx-capsf");
 
-		tx_audioconv = gst_element_factory_make("audioconvert", "tx-audioconv");
+		tx_audioconv = AL_gst_element_factory_make("audioconvert", "tx-audioconv");
 		g_object_set(tx_audioconv, "dithering", 0 /* none */, NULL);
 
-		udpsink = gst_element_factory_make("udpsink", "tx-sink");
+		udpsink = AL_gst_element_factory_make("udpsink", "tx-sink");
 
 		caps = gst_caps_new_simple("audio/x-raw", 
 			"rate", G_TYPE_INT, data->sample_rate, 
@@ -900,12 +900,12 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 			/* create a dummy pipeline with `udpsrc ! fakesink` just to receive on udp and read the last-sample from fakesink */
 #ifndef ENABLE_THREADSHARE
-			udpsrc = gst_element_factory_make("udpsrc", "tx-monitor-udpsrc");
+			udpsrc = AL_gst_element_factory_make("udpsrc", "tx-monitor-udpsrc");
 #else
 			MAKE_TS_ELEMENT(udpsrc, "ts-udpsrc", "tx-monitor-udpsrc", ts_ctx);
 #endif
 
-			fakesink = gst_element_factory_make("fakesink", "tx-monitor-fakesink");
+			fakesink = AL_gst_element_factory_make("fakesink", "tx-monitor-fakesink");
 
 			if (data->tx_codec == L16) {
 				caps =	gst_caps_new_simple("application/x-rtp", 
@@ -1186,7 +1186,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	if (!pipeline) goto error;						//added check
 
 	NAME_ELEMENT(name, "appsrc", ch_idx);
-	appsrc = gst_bin_get_by_name(GST_BIN(pipeline), name);	//check 
+	appsrc = AL_gst_bin_get_by_name(GST_BIN(pipeline), name);	//check 
 	switch_core_timer_next(timer);	//wait a bit
 
 	if (appsrc == NULL) {
