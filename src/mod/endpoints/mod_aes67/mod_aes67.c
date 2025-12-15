@@ -2502,6 +2502,7 @@ static switch_status_t load_config(void)
 	indirectly */
 
 	globals.clock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "clock-type", GST_CLOCK_TYPE_REALTIME, NULL);
+	
 	globals.synthetic_ptp = 0;
 	globals.rtp_ts_offset = 0.0;
 	memset(globals.rtp_iface, 0, NW_IFACE_LEN);
