@@ -39,6 +39,7 @@
 #include "switch.h"
 
 #include "aes67_api.h"
+#include "aes67_alloc.h"
 #include "aes67_counters.h"
 #include <gst/net/net.h>
 #include <math.h>
@@ -1931,7 +1932,7 @@ static void *init_ptp(int domain, char *iface)
 	}
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Creating ptp clock client\n");
-	clock = gst_ptp_clock_new("ptp-clock", domain); 
+	clock = gst_ptp_clock_new("ptp-clock", domain);
 	if (!gst_clock_wait_for_sync(GST_CLOCK(clock), timeout)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Timed out waiting for the clock to sync\n");
 		g_signal_connect(G_OBJECT(clock), "synced", G_CALLBACK(clock_synced_cb), NULL);
@@ -2501,7 +2502,7 @@ static switch_status_t load_config(void)
 	with PTP, we could use same clock on the pipeline, hence using the PTP
 	indirectly */
 
-	globals.clock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "clock-type", GST_CLOCK_TYPE_REALTIME, NULL);
+	globals.clock = AL_g_object_new_clock(GST_TYPE_SYSTEM_CLOCK, "clock-type", GST_CLOCK_TYPE_REALTIME, NULL);
 	
 	globals.synthetic_ptp = 0;
 	globals.rtp_ts_offset = 0.0;

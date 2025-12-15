@@ -502,7 +502,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			//
 
 			sock_addr = meta->addr;
-			host = AL_g_inet_address_to_string(g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS(sock_addr))); //allocates!
+			host = g_inet_address_to_string(g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS(sock_addr))); //allocates!
 			/* If the buffer timestamp is after the previous callback or before the next callback
 			  we know that new buffers are arriving and so pause our Tx */
 			delta = timestamp < current_time ? current_time - timestamp : timestamp - current_time;
@@ -1001,7 +1001,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			DA_gst_object_unref(GST_OBJECT(stream->clock)); // check - added 
 			stream->clock = NULL;
 		}
-		stream->clock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "name", "SyntheticPtpClock", NULL);
+		stream->clock = AL_g_object_new_clock(GST_TYPE_SYSTEM_CLOCK, "name", "SyntheticPtpClock", NULL);
 
 		stream->cb_rx_stats_id =
 			g_timeout_add_full(G_PRIORITY_DEFAULT, SYNTHETIC_CLOCK_INTERVAL_MS, update_clock, stream, NULL);
