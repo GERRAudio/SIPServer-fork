@@ -347,4 +347,26 @@ MU_WRAPV1p(gst_object_unref, gpointer, pipeline, alloc_pipl_lock)
 	// --- buffer wrapper ---
 	G_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *)
 
+
+	// Pad name allocation
+	G_WRAP_ALLOC(gchar *, gst_pad_get_name, chars, GstPad *, p)
+
+	// Clock allocations
+	G_WRAP_ALLOC2(GstClock *, gst_ptp_clock_new, objs, const gchar *, name, guint, domain)
+
+	G_WRAP_ALLOC(GstClock *, gst_element_get_clock, objs, GstElement *, e)
+
+	// Network string allocation
+	G_WRAP_ALLOC(gchar *, g_inet_address_to_string, chars, GInetAddress *, addr)
+
+
+inline GstClock *AL_g_object_new_clock(GType object_type, const gchar *first_prop, ...)
+{
+	va_list args;
+	va_start(args, first_prop);
+	GstClock *clock = (GstClock *)g_object_new_valist(object_type, first_prop, args);
+	va_end(args);
+	if (clock) g_alloc_counts.objs++;
+	return clock;
+}
 #endif
