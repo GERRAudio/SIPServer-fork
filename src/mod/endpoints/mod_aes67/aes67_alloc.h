@@ -269,6 +269,8 @@ MU_WRAP2(gboolean, gst_bin_add, GstBin *, bin, GstElement *, element, alloc_pipl
 		switch_mutex_unlock(alloc_elem_lock);                                                                          \
 	} while (0)
 
+
+//G_WRAP_INC(objs, cnt_objs, gpointer, p)
 // chars
 G_WRAP_INC(chars, cnt_chars, gchar *, p)
 G_WRAP_FREE(g_free, chars, gpointer)
@@ -305,12 +307,19 @@ G_WRAP_FREE(g_error_free, errs, GError *)
 // --- Object wrappers ---
 G_WRAP_FREE(gst_object_unref, objs, GstObject *)
 
+
 G_WRAP_DEC(objs, dec_objs, GstObject *, p)
 G_WRAP_INC(objs, cnt_objs, GstObject *, p)
 G_WRAP_ALLOC_M(GstBus *, gst_pipeline_get_bus, objs, GstPipeline *, b, alloc_pipl_lock)
 G_WRAP_ALLOC2_M(GstElement *, gst_bin_get_by_name, objs, GstBin *, bin, const gchar *, n, alloc_pipl_lock)
 G_WRAP_ALLOC_M(GstElement *, gst_pipeline_new, objs, const gchar *, n, alloc_pipl_lock)
-
+// Add to document 3
+G_WRAP_ALLOC3(GstBuffer *, gst_buffer_new_allocate, bufs, GstAllocator *, allocator, gsize, size, GstAllocationParams *, params)
+G_WRAP_ALLOC2(GstElement *, gst_element_factory_make, objs, const gchar *, factoryname, const gchar *, name)
+G_WRAP_ALLOC2(GstPad *, gst_element_get_static_pad, objs, GstElement *, e, const gchar *, n)
+G_WRAP_ALLOC2(GstPad *, gst_element_request_pad_simple, objs, GstElement *, e, const gchar *, n)
+G_WRAP_ALLOC(GstPad *, gst_pad_get_peer, objs, GstPad *, p)
+G_WRAP_ALLOC2(GstSample *, gst_app_sink_try_pull_sample, samples, GstAppSink *, sink, GstClockTime, timeout)
 // ===pipeline locks
 
 // gboolean gst_pipeline_set_clock(GstPipeline *pipeline, GstClock *clock);

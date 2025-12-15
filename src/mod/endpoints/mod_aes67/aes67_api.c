@@ -473,6 +473,11 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 	if (fakesink) {
 		clock = gst_element_get_clock(fakesink);
 
+		if (!clock) {
+			//switch_log_printf(...);
+			DA_gst_object_unref(GST_OBJECT(fakesink)); // added
+			return G_SOURCE_CONTINUE;
+		}
 		if (clock) {
 			// pipeline in PLAYING state
 			GstClockTime current_time = gst_clock_get_time(clock);
@@ -564,6 +569,14 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 	g_stream_t *stream = g_new(g_stream_t, 1);
 
+	//added init
+	stream->bus_watch_id = 0;				
+	stream->deinterleave_signal_id = 0;
+	stream->jitterbuf_signal_id = 0;
+	stream->cb_rx_stats_id = 0;
+	stream->backup_sender_idle_timer = 0;
+	//
+
 	char fixed_name[25] = {"pipeline"};
 	char *ts_ctx = DEFAULT_CONTEXT_NAME;
 
@@ -610,6 +623,13 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 					"channel-order", G_TYPE_STRING, "unpositioned",
 					"encoding-name", G_TYPE_STRING, "L16", 
 					"media", G_TYPE_STRING, "audio", NULL);
+			if (!udp_caps)		{ //error
+				DA_gst_caps_unref(udp_caps);
+				udp_caps = NULL;
+				DA_gst_caps_unref(rx_caps);
+				rx_caps = NULL;
+				goto ddirRX_error;
+			}
 		} else {
 			rtpdepay = gst_element_factory_make("rtpL24depay", RTP_DEPAY);
 			udp_caps =	gst_caps_new_simple("application/x-rtp", 
@@ -618,6 +638,13 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			"channel-order", G_TYPE_STRING, "unpositioned",
 			"encoding-name", G_TYPE_STRING, "L24", 
 			"media", G_TYPE_STRING, "audio", NULL);
+			if (!udp_caps) { // error
+				DA_gst_caps_unref(udp_caps);
+				udp_caps = NULL;
+				DA_gst_caps_unref(rx_caps);
+				rx_caps = NULL;
+				goto ddirRX_error;
+			}
 		}
 
 		rtpjitbuf = gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
@@ -639,6 +666,13 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			"format", G_TYPE_STRING, "S16LE",
 			"layout", G_TYPE_STRING, "interleaved",
 			 NULL);
+		if (!rx_caps) { // error
+			DA_gst_caps_unref(udp_caps);
+			udp_caps = NULL;
+			DA_gst_caps_unref(rx_caps);
+			rx_caps = NULL;
+			goto ddirRX_error;
+		}
 		g_object_set(capsfilter, "caps", rx_caps, NULL);
 		DA_gst_caps_unref(rx_caps);
 		rx_caps = NULL;
@@ -693,6 +727,10 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		goto ddirRX_exit;
 
 	ddirRX_error:
+		DA_gst_caps_unref(udp_caps); // Added
+		udp_caps = NULL;
+		DA_gst_caps_unref(rx_caps); // Added
+		rx_caps = NULL;
 		DA_gst_object_unref(GST_OBJECT(udp_source));
 		udp_source = NULL;
 		DA_gst_object_unref(GST_OBJECT(deinterleave));
@@ -1044,15 +1082,27 @@ void *start_pipeline(void *data)
 
 void stop_pipeline(g_stream_t *stream)
 {
+	if (!stream) goto error;
 	GstBus *bus = NULL;
 	
 	dump_pipeline(stream->pipeline, "pipeline-stop");
-	if (!stream) goto error;//added check
 
-	if (stream->backup_sender_idle_timer)							//check - do first
+	// Stop backup sender timer FIRST
+	if (stream->backup_sender_idle_timer > 0) { // Add check
 		g_source_remove(stream->backup_sender_idle_timer);
+		stream->backup_sender_idle_timer = 0;
+	}
 
+	// Set to NULL state BEFORE disconnecting signals
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
+
+	// Wait for state change
+	GstStateChangeReturn ret = gst_element_get_state(GST_ELEMENT(stream->pipeline), NULL, NULL, GST_CLOCK_TIME_NONE);
+	// Now safe to disconnect signals if (stream->bus_watch_id > 0)
+	{
+		g_source_remove(stream->bus_watch_id);
+		stream->bus_watch_id = 0;
+	}
 
 	/* cb_rx_stats_id will be non zero only when
 	Rx is operational and pipeline clock is not ptp*/
@@ -1064,13 +1114,6 @@ void stop_pipeline(g_stream_t *stream)
 
 	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(stream->pipeline));
 
-
-	//gst_bus_remove_watch(bus);
-	// added
-	if (stream->bus_watch_id > 0) { // added
-		g_source_remove(stream->bus_watch_id);
-		stream->bus_watch_id = 0;
-	}
 
 	if (stream->deinterleave_signal_id > 0) {
 		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
@@ -1093,10 +1136,10 @@ void stop_pipeline(g_stream_t *stream)
 	DA_gst_object_unref(GST_OBJECT(bus));
 	bus = NULL;
 
-	gst_object_unref(GST_OBJECT(stream->pipeline)); // not allocated here, so no wrapper
+	DA_gst_object_unref(GST_OBJECT(stream->pipeline)); 
 	stream->pipeline = NULL;
 	if (stream->clock) {
-		gst_object_unref(GST_OBJECT(stream->clock)); // not allocated here, so no wrapper
+		DA_gst_object_unref(GST_OBJECT(stream->clock)); 
 		stream->clock = NULL;
 	}
 
@@ -1161,7 +1204,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		retval = TRUE;
 		goto done;
 	}
-	buf = gst_buffer_new_allocate(NULL, len, NULL);			
+	buf = AL_gst_buffer_new_allocate(NULL, len, NULL);			
 
 	if (buf == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
@@ -1336,8 +1379,9 @@ gchar *get_rtp_stats(g_stream_t *stream)
 	if (rtpjitbuf) {
 		GstStructure *stats = NULL;
 		g_object_get(G_OBJECT(rtpjitbuf), "stats", &stats, NULL);
-		stats_str = gst_structure_to_string(stats);								
-		gst_structure_free(stats);			// Added missing free
+		stats_str = gst_structure_to_string(stats);	
+		DA_gst_structure_free(stats); // added
+		//gst_structure_free(stats);			// Added missing free
 		stats = NULL;
 		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
 	} else {
