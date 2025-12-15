@@ -269,9 +269,8 @@ MU_WRAP2(gboolean, gst_bin_add, GstBin *, bin, GstElement *, element, alloc_pipl
 		switch_mutex_unlock(alloc_elem_lock);                                                                          \
 	} while (0)
 
-
-//G_WRAP_INC(objs, cnt_objs, gpointer, p)
-// chars
+// G_WRAP_INC(objs, cnt_objs, gpointer, p)
+//  chars
 G_WRAP_INC(chars, cnt_chars, gchar *, p)
 G_WRAP_FREE(g_free, chars, gpointer)
 G_WRAP_ALLOC(gpointer, g_malloc0, chars, gsize, c)
@@ -307,14 +306,14 @@ G_WRAP_FREE(g_error_free, errs, GError *)
 // --- Object wrappers ---
 G_WRAP_FREE(gst_object_unref, objs, GstObject *)
 
-
 G_WRAP_DEC(objs, dec_objs, GstObject *, p)
 G_WRAP_INC(objs, cnt_objs, GstObject *, p)
 G_WRAP_ALLOC_M(GstBus *, gst_pipeline_get_bus, objs, GstPipeline *, b, alloc_pipl_lock)
 G_WRAP_ALLOC2_M(GstElement *, gst_bin_get_by_name, objs, GstBin *, bin, const gchar *, n, alloc_pipl_lock)
 G_WRAP_ALLOC_M(GstElement *, gst_pipeline_new, objs, const gchar *, n, alloc_pipl_lock)
 // Add to document 3
-G_WRAP_ALLOC3(GstBuffer *, gst_buffer_new_allocate, bufs, GstAllocator *, allocator, gsize, size, GstAllocationParams *, params)
+G_WRAP_ALLOC3(GstBuffer *, gst_buffer_new_allocate, bufs, GstAllocator *, allocator, gsize, size, GstAllocationParams *,
+			  params)
 G_WRAP_ALLOC2(GstElement *, gst_element_factory_make, objs, const gchar *, factoryname, const gchar *, name)
 G_WRAP_ALLOC2(GstPad *, gst_element_get_static_pad, objs, GstElement *, e, const gchar *, n)
 G_WRAP_ALLOC2(GstPad *, gst_element_request_pad_simple, objs, GstElement *, e, const gchar *, n)
@@ -347,18 +346,15 @@ MU_WRAPV1p(gst_object_unref, gpointer, pipeline, alloc_pipl_lock)
 	// --- buffer wrapper ---
 	G_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *)
 
-
 	// Pad name allocation
 	G_WRAP_ALLOC(gchar *, gst_pad_get_name, chars, GstPad *, p)
 
 	// Clock allocations
-	G_WRAP_ALLOC2(GstClock *, gst_ptp_clock_new, objs, const gchar *, name, guint, domain)
-
 	G_WRAP_ALLOC(GstClock *, gst_element_get_clock, objs, GstElement *, e)
 
 	// Network string allocation
-	G_WRAP_ALLOC(gchar *, g_inet_address_to_string, chars, GInetAddress *, addr)
-
+	//G_WRAP_ALLOC(gchar *, g_inet_address_to_string, chars, GInetAddress *, addr)
+	//G_WRAP_ALLOC2(GstClock*, gst_ptp_clock_new, objs, const gchar*, name, guint, domain)
 
 inline GstClock *AL_g_object_new_clock(GType object_type, const gchar *first_prop, ...)
 {
