@@ -2599,8 +2599,29 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 	switch_safe_free(globals.timer_name);
 
 	// todo clean cng_frame.codec
+
 	switch_core_codec_destroy(globals.cng_frame.codec);		///FIXME: check if initialized
 	free(globals.cng_frame.codec);
+
+	// check for leaks
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+					  "=== Final Allocation Counts ===\n"
+					  "\tbufs: %d\n"
+					  "\terrs: %d\n"
+					  "\tstructs: %d\n"
+					  "\tsamples: %d\n"
+					  "\tmems: %d\n"
+					  "\tmessages: %d\n"
+					  "\tobjs: %d\n"
+					  "\tchars: %d\n",
+					  g_alloc_counts.bufs, g_alloc_counts.errs, g_alloc_counts.structs, g_alloc_counts.samples,
+					  g_alloc_counts.memories, g_alloc_counts.messages, g_alloc_counts.objs, g_alloc_counts.chars);
+
+	if (g_alloc_counts.objs != 0) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "WARNING: %d objects still allocated at shutdown!\n",
+						  g_alloc_counts.objs);
+	}
+
 
 	return SWITCH_STATUS_SUCCESS;
 }

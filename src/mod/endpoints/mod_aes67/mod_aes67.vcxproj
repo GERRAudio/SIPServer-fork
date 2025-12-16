@@ -212,6 +212,7 @@
     <Text Include="x64\Release\mod_aes67.vcxproj.FileListAbsolute.txt" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="cpp.hint" />
     <None Include="Makefile.am" />
     <None Include="README.md" />
     <None Include="x64\Release\mod_aes67.dll.recipe" />

@@ -132,6 +132,8 @@ extern switch_mutex_t *alloc_bkup_lock;
 // --- Macro for increment-only wrappers (for manual tracking) ---
 #define G_WRAP_INC(counter, name, t, p)                                                                                \
 	inline void AL_##name(t p) { ; }
+// --- Sample increment wrapper ---
+G_WRAP_INC(samples, cnt_samples, GstSample *, p)
 
 // --- Macro for decrement-only wrappers (for manual tracking) ---
 #define G_WRAP_DEC(counter, name, t, p)                                                                                \
@@ -184,12 +186,14 @@ extern switch_mutex_t *alloc_bkup_lock;
 	}
 
 #define MU_WRAPV2p(fname, tp1, p1, tp2, p2, l)                                                                         \
-	inline void MUp_##fname(tp1 p1, tp2, p2)                                                                           \
+	inline void MUp_##fname(tp1 p1, tp2 p2)                                                                           \
 	{                                                                                                                  \
 		switch_mutex_lock(l);                                                                                          \
 		fname(p1, p2);                                                                                                 \
 		switch_mutex_unlock(l);                                                                                        \
 	}
+
+MU_WRAPV2p(gst_element_release_request_pad, GstElement*, element, GstPad*, p, alloc_pipl_lock)
 
 #define MU_WRAP3(ret_type, fname, tp1, p1, tp2, p2, tp3, p3, l)                                                        \
 	inline ret_type MU_##fname(tp1 p1, tp2 p2, tp3 p3)                                                                 \
@@ -312,13 +316,23 @@ G_WRAP_ALLOC_M(GstBus *, gst_pipeline_get_bus, objs, GstPipeline *, b, alloc_pip
 G_WRAP_ALLOC2_M(GstElement *, gst_bin_get_by_name, objs, GstBin *, bin, const gchar *, n, alloc_pipl_lock)
 G_WRAP_ALLOC_M(GstElement *, gst_pipeline_new, objs, const gchar *, n, alloc_pipl_lock)
 // Add to document 3
-G_WRAP_ALLOC3(GstBuffer *, gst_buffer_new_allocate, bufs, GstAllocator *, allocator, gsize, size, GstAllocationParams *,
-			  params)
+G_WRAP_ALLOC3(GstBuffer *, gst_buffer_new_allocate, bufs, GstAllocator *, allocator, gsize, size, GstAllocationParams *, params)
 G_WRAP_ALLOC2(GstElement *, gst_element_factory_make, objs, const gchar *, factoryname, const gchar *, name)
-G_WRAP_ALLOC2(GstPad *, gst_element_get_static_pad, objs, GstElement *, e, const gchar *, n)
-G_WRAP_ALLOC2(GstPad *, gst_element_request_pad_simple, objs, GstElement *, e, const gchar *, n)
-G_WRAP_ALLOC(GstPad *, gst_pad_get_peer, objs, GstPad *, p)
+//G_WRAP_ALLOC2(GstPad *, gst_element_get_static_pad, objs, GstElement *, e, const gchar *, n)
+//G_WRAP_ALLOC2(GstPad *, gst_element_request_pad_simple, objs, GstElement *, e, const gchar *, n)
+//G_WRAP_ALLOC(GstPad *, gst_pad_get_peer, objs, GstPad *, p)
 G_WRAP_ALLOC2(GstSample *, gst_app_sink_try_pull_sample, samples, GstAppSink *, sink, GstClockTime, timeout)
+
+G_WRAP_ALLOC2(GstPad *, gst_element_get_request_pad, objs, GstElement *, e, const gchar *, n)
+G_WRAP_ALLOC2_M(GstPad *, gst_element_request_pad_simple, objs, GstElement *, e, const gchar *, n, alloc_pipl_lock)
+G_WRAP_ALLOC2_M(GstPad *, gst_element_get_static_pad, objs, GstElement *, e, const gchar *, n, alloc_pipl_lock)
+G_WRAP_ALLOC_M(GstPad *, gst_pad_get_peer, objs, GstPad *, p, alloc_pipl_lock)
+// Add after other pad wrappers
+
+
+
+
+
 // ===pipeline locks
 
 // gboolean gst_pipeline_set_clock(GstPipeline *pipeline, GstClock *clock);
@@ -327,34 +341,34 @@ MU_WRAP2(gboolean, gst_pipeline_set_clock, GstPipeline *, p, GstClock *, c, allo
 MU_WRAPV2(gst_pipeline_use_clock, GstPipeline *, pipeline, GstClock *, clock, alloc_pipl_lock)
 // gst_object_unref(GST_OBJECT(stream->pipeline));
 MU_WRAPV1p(gst_object_unref, gpointer, pipeline, alloc_pipl_lock)
-	// gboolean gst_bin_remove(GstBin *bin, GstElement *element);
-	MU_WRAP2(gboolean, gst_bin_remove, GstBin *, bin, GstElement *, element, alloc_pipl_lock)
-	// GstStateChangeReturn gst_element_get_state(GstElement *e, GstState *s,GstState *pending, GstClockTime timeout);
-	MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime,
-			 t, alloc_pipl_lock)
-	// gboolean gst_bus_remove_watch(GstBus *bus);
-	MU_WRAP1(gboolean, gst_bus_remove_watch, GstBus *, bus, alloc_pipl_lock)
-	// GstObject* gst_element_get_parent(GstElement *element);
-	G_WRAP_ALLOC_M(GstObject *, gst_element_get_parent, objs, GstElement *, e, alloc_pipl_lock)
+// gboolean gst_bin_remove(GstBin *bin, GstElement *element);
+MU_WRAP2(gboolean, gst_bin_remove, GstBin *, bin, GstElement *, element, alloc_pipl_lock)
+// GstStateChangeReturn gst_element_get_state(GstElement *e, GstState *s,GstState *pending, GstClockTime timeout);
+MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime,t, alloc_pipl_lock)
+// gboolean gst_bus_remove_watch(GstBus *bus);
+MU_WRAP1(gboolean, gst_bus_remove_watch, GstBus *, bus, alloc_pipl_lock)
+// GstObject* gst_element_get_parent(GstElement *element);
+G_WRAP_ALLOC_M(GstObject *, gst_element_get_parent, objs, GstElement *, e, alloc_pipl_lock)
+// --- Sample  wrappers ---
+G_WRAP_FREE(gst_sample_unref, samples, GstSample *)
 
-	// --- Sample  wrappers ---
-	G_WRAP_FREE(gst_sample_unref, samples, GstSample *)
+// --- caps wrappers ---
+G_WRAP_FREE(gst_caps_unref, caps, GstCaps *)
 
-	// --- caps wrappers ---
-	G_WRAP_FREE(gst_caps_unref, caps, GstCaps *)
+// --- buffer wrapper ---
+G_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *)
 
-	// --- buffer wrapper ---
-	G_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *)
+// Pad name allocation
+G_WRAP_ALLOC(gchar *, gst_pad_get_name, chars, GstPad *, p)
 
-	// Pad name allocation
-	G_WRAP_ALLOC(gchar *, gst_pad_get_name, chars, GstPad *, p)
 
-	// Clock allocations
-	G_WRAP_ALLOC(GstClock *, gst_element_get_clock, objs, GstElement *, e)
 
-	// Network string allocation
-	//G_WRAP_ALLOC(gchar *, g_inet_address_to_string, chars, GInetAddress *, addr)
-	//G_WRAP_ALLOC2(GstClock*, gst_ptp_clock_new, objs, const gchar*, name, guint, domain)
+// Clock allocations
+G_WRAP_ALLOC(GstClock *, gst_element_get_clock, objs, GstElement *, e)
+
+// Network string allocation
+//G_WRAP_ALLOC(gchar *, g_inet_address_to_string, chars, GInetAddress *, addr)
+//G_WRAP_ALLOC2(GstClock*, gst_ptp_clock_new, objs, const gchar*, name, guint, domain)
 
 inline GstClock *AL_g_object_new_clock(GType object_type, const gchar *first_prop, ...)
 {

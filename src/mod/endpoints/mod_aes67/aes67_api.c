@@ -410,7 +410,9 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to unlink tee and queue ch: %d, session: %s",
 						  ch_idx, session);
 	}
-	gst_element_release_request_pad(tee, tee_src_pad);
+	MUp_gst_element_release_request_pad(tee, tee_src_pad);
+	DA_dec_objs(tee_src_pad); 
+
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	tee_src_pad = NULL;
 
@@ -1133,6 +1135,28 @@ void stop_pipeline(g_stream_t *stream)
 	}
 	// added
 
+	GstIterator *iter = gst_bin_iterate_elements(GST_BIN(stream->pipeline));
+	GValue item = G_VALUE_INIT;
+	GstIteratorResult res;
+	int leaked_elements = 0;
+
+	while ((res = gst_iterator_next(iter, &item)) == GST_ITERATOR_OK) {
+		GstElement *element = g_value_get_object(&item);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Leaked element: %s\n", GST_ELEMENT_NAME(element));
+		leaked_elements++;
+		g_value_reset(&item);
+	}
+	g_value_unset(&item);
+	gst_iterator_free(iter);
+
+	if (leaked_elements > 0) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Found %d leaked elements in pipeline\n",
+						  leaked_elements);
+	}
+
+	//added
+
+
 	DA_gst_object_unref(GST_OBJECT(bus));
 	bus = NULL;
 
@@ -1290,6 +1314,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			switch_cond_next();
 			break;
 		}
+		AL_cnt_samples(sample);				 // count the sample allocation
 		buf = gst_sample_get_buffer(sample); // no alloc
 
 		if (!buf) {
