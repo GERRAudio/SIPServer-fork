@@ -1,0 +1,23 @@
+2025-12
+Working on Dante connectivity issue and PTP
+
+Config files for
+- Dante-C9300
+- EHX
+
+Dante on .91
+Phone on .91
+IPT on .90
+
+Set up Partylines, and Dante names and streams
+
+Make sure Broadcom NICs on PC are configured propery and on the right VLANs
+
+Make sure SIPServer Dash ins running in admin mode on Admin network
+
+Danteante names in Controller must match mod.aes67.xml names, and ports
+
+NIC names must also match with Dante
+
+aes67.dll release version date ot be updated
+
