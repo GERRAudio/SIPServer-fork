@@ -344,13 +344,12 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(tee)); 
 	return ret;
 
-error:
+error: // TODO: check if we should deallocate other things here
+	DA_gst_object_unref(GST_OBJECT(tee_src_pad)); 
+	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(appsink));
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
-//done:
-	DA_gst_object_unref(GST_OBJECT(tee_src_pad));				//TODO: check if we should deallocate other things here
-	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	return ret;
 }
 
@@ -420,11 +419,11 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	MUp_gst_element_release_request_pad(tee, tee_src_pad);
 
 	//DA_gst_object_unref(GST_OBJECT(tee_src_pad));
-	//DA_dec_objs(tee_src_pad); 
+	DA_dec_objs(tee_src_pad); 
 	tee_src_pad = NULL;
 
 	//DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
-	//DA_dec_objs(queue_sink_pad);
+	DA_dec_objs(queue_sink_pad);
 	queue_sink_pad = NULL;
 
 
