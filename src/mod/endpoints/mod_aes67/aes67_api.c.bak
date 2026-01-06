@@ -173,7 +173,7 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 
 error:
 	dump_pipeline(GST_PIPELINE(pipeline), pad_name);
-	//DA_gst_object_unref(deinterleave);
+	DA_gst_object_unref(deinterleave);
 	// these need to be unconditionally deref'd
 	DA_gst_object_unref(GST_OBJECT(tee_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(tee));
