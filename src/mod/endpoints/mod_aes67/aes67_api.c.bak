@@ -172,8 +172,9 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 	}
 
 error:
+	DA_gst_object_unref(GST_OBJECT(deinterleave));
 	dump_pipeline(GST_PIPELINE(pipeline), pad_name);
-	DA_gst_object_unref(deinterleave);
+	//DA_gst_object_unref(deinterleave);
 	// these need to be unconditionally deref'd
 	DA_gst_object_unref(GST_OBJECT(tee_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(tee));
@@ -1178,8 +1179,13 @@ void stop_pipeline(g_stream_t *stream)
 		GstElement *element = g_value_get_object(&item);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Leaked element: %s\n", GST_ELEMENT_NAME(element));
 		leaked_elements++;
+		if (element) {
+			DA_gst_object_unref(GST_OBJECT(element));
+			element = NULL;
+		}
 		g_value_reset(&item);
 	}
+
 	g_value_unset(&item);
 	gst_iterator_free(iter);
 
@@ -1356,7 +1362,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 		if (!buf) {
 			if (sample != NULL) { // added in case
-				gst_sample_unref(sample);
+				DA_gst_sample_unref(sample);
 				sample = NULL;
 			} 
 			DA_dec_bufs(buf);
@@ -1377,7 +1383,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		}
 		gst_buffer_unmap(buf, &info); // check
 		if (sample != NULL) {
-			gst_sample_unref(sample); // check
+			DA_gst_sample_unref(sample); // check
 			sample = NULL;
 		}
 
