@@ -312,7 +312,11 @@ G_WRAP_FREE(g_error_free, errs, GError *)
 G_WRAP_FREE(gst_object_unref, objs, GstObject *)
 
 G_WRAP_DEC(objs, dec_objs, GstObject *, p)
+G_WRAP_DEC(caps, dec_caps, GstCaps *, p)
+
 G_WRAP_INC(objs, cnt_objs, GstObject *, p)
+G_WRAP_INC(objs, cnt_caps, GstCaps *, p)
+
 G_WRAP_ALLOC_M(GstBus *, gst_pipeline_get_bus, objs, GstPipeline *, b, alloc_pipl_lock)
 G_WRAP_ALLOC2_M(GstElement *, gst_bin_get_by_name, objs, GstBin *, bin, const gchar *, n, alloc_pipl_lock)
 G_WRAP_ALLOC_M(GstElement *, gst_pipeline_new, objs, const gchar *, n, alloc_pipl_lock)
