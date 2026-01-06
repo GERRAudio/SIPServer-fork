@@ -1356,7 +1356,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 		if (!buf) {
 			if (sample != NULL) { // added in case
-				gst_sample_unref(sample);
+				DA_gst_sample_unref(sample);
 				sample = NULL;
 			} 
 			DA_dec_bufs(buf);
@@ -1377,7 +1377,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		}
 		gst_buffer_unmap(buf, &info); // check
 		if (sample != NULL) {
-			gst_sample_unref(sample); // check
+			DA_gst_sample_unref(sample); // check
 			sample = NULL;
 		}
 
