@@ -250,6 +250,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	NAME_ELEMENT(name, "tee", ch_idx);
 	tee = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
 	if (tee == NULL) {
+		DA_dec_objs(tee);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get %s element in the pipeline\n", name);
 		goto error;
 	}
@@ -274,6 +275,8 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	if (!queue || !appsink) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to create appsink or queue element for ch: %d, session %s", ch_idx, session);
+		if (!queue) DA_dec_objs(queue);
+		if (!appsink) DA_dec_objs(appsink);
 		goto error;
 	}
 
@@ -307,6 +310,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	if (NULL == (queue_sink_pad = AL_gst_element_get_static_pad(queue, "sink"))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to get sink pad from the queue element ch: %d, session: %s", ch_idx, session);
+		DA_dec_objs(queue_sink_pad);
 		goto error;
 	}
 
@@ -339,13 +343,7 @@ error:
 	DA_gst_object_unref(GST_OBJECT(appsink));
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
-
-	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
-	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
-	return ret;
-
 done:
-
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	return ret;
@@ -383,6 +381,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	NAME_SESSION_ELEMENT(name, "queue", ch_idx, session);
 	queue = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
 	if (queue == NULL) {
+		DA_dec_objs(queue);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
 		goto error;
 	}
@@ -391,18 +390,21 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	tee = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
 	if (tee == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
+		DA_dec_objs(tee);
 		goto error;
 	}
 
 	if (NULL == (queue_sink_pad = AL_gst_element_get_static_pad(queue, "sink"))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to get sink pad from the queue element ch: %d, session: %s", ch_idx, session);
+		DA_dec_objs(queue_sink_pad);
 		goto error;
 	}
 
 	if (NULL == (tee_src_pad = AL_gst_pad_get_peer(queue_sink_pad))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to get src pad from the tee element ch: %d, session: %s", ch_idx, session);
+		DA_dec_objs(tee_src_pad);
 		goto error;
 	}
 
@@ -411,18 +413,20 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 						  ch_idx, session);
 	}
 	MUp_gst_element_release_request_pad(tee, tee_src_pad);
-	DA_dec_objs(tee_src_pad); 
 
-	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
+	//DA_gst_object_unref(GST_OBJECT(tee_src_pad));
+	DA_dec_objs(tee_src_pad); 
 	tee_src_pad = NULL;
 
-	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
+	//DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	queue_sink_pad = NULL;
+	DA_dec_objs(queue_sink_pad);
 
 	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
 	if (appsink == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
+		DA_dec_objs(appsink); 
 		goto error;
 	}
 
@@ -1024,8 +1028,11 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 error:
 	if (pipeline) gst_element_set_state(pipeline, GST_STATE_NULL);				//added check
 	DA_gst_object_unref(GST_OBJECT(pipeline));
+	pipeline = NULL;
 	DA_gst_object_unref(GST_OBJECT(rtp_pay));
+	rtp_pay = NULL;
 	DA_gst_object_unref(GST_OBJECT(rtpdepay));
+	rtpdepay = NULL;
 	if (stream != NULL) {
 		if (stream->clock != NULL) {
 			DA_gst_object_unref(GST_OBJECT(stream->clock)); // added - check
@@ -1035,6 +1042,7 @@ error:
 		if (stream->mainloop != NULL) g_main_loop_unref(stream->mainloop);	// added - check
 		if (stream->thread != NULL) g_thread_join(stream->thread);			// added - check
 		DA_g_free(stream);
+		stream = NULL;
 	}
 	return NULL;
 
@@ -1096,16 +1104,18 @@ void stop_pipeline(g_stream_t *stream)
 	}
 
 	// Set to NULL state BEFORE disconnecting signals
-	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
+	//gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 
 	// Wait for state change
 	GstStateChangeReturn ret = gst_element_get_state(GST_ELEMENT(stream->pipeline), NULL, NULL, GST_CLOCK_TIME_NONE);
-	// Now safe to disconnect signals if (stream->bus_watch_id > 0)
+	// Now safe to disconnect signals 
+	if (stream->bus_watch_id > 0)
 	{
 		g_source_remove(stream->bus_watch_id);
 		stream->bus_watch_id = 0;
 	}
-
+	// after
+	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 	/* cb_rx_stats_id will be non zero only when
 	Rx is operational and pipeline clock is not ptp*/
 	if (stream->cb_rx_stats_id) 
@@ -1122,6 +1132,7 @@ void stop_pipeline(g_stream_t *stream)
 		if (deinterleave) {
 			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
 			DA_gst_object_unref(GST_OBJECT(deinterleave));
+			deinterleave = NULL;
 		}
 		stream->deinterleave_signal_id = 0;
 	}
@@ -1130,6 +1141,7 @@ void stop_pipeline(g_stream_t *stream)
 		if (rtpjitbuf) {
 			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
 			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+			rtpjitbuf = NULL;
 		}
 		stream->jitterbuf_signal_id = 0;
 	}
@@ -1259,7 +1271,7 @@ done:
 
 error:
 	DA_gst_object_unref(GST_OBJECT(appsrc));				//check 
-	if (buf) gst_buffer_unref(buf);							// check 
+	DA_gst_buffer_unref(buf);							// check 
 	return retval;
 }
 
@@ -1409,6 +1421,7 @@ gchar *get_rtp_stats(g_stream_t *stream)
 		//gst_structure_free(stats);			// Added missing free
 		stats = NULL;
 		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+		rtpjitbuf = NULL;
 	} else {
 		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
 		stats_str = g_strdup_printf(""); // must be heap

@@ -139,6 +139,7 @@ G_WRAP_INC(samples, cnt_samples, GstSample *, p)
 #define G_WRAP_DEC(counter, name, t, p)                                                                                \
 	inline void DA_##name(t p) { ; }
 
+
 //==== Mutex wrappers
 //
 #define MU_WRAP1(ret_type, fname, tp1, p1, l)                                                                          \
