@@ -341,13 +341,14 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 exit:
 	ret = TRUE;
-	goto done;
+	DA_gst_object_unref(GST_OBJECT(tee)); 
+	return ret;
 
 error:
 	DA_gst_object_unref(GST_OBJECT(appsink));
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
-done:
+//done:
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));				//TODO: check if we should deallocate other things here
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	return ret;
@@ -455,6 +456,10 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 exit:
 	ret = TRUE;
+	DA_gst_object_unref(GST_OBJECT(appsink));
+	DA_gst_object_unref(GST_OBJECT(queue));
+	DA_gst_object_unref(GST_OBJECT(tee));
+	return ret;
 
 error:
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
