@@ -3181,7 +3181,7 @@ SWITCH_STANDARD_API(aes_cmd)
 
 	} else if (!strcasecmp(argv[0], "allocs")) {
 		stream->write_function(stream, "\tbufs: %d\n", g_alloc_counts.bufs);
-		//stream->write_function(stream, "\tcaps: %d\n", g_alloc_counts.caps);
+		stream->write_function(stream, "\tcaps: %d\n", g_alloc_counts.caps);
 		//stream->write_function(stream, "\tchars: %d\n", g_alloc_counts.chars);
 		stream->write_function(stream, "\terrs: %d\n", g_alloc_counts.errs);
 		stream->write_function(stream, "\tstructs: %d\n", g_alloc_counts.structs);

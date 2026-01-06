@@ -161,6 +161,7 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 	tee = AL_gst_bin_get_by_name(GST_BIN(pipeline), name); 
 	//g_assert_nonnull(tee);		//warning, will abort! - changed to below, check
 	if (!tee) {
+		DA_dec_objs(tee);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Tee element not found for %s", name);
 		goto error;
 	}
@@ -304,6 +305,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	if (NULL == (tee_src_pad = gst_element_request_pad_simple(tee, "src_%u"))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to get src pad from the tee element ch: %d, session: %s", ch_idx, session);
+		DA_dec_objs(tee_src_pad);
 		goto error;
 	}
 
@@ -344,7 +346,7 @@ error:
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
 done:
-	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
+	DA_gst_object_unref(GST_OBJECT(tee_src_pad));				//TODO: check if we should deallocate other things here
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	return ret;
 }
@@ -419,8 +421,9 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	tee_src_pad = NULL;
 
 	//DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
-	queue_sink_pad = NULL;
 	DA_dec_objs(queue_sink_pad);
+	queue_sink_pad = NULL;
+
 
 	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
@@ -482,6 +485,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 		if (!clock) {
 			//switch_log_printf(...);
 			DA_gst_object_unref(GST_OBJECT(fakesink)); // added
+			DA_dec_objs(clock);
 			return G_SOURCE_CONTINUE;
 		}
 		if (clock) {
@@ -630,7 +634,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 					"encoding-name", G_TYPE_STRING, "L16", 
 					"media", G_TYPE_STRING, "audio", NULL);
 			if (!udp_caps)		{ //error
-				DA_gst_caps_unref(udp_caps);
+				DA_dec_caps(udp_caps);
 				udp_caps = NULL;
 				DA_gst_caps_unref(rx_caps);
 				rx_caps = NULL;
@@ -645,7 +649,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			"encoding-name", G_TYPE_STRING, "L24", 
 			"media", G_TYPE_STRING, "audio", NULL);
 			if (!udp_caps) { // error
-				DA_gst_caps_unref(udp_caps);
+				DA_dec_caps(udp_caps);
 				udp_caps = NULL;
 				DA_gst_caps_unref(rx_caps);
 				rx_caps = NULL;
@@ -675,7 +679,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		if (!rx_caps) { // error
 			DA_gst_caps_unref(udp_caps);
 			udp_caps = NULL;
-			DA_gst_caps_unref(rx_caps);
+			DA_dec_caps(rx_caps);
 			rx_caps = NULL;
 			goto ddirRX_error;
 		}
@@ -697,6 +701,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			if (!tee) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 								  "Failed to create tee element in rx pipeline\n");
+				DA_dec_objs(tee);
 				continue;
 			}
 			g_object_set(tee, "allow-not-linked", TRUE, NULL);
@@ -718,6 +723,13 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		if (!udp_source || !rtpdepay || !rtpjitbuf || !rx_audioconv || !capsfilter || !split || !deinterleave) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create rx elements\n");
+			if (!udp_source) DA_dec_objs(udp_source);
+			if (!rtpdepay) DA_dec_objs(rtpdepay);
+			if (!rtpjitbuf) DA_dec_objs(rtpjitbuf);
+			if (!rx_audioconv) DA_dec_objs(rx_audioconv);
+			if (!capsfilter) DA_dec_objs(capsfilter);
+			if (!split) DA_dec_objs(split);
+			if (!deinterleave) DA_dec_objs(deinterleave);
 			goto ddirRX_error;
 		}
 
@@ -865,6 +877,11 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		}
 
 		if (!audiointerleave || !tx_valve || !tx_audioconv || !rtp_pay || !udpsink) {
+			if (!audiointerleave) DA_dec_objs(audiointerleave);
+			if (!tx_valve) DA_dec_objs(tx_valve);
+			if (!tx_audioconv) DA_dec_objs(tx_audioconv);
+			if (!rtp_pay) DA_dec_objs(rtp_pay);
+			if (!udpsink) DA_dec_objs(udpsink);
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create tx elements\n");
 			goto ddirTX_error;
 		}
@@ -930,6 +947,8 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			}
 
 			if (!udpsrc || !fakesink) {
+				if (!udpsrc) DA_dec_objs(udpsrc);
+				if (!fakesink) DA_dec_objs(fakesink);
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 								  "Failed to create tx-monitor elements, cannot listen for primary sender\n");
 				goto bksnd_error;
@@ -959,7 +978,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 						G_PRIORITY_DEFAULT, data->backup_sender_idle_wait_ms, backup_sender_timeout_cb, stream, NULL);
 				}
 			}
-			gst_caps_unref(caps);
+			DA_gst_caps_unref(caps);
 			caps = NULL;
 			goto bksnd_exit;
 
@@ -1133,7 +1152,9 @@ void stop_pipeline(g_stream_t *stream)
 			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
 			DA_gst_object_unref(GST_OBJECT(deinterleave));
 			deinterleave = NULL;
-		}
+		} else
+			DA_dec_objs(deinterleave);
+
 		stream->deinterleave_signal_id = 0;
 	}
 	if (stream->jitterbuf_signal_id > 0) {
@@ -1142,7 +1163,8 @@ void stop_pipeline(g_stream_t *stream)
 			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
 			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
 			rtpjitbuf = NULL;
-		}
+		} else
+			DA_dec_objs(rtpjitbuf);
 		stream->jitterbuf_signal_id = 0;
 	}
 	// added
@@ -1177,7 +1199,7 @@ void stop_pipeline(g_stream_t *stream)
 	if (stream->clock) {
 		DA_gst_object_unref(GST_OBJECT(stream->clock)); 
 		stream->clock = NULL;
-	}
+	} 
 
 	teardown_mainloop(stream->mainloop);
 	if (stream->thread !=NULL) 
@@ -1226,6 +1248,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	switch_core_timer_next(timer);	//wait a bit
 
 	if (appsrc == NULL) {
+		DA_dec_objs(appsrc);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Failed to find appsrc in the pipeline\n");
 		goto error;
 	}
@@ -1243,6 +1266,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	buf = AL_gst_buffer_new_allocate(NULL, len, NULL);			
 
 	if (buf == NULL) {
+		DA_dec_bufs(buf);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
 		goto error;
 	}
@@ -1296,6 +1320,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // check
 	if (appsink == NULL) {
+		DA_dec_objs(appsink);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
 		goto error;
 	}
@@ -1330,10 +1355,12 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		buf = gst_sample_get_buffer(sample); // no alloc
 
 		if (!buf) {
+
 			if (sample != NULL) { // added in case
 				gst_sample_unref(sample);
 				sample = NULL;
-			}
+			} else
+				DA_dec_bufs(buf);
 			continue;
 		}
 
@@ -1393,6 +1420,7 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	NAME_ELEMENT(name, "valve", ch_idx);
 	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count check 
 	if (valve == NULL) {
+		DA_dec_objs(valve);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
 		goto error;
 	}
@@ -1423,7 +1451,7 @@ gchar *get_rtp_stats(g_stream_t *stream)
 		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
 		rtpjitbuf = NULL;
 	} else {
-		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+		DA_dec_objs(rtpjitbuf);
 		stats_str = g_strdup_printf(""); // must be heap
 	}
 error:
@@ -1438,6 +1466,7 @@ void drop_output_buffers(gboolean drop, g_stream_t *stream)
 
 	tx_valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-valve"); 
 	if (tx_valve == NULL) {
+		DA_dec_objs(tx_valve);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
 		goto error;
 	}
