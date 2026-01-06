@@ -131,13 +131,13 @@ extern switch_mutex_t *alloc_bkup_lock;
 // ==== incr/decr to use when wrapping is undesired
 // --- Macro for increment-only wrappers (for manual tracking) ---
 #define G_WRAP_INC(counter, name, t, p)                                                                                \
-	inline void AL_##name(t p) { ; }
+	inline void AL_##name(t p) { g_alloc_counts.counter++; }
 // --- Sample increment wrapper ---
-G_WRAP_INC(samples, cnt_samples, GstSample *, p)
+//G_WRAP_INC(samples, cnt_samples, GstSample *, p)
 
 // --- Macro for decrement-only wrappers (for manual tracking) ---
 #define G_WRAP_DEC(counter, name, t, p)                                                                                \
-	inline void DA_##name(t p) { ; }
+	inline void DA_##name(t p) { g_alloc_counts.counter--; }
 
 
 //==== Mutex wrappers
@@ -284,6 +284,7 @@ G_WRAP_ALLOC(gchar *, gst_structure_to_string, chars, const GstStructure *, s)
 
 // --- Buffer wrappers ---
 G_WRAP_INC(bufs, cnt_bufs, GstStructure *, p)
+G_WRAP_INC(samples, cnt_samples, GstStructure *, p)
 G_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p)
 
 // --- Structure wrappers ---
