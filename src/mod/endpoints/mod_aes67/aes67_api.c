@@ -261,7 +261,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	if (NULL != (queue = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "%s already exists in the pipeline ch: %d, session %s",
 						  name, ch_idx, session);
-		DA_dec_objs(queue);
+		DA_gst_object_unref(GST_OBJECT(queue));
 		goto error;
 	}
 #ifndef ENABLE_THREADSHARE
