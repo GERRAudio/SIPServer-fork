@@ -341,7 +341,10 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 exit:
 	ret = TRUE;
-	DA_gst_object_unref(GST_OBJECT(tee)); 
+
+	/* success: drop our local refs */
+	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
+	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	return ret;
 
 error: // TODO: check if we should deallocate other things here
@@ -455,6 +458,8 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 exit:
 	ret = TRUE;
+	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
+	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(appsink));
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
