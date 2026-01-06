@@ -304,7 +304,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		goto error;
 	}
 
-	if (NULL == (tee_src_pad = gst_element_request_pad_simple(tee, "src_%u"))) {
+	if (NULL == (tee_src_pad = AL_gst_element_request_pad_simple(tee, "src_%u"))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to get src pad from the tee element ch: %d, session: %s", ch_idx, session);
 		DA_dec_objs(tee_src_pad);
@@ -419,11 +419,11 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	MUp_gst_element_release_request_pad(tee, tee_src_pad);
 
 	//DA_gst_object_unref(GST_OBJECT(tee_src_pad));
-	DA_dec_objs(tee_src_pad); 
+	//DA_dec_objs(tee_src_pad); 
 	tee_src_pad = NULL;
 
 	//DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
-	DA_dec_objs(queue_sink_pad);
+	//DA_dec_objs(queue_sink_pad);
 	queue_sink_pad = NULL;
 
 
@@ -1179,10 +1179,10 @@ void stop_pipeline(g_stream_t *stream)
 		GstElement *element = g_value_get_object(&item);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Leaked element: %s\n", GST_ELEMENT_NAME(element));
 		leaked_elements++;
-		if (element) {
-			DA_gst_object_unref(GST_OBJECT(element));
-			element = NULL;
-		}
+		//if (element) {
+			//DA_gst_object_unref(GST_OBJECT(element));
+			//element = NULL;
+		//}
 		g_value_reset(&item);
 	}
 
