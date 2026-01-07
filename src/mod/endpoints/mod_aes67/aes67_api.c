@@ -1083,6 +1083,7 @@ exit:
 	return stream;
 }
 
+
 void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 {
 	if (!stream) goto error; //added check
