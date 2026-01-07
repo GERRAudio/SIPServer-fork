@@ -345,7 +345,7 @@ exit:
 	/* success: drop our local refs */
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
-	DA_gst_object_unref(GST_OBJECT(tee));				//check - may be dangerous
+	DA_gst_object_unref(GST_OBJECT(tee));				
 	//DA_gst_object_unref(GST_OBJECT(queue)); //crashes
 	//DA_gst_object_unref(GST_OBJECT(appsink));
 	return ret;

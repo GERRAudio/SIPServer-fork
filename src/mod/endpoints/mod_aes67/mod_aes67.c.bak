@@ -2794,13 +2794,15 @@ int open_shared_audio_stream(shared_audio_stream_t *shstream)			///check need fo
 	data.is_backup_sender = shstream->is_backup_sender;
 	data.backup_sender_idle_wait_ms = shstream->backup_sender_idle_wait_ms;
 	
-
+	STREAM_WRITER_LOCK(shstream);
 	shstream->stream = create_pipeline(&data, error_callback);			//check if mutex required
 
 	if (!shstream->stream) {
+		STREAM_WRITER_UNLOCK(shstream);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create shared audio pipeline\n");
 		return -1;
 	}
+	STREAM_WRITER_UNLOCK(shstream);
 	return 0;
 }
 
