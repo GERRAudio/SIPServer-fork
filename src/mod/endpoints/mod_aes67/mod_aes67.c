@@ -2752,7 +2752,7 @@ int open_audio_stream(g_stream_t **stream, udp_sock_t *indev, udp_sock_t *outdev
 	return 0;
 }
 
-int open_shared_audio_stream(shared_audio_stream_t *shstream)			///check need for mutex
+int open_shared_audio_stream(shared_audio_stream_t *shstream)			
 {
 	pipeline_data_t data;
 	udp_sock_t *indev = shstream->indev;

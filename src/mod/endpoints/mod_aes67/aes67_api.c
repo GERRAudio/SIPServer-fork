@@ -143,7 +143,7 @@ static void destroy_caps(void *data, GClosure G_GNUC_UNUSED *closure)
 
 static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpointer userdata)
 {
-	GstElement *pipeline = GST_ELEMENT(AL_gst_element_get_parent(deinterleave));
+	GstElement *pipeline = GST_ELEMENT(AL_gst_element_get_parent(deinterleave));		
 	GstElement *tee = NULL;
 	GstPad *tee_sink_pad = NULL;
 	gchar name[ELEMENT_NAME_SIZE];
@@ -424,9 +424,9 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	}
 	MUp_gst_element_release_request_pad(tee, tee_src_pad);
 
-	//DA_gst_object_unref(GST_OBJECT(tee_src_pad));
+	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	DA_dec_objs(tee_src_pad);							//deref by gst_bin_remove
-	tee_src_pad = NULL;
+	//tee_src_pad = NULL;
 
 	//DA_gst_object_unref(GST_OBJECT(queue_sink_pad)); //deref by gst_bin_remove
 	DA_dec_objs(queue_sink_pad);
