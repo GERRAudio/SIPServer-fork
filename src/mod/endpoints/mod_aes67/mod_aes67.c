@@ -538,10 +538,11 @@ static int clear_shared_audio_stream(shared_audio_stream_t *stream);
 static void free_shared_audio_stream(shared_audio_stream_t *stream)
 {
 	if (!stream) return;
-
+	STREAM_WRITER_LOCK(stream);
 	clear_shared_audio_stream(stream);
 	/* Deinit here since clear_shared_audio_stream() allows the stream to be reused when reloading */
 	g_rw_lock_clear(&stream->rwlock);
+	STREAM_WRITER_UNLOCK(stream);
 	switch_safe_free(stream->indev);
 	switch_safe_free(stream->outdev);
 	switch_safe_free(stream);
@@ -556,13 +557,14 @@ static void destroy_shared_audio_streams()
 	g_atomic_int_set(&globals.destroying_streams, 1); // added
 
 	switch_mutex_lock(globals.sh_shtreams_lock);
-
+	STREAM_WRITER_LOCK(stream);
 	const void *key;
 	for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 		switch_core_hash_this(hi, &key, NULL, (void **)&stream);
 		free_shared_audio_stream(stream);
 		// switch_core_hash_delete(globals.sh_streams, key); // reference counted, so not needed (check)
 	}
+	STREAM_WRITER_UNLOCK(stream);
 
 	switch_mutex_unlock(globals.sh_shtreams_lock);
 	g_atomic_int_set(&globals.destroying_streams, 0); // added
@@ -580,9 +582,11 @@ static switch_status_t validate_main_audio_stream()
 
 		return SWITCH_STATUS_SUCCESS;
 	}
+	switch_mutex_lock(globals.streams_lock); /// check need for mutex
 	switch_mutex_lock(globals.device_lock);///check need for mutex
 	globals.main_stream = get_audio_stream(globals.indev, globals.outdev);		
 	switch_mutex_unlock(globals.device_lock);		/// check need for mutex
+	switch_mutex_unlock(globals.streams_lock); /// check need for mutex
 	if (globals.main_stream) { return SWITCH_STATUS_SUCCESS; }
 
 	return SWITCH_STATUS_FALSE;
@@ -620,9 +624,10 @@ static switch_status_t destroy_audio_stream(udp_sock_t *indev, udp_sock_t *outde
 	}
 
 	remove_stream(stream, 1); // parm already locked=1
-	switch_mutex_unlock(globals.streams_lock);
+
 
 	destroy_actual_stream(stream);
+	switch_mutex_unlock(globals.streams_lock);
 	return SWITCH_STATUS_SUCCESS; /// could return result from destroy (did not) check
 }
 
@@ -1744,6 +1749,7 @@ static gboolean ptp_stats_cb(guint8 d, const GstStructure *stats, gpointer user_
 static void link_rx_stream(shared_audio_stream_t *stream)
 {
 	switch_hash_index_t *hi;
+	STREAM_WRITER_LOCK(stream);
 	switch_mutex_lock(globals.gst_mutex);	//added check
 	for (hi = switch_core_hash_first(globals.call_hash); hi; hi = switch_core_hash_next(&hi)) {
 		const void *var;
@@ -1773,6 +1779,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 		}
 	}
 	switch_mutex_lock(globals.gst_mutex); // added check
+	STREAM_WRITER_UNLOCK(stream);
 }
 
 static switch_bool_t stream_compare(shared_audio_stream_t *current, shared_audio_stream_t *new)
@@ -2149,9 +2156,11 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 			switch_core_hash_insert_locked(globals.sh_streams, stream->name, stream, globals.sh_shtreams_lock);
 
 			/* Create ahead-of-time to start clock sync, etc. */
+			STREAM_WRITER_LOCK(stream);
 			if (-1 == create_shared_audio_stream(stream)) {		 /// added if - check : FIXME: stream add failure - deallocate?)
 				status = SWITCH_STATUS_FALSE;
 			}
+			STREAM_WRITER_UNLOCK(stream);
 		}
 	}
 	return status;
@@ -2841,10 +2850,12 @@ static audio_stream_t *create_audio_stream(udp_sock_t *indev, udp_sock_t *outdev
 	memset(stream, 0, sizeof(*stream));
 	stream->next = NULL;
 	stream->stream = NULL;
-	switch_mutex_lock(globals.device_lock);		///added check
+
+	//switch_mutex_lock(globals.device_lock);		///added check
 	stream->indev = indev;
 	stream->outdev = outdev;
-	switch_mutex_unlock(globals.device_lock); /// added check
+	//switch_mutex_unlock(globals.device_lock); /// added check
+
 	if (!stream->write_timer.timer_interface) {
 		if (switch_core_timer_init(&(stream->write_timer), globals.timer_name, globals.codec_ms,
 								   globals.read_codec.implementation->samples_per_packet,

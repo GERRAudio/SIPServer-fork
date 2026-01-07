@@ -277,6 +277,7 @@ MU_WRAP2(gboolean, gst_bin_add, GstBin *, bin, GstElement *, element, alloc_pipl
 // G_WRAP_INC(objs, cnt_objs, gpointer, p)
 //  chars
 G_WRAP_INC(chars, cnt_chars, gchar *, p)
+
 G_WRAP_FREE(g_free, chars, gpointer)
 G_WRAP_ALLOC(gpointer, g_malloc0, chars, gsize, c)
 G_WRAP_ALLOC(gchar *, g_strdup, chars, gchar *, str)

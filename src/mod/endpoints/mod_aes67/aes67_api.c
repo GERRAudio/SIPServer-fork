@@ -250,9 +250,9 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	if (!stream) goto error; //added check
 
 	NAME_ELEMENT(name, "tee", ch_idx);
-	tee = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
+	tee = gst_bin_get_by_name(GST_BIN(stream->pipeline), name);		//do not count, pipeline deals with it
 	if (tee == NULL) {
-		DA_dec_objs(tee);
+		//DA_dec_objs(tee);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get %s element in the pipeline\n", name);
 		goto error;
 	}
@@ -345,6 +345,9 @@ exit:
 	/* success: drop our local refs */
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
+	//DA_gst_object_unref(GST_OBJECT(tee));				//check - may be dangerous
+	//DA_gst_object_unref(GST_OBJECT(queue)); //crashes
+	//DA_gst_object_unref(GST_OBJECT(appsink));
 	return ret;
 
 error: // TODO: check if we should deallocate other things here
@@ -394,10 +397,10 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	}
 
 	NAME_ELEMENT(name, "tee", ch_idx);
-	tee = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
+	tee = gst_bin_get_by_name(GST_BIN(stream->pipeline), name);		//tees deallocated by pipline
 	if (tee == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
-		DA_dec_objs(tee);
+		//DA_dec_objs(tee);
 		goto error;
 	}
 
@@ -422,10 +425,10 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	MUp_gst_element_release_request_pad(tee, tee_src_pad);
 
 	//DA_gst_object_unref(GST_OBJECT(tee_src_pad));
-	DA_dec_objs(tee_src_pad); 
+	DA_dec_objs(tee_src_pad);							//deref by gst_bin_remove
 	tee_src_pad = NULL;
 
-	//DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
+	//DA_gst_object_unref(GST_OBJECT(queue_sink_pad)); //deref by gst_bin_remove
 	DA_dec_objs(queue_sink_pad);
 	queue_sink_pad = NULL;
 
@@ -462,7 +465,7 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(appsink));
 	DA_gst_object_unref(GST_OBJECT(queue));
-	DA_gst_object_unref(GST_OBJECT(tee));
+	//DA_gst_object_unref(GST_OBJECT(tee));
 	return ret;
 
 error:
@@ -470,7 +473,7 @@ error:
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(appsink));
 	DA_gst_object_unref(GST_OBJECT(queue));
-	DA_gst_object_unref(GST_OBJECT(tee));
+	//DA_gst_object_unref(GST_OBJECT(tee));
 
 	return ret;
 }
@@ -705,12 +708,12 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			gchar name[ELEMENT_NAME_SIZE];
 
 			NAME_ELEMENT(name, "tee", ch);
-			tee = AL_gst_element_factory_make("tee", name);
+			tee = gst_element_factory_make("tee", name);		//do not count, since pipeline deallocs
 
 			if (!tee) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 								  "Failed to create tee element in rx pipeline\n");
-				DA_dec_objs(tee);
+				//DA_dec_objs(tee); //do not count, since pipeline deallocs
 				continue;
 			}
 			g_object_set(tee, "allow-not-linked", TRUE, NULL);
@@ -766,8 +769,8 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		rx_audioconv = NULL;
 		DA_gst_object_unref(GST_OBJECT(capsfilter));
 		capsfilter = NULL;
-		DA_gst_object_unref(GST_OBJECT(tee));		//the other tees will be de-aloc when pipeline does
-		tee = NULL;
+		//DA_gst_object_unref(GST_OBJECT(tee));		//the other tees will be de-aloc when pipeline does
+		//tee = NULL;
 		DA_gst_object_unref(GST_OBJECT(split));
 		split = NULL;
 		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));		//added to pipeline
@@ -777,6 +780,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		goto error;
 
 	ddirRX_exit:
+		//DA_gst_object_unref(GST_OBJECT(tee)); // kills audio from BP to phone - TODO-chack where it is deallocated
 		;
 	}
 
@@ -1188,10 +1192,11 @@ void stop_pipeline(g_stream_t *stream)
 		GstElement *element = g_value_get_object(&item);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Leaked element: %s\n", GST_ELEMENT_NAME(element));
 		leaked_elements++;
-		//if (element) {
+		if (element) {
+			g_value_unset(element);
 			//DA_gst_object_unref(GST_OBJECT(element));
 			//element = NULL;
-		//}
+		}
 		g_value_reset(&item);
 	}
 
@@ -1374,7 +1379,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 				DA_gst_sample_unref(sample);
 				sample = NULL;
 			} 
-			DA_dec_bufs(buf);
+			//DA_dec_bufs(buf);
 			continue;
 		}
 
