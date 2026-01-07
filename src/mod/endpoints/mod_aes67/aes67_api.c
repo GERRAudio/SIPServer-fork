@@ -250,9 +250,9 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	if (!stream) goto error; //added check
 
 	NAME_ELEMENT(name, "tee", ch_idx);
-	tee = gst_bin_get_by_name(GST_BIN(stream->pipeline), name);		//do not count, pipeline deals with it
+	tee = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);		//do not count, pipeline deals with it
 	if (tee == NULL) {
-		//DA_dec_objs(tee);
+		DA_dec_objs(tee);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get %s element in the pipeline\n", name);
 		goto error;
 	}
@@ -345,7 +345,7 @@ exit:
 	/* success: drop our local refs */
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
-	//DA_gst_object_unref(GST_OBJECT(tee));				//check - may be dangerous
+	DA_gst_object_unref(GST_OBJECT(tee));				//check - may be dangerous
 	//DA_gst_object_unref(GST_OBJECT(queue)); //crashes
 	//DA_gst_object_unref(GST_OBJECT(appsink));
 	return ret;
@@ -397,10 +397,10 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	}
 
 	NAME_ELEMENT(name, "tee", ch_idx);
-	tee = gst_bin_get_by_name(GST_BIN(stream->pipeline), name);		//tees deallocated by pipline
+	tee = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);		//tees deallocated by pipline
 	if (tee == NULL) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
-		//DA_dec_objs(tee);
+		DA_dec_objs(tee);
 		goto error;
 	}
 
@@ -465,7 +465,7 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(appsink));
 	DA_gst_object_unref(GST_OBJECT(queue));
-	//DA_gst_object_unref(GST_OBJECT(tee));
+	DA_gst_object_unref(GST_OBJECT(tee));
 	return ret;
 
 error:
