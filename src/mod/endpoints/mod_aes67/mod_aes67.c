@@ -3063,10 +3063,12 @@ SWITCH_STANDARD_API(aes_cmd)
 		goto done;
 	}
 
-	if (!(argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0]))))) {
-		stream->write_function(stream, "%s", usage_string);
-		goto done;
-	}
+		argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0]))) ;
+		if (argc < 1 || !argv[0]) {
+			stream->write_function(stream, "%s", usage_string);
+			goto done;
+		}
+
 
 	if (!argv[0]) {
 		stream->write_function(stream, "Unknown Command\n");
