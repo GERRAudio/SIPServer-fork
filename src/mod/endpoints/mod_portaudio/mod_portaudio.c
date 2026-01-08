@@ -582,7 +582,7 @@ static switch_status_t destroy_audio_stream(int indev, int outdev)
 	}
 
 	remove_stream(stream, 1);
-	//switch_mutex_unlock(globals.streams_lock);
+	switch_mutex_unlock(globals.streams_lock);
 
 	destroy_actual_stream(stream);
 	switch_mutex_unlock(globals.streams_lock);

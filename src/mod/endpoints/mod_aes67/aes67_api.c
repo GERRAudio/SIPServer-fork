@@ -473,7 +473,7 @@ error:
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(appsink));
 	DA_gst_object_unref(GST_OBJECT(queue));
-	//DA_gst_object_unref(GST_OBJECT(tee));
+	DA_gst_object_unref(GST_OBJECT(tee));
 
 	return ret;
 }
@@ -1193,15 +1193,9 @@ void stop_pipeline(g_stream_t *stream)
 		GstElement *element = g_value_get_object(&item);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Leaked element: %s\n", GST_ELEMENT_NAME(element));
 		leaked_elements++;
-		if (element) {
-			g_value_unset(element);
-			//DA_gst_object_unref(GST_OBJECT(element));
-			//element = NULL;
-		}
+		g_value_unset(&item);
 		g_value_reset(&item);
 	}
-
-	g_value_unset(&item);
 	gst_iterator_free(iter);
 
 	if (leaked_elements > 0) {

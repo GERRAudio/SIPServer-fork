@@ -557,14 +557,16 @@ static void destroy_shared_audio_streams()
 	g_atomic_int_set(&globals.destroying_streams, 1); // added
 
 	switch_mutex_lock(globals.sh_shtreams_lock);
-	STREAM_WRITER_LOCK(stream);
+
 	const void *key;
 	for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 		switch_core_hash_this(hi, &key, NULL, (void **)&stream);
+		STREAM_WRITER_LOCK(stream);
 		free_shared_audio_stream(stream);
+		STREAM_WRITER_UNLOCK(stream);
 		// switch_core_hash_delete(globals.sh_streams, key); // reference counted, so not needed (check)
 	}
-	STREAM_WRITER_UNLOCK(stream);
+
 
 	switch_mutex_unlock(globals.sh_shtreams_lock);
 	g_atomic_int_set(&globals.destroying_streams, 0); // added
@@ -1778,7 +1780,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 			switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 		}
 	}
-	switch_mutex_lock(globals.gst_mutex); // added check
+	switch_mutex_unlock(globals.gst_mutex); // added check
 	STREAM_WRITER_UNLOCK(stream);
 }
 
@@ -2157,8 +2159,15 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 
 			/* Create ahead-of-time to start clock sync, etc. */
 			STREAM_WRITER_LOCK(stream);
-			if (-1 == create_shared_audio_stream(stream)) {		 /// added if - check : FIXME: stream add failure - deallocate?)
-				status = SWITCH_STATUS_FALSE;
+ 			
+    		if (-1 == create_shared_audio_stream(stream)) {
+    			STREAM_WRITER_UNLOCK(stream);
+    
+	    		// Clean hash entry atomically
+    			switch_core_hash_delete_locked(globals.sh_streams, stream->name, globals.sh_shtreams_lock);
+				// Free stream resources  
+    			free_shared_audio_stream(stream);
+		    	return SWITCH_STATUS_FALSE;	
 			}
 			STREAM_WRITER_UNLOCK(stream);
 		}
@@ -2752,7 +2761,7 @@ int open_audio_stream(g_stream_t **stream, udp_sock_t *indev, udp_sock_t *outdev
 	return 0;
 }
 
-int open_shared_audio_stream(shared_audio_stream_t *shstream)			///check need for mutex
+int open_shared_audio_stream(shared_audio_stream_t *shstream)			
 {
 	pipeline_data_t data;
 	udp_sock_t *indev = shstream->indev;
@@ -2794,15 +2803,13 @@ int open_shared_audio_stream(shared_audio_stream_t *shstream)			///check need fo
 	data.is_backup_sender = shstream->is_backup_sender;
 	data.backup_sender_idle_wait_ms = shstream->backup_sender_idle_wait_ms;
 	
-	STREAM_WRITER_LOCK(shstream);
+
 	shstream->stream = create_pipeline(&data, error_callback);			//check if mutex required
 
 	if (!shstream->stream) {
-		STREAM_WRITER_UNLOCK(shstream);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create shared audio pipeline\n");
 		return -1;
 	}
-	STREAM_WRITER_UNLOCK(shstream);
 	return 0;
 }
 
