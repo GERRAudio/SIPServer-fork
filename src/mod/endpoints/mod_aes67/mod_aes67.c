@@ -3104,25 +3104,31 @@ SWITCH_STANDARD_API(aes_cmd)
 			goto done;
 		}
 
+// rtpstats command
 		astream = switch_core_hash_find_locked(globals.sh_streams, argv[1], globals.sh_shtreams_lock);
 		if (!astream) {
-			stream->write_function(stream, "Stream with name %s not found\n", argv[1]);
-			stream->write_function(stream, "%s", usage_string);
+			stream->write_function(stream, "Stream not found\n");
 			goto done;
 		}
 
 		if (STREAM_READER_TRYLOCK(astream)) {
 			rtp_stats = get_rtp_stats(astream->stream);
-			if (rtp_stats) {
-				stream->write_function(stream, "%s\n", rtp_stats);
-				DA_g_free(rtp_stats); // counting of allocation occurs get_rtp_stats
-				rtp_stats = NULL;
-			}
-
-			STREAM_READER_UNLOCK(astream);
+			STREAM_READER_UNLOCK(astream);							 //  ALWAYS unlock reader lock
 		} else {
-			stream->write_function(stream, "reloadconf in progress, please retry\n");
+			stream->write_function(stream, "Stream locked, retry\n");
+			goto done;
 		}
+		if (rtp_stats) {
+			stream->write_function(stream, "%s\n", rtp_stats);
+			DA_g_free(rtp_stats); // counting of allocation occurs get_rtp_stats
+			rtp_stats = NULL;
+		}
+
+	  // else {
+	  // stream->write_function(stream, "reloadconf in progress, please retry\n");
+	//}
+
+
 	} else if (!strcasecmp(argv[0], "txflow")) {
 		shared_audio_stream_t *astream;
 

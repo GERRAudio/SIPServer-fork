@@ -287,6 +287,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 				 "enable-last-sample", FALSE, NULL);
 
 	if (!MU_gst_bin_add(GST_BIN(stream->pipeline), appsink)) {
+		DA_gst_object_unref(appsink);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to add appsink to the pipeline ch: %d, session: %s", ch_idx, session);
 		goto error;
@@ -345,7 +346,8 @@ exit:
 	/* success: drop our local refs */
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
-	DA_gst_object_unref(GST_OBJECT(tee));				
+	DA_gst_object_unref(GST_OBJECT(tee));	
+
 	//DA_gst_object_unref(GST_OBJECT(queue)); //crashes
 	//DA_gst_object_unref(GST_OBJECT(appsink));
 	return ret;
@@ -353,7 +355,7 @@ exit:
 error: // TODO: check if we should deallocate other things here
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad)); 
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
-	DA_gst_object_unref(GST_OBJECT(appsink));
+	DA_gst_object_unref(GST_OBJECT(appsink));			//check
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
 	return ret;
