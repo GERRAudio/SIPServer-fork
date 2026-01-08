@@ -5,7 +5,7 @@
 #include <gst/net/net.h>
 
 #include "aes67_alloc.h"		// allocation trackerand mutex wrappers
-G_alloc_counts g_alloc_counts;	// debug counters for allocation
+G_alloc_counts g_alloc_counts={0}; // debug counters for allocation
 
 #define ELEMENT_NAME_SIZE 30 + SESSION_ID_LEN
 #define STR_SIZE 15
