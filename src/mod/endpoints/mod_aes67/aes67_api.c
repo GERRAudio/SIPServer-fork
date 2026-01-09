@@ -340,9 +340,9 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(tee));	
-
-	//DA_gst_object_unref(GST_OBJECT(queue)); //crashes
-	//DA_gst_object_unref(GST_OBJECT(appsink));
+	// just accounting, not nulling
+	DANN_dec_objs(GST_OBJECT(queue)); 
+	DANN_dec_objs(GST_OBJECT(appsink));
 	return ret;
 
 error: // TODO: check if we should deallocate other things here
@@ -416,12 +416,10 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	MUp_gst_element_release_request_pad(tee, tee_src_pad);
 
 	//DA_gst_object_unref(GST_OBJECT(tee_src_pad));
-	DA_dec_objs(tee_src_pad);							//deref by gst_bin_remove
-	tee_src_pad = NULL;
+	DANN_dec_objs(tee_src_pad);							//deref by gst_bin_remove
 
 	//DA_gst_object_unref(GST_OBJECT(queue_sink_pad)); //deref by gst_bin_remove
-	DA_dec_objs(queue_sink_pad);
-	queue_sink_pad = NULL;
+	DANN_dec_objs(queue_sink_pad);
 
 
 	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
@@ -746,11 +744,12 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		DA_gst_object_unref(GST_OBJECT(deinterleave));
 		DA_gst_object_unref(GST_OBJECT(rx_audioconv));
 		DA_gst_object_unref(GST_OBJECT(capsfilter));
-		//DA_gst_object_unref(GST_OBJECT(tee));		//the other tees will be de-aloc when pipeline does
-		//tee = NULL;
 		DA_gst_object_unref(GST_OBJECT(split));
 		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));		//added to pipeline
 		DA_gst_object_unref(GST_OBJECT(rtpdepay));		// added to pipeline
+		// accounting
+		DANN_dec_objs(GST_OBJECT(tee));				// TODO: check if real deallocation is required here
+		// tee = NULL;
 		goto error;
 
 	ddirRX_exit:
@@ -764,6 +763,8 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		DANN_dec_objs(GST_OBJECT(split));
 		DANN_dec_objs(GST_OBJECT(rtpjitbuf)); // added to pipeline
 		DANN_dec_objs(GST_OBJECT(rtpdepay));	// added to pipeline
+	    // accounting
+		DANN_dec_objs(GST_OBJECT(tee));	  //do not de-allocate
 		;
 	}
 
@@ -900,12 +901,13 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		goto error;
 
 	ddirTX_exit:
-		DANN_dec_objs(GST_OBJECT(udpsink));			//proactively decrement without nulling
+		// accounting
+		DANN_dec_objs(GST_OBJECT(udpsink));			
 		DANN_dec_objs(GST_OBJECT(audiointerleave));
 		DANN_dec_objs(GST_OBJECT(tx_audioconv));
 		DANN_dec_objs(GST_OBJECT(capsfilter));
 		DANN_dec_objs(GST_OBJECT(tx_valve));
-		DANN_dec_objs(GST_OBJECT(appsrc)); // added to pipeline
+		DANN_dec_objs(GST_OBJECT(appsrc));			 // added to pipeline
 	;
 	}
 
@@ -1282,9 +1284,9 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 done:
 	retval = TRUE;
-
+	// falls thru
 error:
-	DA_gst_object_unref(GST_OBJECT(appsrc));				//check 
+	DA_gst_object_unref(GST_OBJECT(appsrc));			//check 
 	DA_gst_buffer_unref(buf);							// check 
 	return retval;
 }
@@ -1457,6 +1459,7 @@ void drop_output_buffers(gboolean drop, g_stream_t *stream)
 
 	g_snprintf(name, ELEMENT_NAME_SIZE, "tx-drop-%d", drop);
 	dump_pipeline(stream->pipeline, name);
+	// falls thru
 error:
 	DA_gst_object_unref(GST_OBJECT(tx_valve));
 }

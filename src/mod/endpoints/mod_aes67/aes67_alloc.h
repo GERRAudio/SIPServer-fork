@@ -137,17 +137,19 @@ extern switch_mutex_t *alloc_bkup_lock;
 // --- Sample increment wrapper ---
 // G_WRAP_INC(samples, cnt_samples, GstSample *, p)
 
-// --- Macro for decrement-only wrappers pointer check (for manual tracking) ---
+// --- Macro for decrement-only wrappers unconditional used in error flows only (for manual tracking) ---
+// --- assumes the count needs to be decremented regardless of the state of the pointer - revisit if necessary
+// --- sets pointer to null to avoid double decrements
 #define G_WRAP_DEC(counter, name, t, p)                                                                                \
 	inline void DA_##name(t p)                                                                                         \
 	{                                                                                                                  \
-		if (p) {                                                                                                       \
-			g_alloc_counts.counter--;                                                                                  \
-			p = NULL;                                                                                                  \
-		}                                                                                                              \
+		g_alloc_counts.counter--;                                                                                  \
+		p = NULL;                                                                                                  \
 	}
 
 // --- Macro for decrement-only wrappers with pointer check (for premptive manual tracking) ---
+// --- decrements the count assuming that the object owner will later null the pointer
+// --- does not set pointer to null as it may be in use
 #define G_WRAP_DECNN(counter, name, t, p)                                                                              \
 	inline void DANN_##name(t p)                                                                                       \
 	{                                                                                                                  \
