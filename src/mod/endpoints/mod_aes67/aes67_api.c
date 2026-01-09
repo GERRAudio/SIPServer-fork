@@ -1336,7 +1336,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
-		sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 10 * GST_MSECOND); // check
+		sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 10 * GST_MSECOND); 
 		if (!sample) {
 			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Failed to pull sample\n");
 			switch_cond_next();
@@ -1346,9 +1346,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		buf = gst_sample_get_buffer(sample); // no alloc
 
 		if (!buf) {
-			if (sample != NULL) { // added in case
-				DA_gst_sample_unref(sample);
-			} 
+			DA_gst_sample_unref(sample);
 			continue;
 		}
 
@@ -1364,10 +1362,9 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			MU_memcpy(payload + total_bytes, info.data, info.size); // check
 			total_bytes += info.size;
 		}
-		gst_buffer_unmap(buf, &info); // check
-		if (sample != NULL) {
-			DA_gst_sample_unref(sample); // check
-			sample = NULL;
+		gst_buffer_unmap(buf, &info); 
+		DA_gst_sample_unref(sample); 
+
 		}
 
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got %d\n", total_bytes);
