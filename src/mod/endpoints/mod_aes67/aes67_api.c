@@ -741,29 +741,29 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 	ddirRX_error:
 		DA_gst_caps_unref(udp_caps); // Added
-		udp_caps = NULL;
 		DA_gst_caps_unref(rx_caps); // Added
-		rx_caps = NULL;
 		DA_gst_object_unref(GST_OBJECT(udp_source));
-		udp_source = NULL;
 		DA_gst_object_unref(GST_OBJECT(deinterleave));
-		deinterleave = NULL;
 		DA_gst_object_unref(GST_OBJECT(rx_audioconv));
-		rx_audioconv = NULL;
 		DA_gst_object_unref(GST_OBJECT(capsfilter));
-		capsfilter = NULL;
 		//DA_gst_object_unref(GST_OBJECT(tee));		//the other tees will be de-aloc when pipeline does
 		//tee = NULL;
 		DA_gst_object_unref(GST_OBJECT(split));
-		split = NULL;
 		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));		//added to pipeline
-		rtpjitbuf = NULL;
 		DA_gst_object_unref(GST_OBJECT(rtpdepay));		// added to pipeline
-		rtpdepay = NULL;
 		goto error;
 
 	ddirRX_exit:
-		//DA_gst_object_unref(GST_OBJECT(tee)); // kills audio from BP to phone - TODO-chack where it is deallocated
+		DANN_dec_objs(GST_OBJECT(tee)); // dec counts pre-emptively without nulling objects
+		DANN_dec_caps(udp_caps); 
+		DANN_dec_caps(rx_caps);	
+		DANN_dec_objs(GST_OBJECT(udp_source));
+		DANN_dec_objs(GST_OBJECT(deinterleave));
+		DANN_dec_objs(GST_OBJECT(rx_audioconv));
+		DANN_dec_objs(GST_OBJECT(capsfilter));
+		DANN_dec_objs(GST_OBJECT(split));
+		DANN_dec_objs(GST_OBJECT(rtpjitbuf)); // added to pipeline
+		DANN_dec_objs(GST_OBJECT(rtpdepay));	// added to pipeline
 		;
 	}
 
@@ -892,21 +892,21 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 	ddirTX_error:
 		DA_gst_object_unref(GST_OBJECT(udpsink));
-		udpsink = NULL;
 		DA_gst_object_unref(GST_OBJECT(tx_audioconv));
-		tx_audioconv = NULL;
 		DA_gst_object_unref(GST_OBJECT(audiointerleave));
-		audiointerleave = NULL;
 		DA_gst_object_unref(GST_OBJECT(capsfilter));
-		capsfilter = NULL;
 		DA_gst_object_unref(GST_OBJECT(tx_valve));
-		tx_valve = NULL;
 		DA_gst_object_unref(GST_OBJECT(appsrc));	//added to pipeline in loop, so all deallocated there
-		appsrc = NULL;
 		goto error;
 
 	ddirTX_exit:
-		;
+		DANN_dec_objs(GST_OBJECT(udpsink));			//proactively decrement without nulling
+		DANN_dec_objs(GST_OBJECT(audiointerleave));
+		DANN_dec_objs(GST_OBJECT(tx_audioconv));
+		DANN_dec_objs(GST_OBJECT(capsfilter));
+		DANN_dec_objs(GST_OBJECT(tx_valve));
+		DANN_dec_objs(GST_OBJECT(appsrc)); // added to pipeline
+	;
 	}
 
 	/* if this stream is configured to be a backup sender, we pause our Tx if we find another sender doing Tx
@@ -975,19 +975,18 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 				}
 			}
 			DA_gst_caps_unref(caps);
-			caps = NULL;
 			goto bksnd_exit;
 
 		bksnd_error:
 			DA_gst_caps_unref(caps);
-			caps = NULL;
 			DA_gst_object_unref(GST_OBJECT(udpsrc));
-			udpsrc = NULL;
 			DA_gst_object_unref(GST_OBJECT(fakesink));
-			fakesink = NULL;
 			goto error;
 
 		bksnd_exit:
+			DANN_dec_caps(caps);
+			DANN_dec_objs(GST_OBJECT(udpsrc));
+			DANN_dec_objs(GST_OBJECT(fakesink));
 			;
 		}
 
