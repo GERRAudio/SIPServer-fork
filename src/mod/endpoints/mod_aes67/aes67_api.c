@@ -341,8 +341,8 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(tee));	
 
-	//DA_gst_object_unref(GST_OBJECT(queue)); //crashes
-	//DA_gst_object_unref(GST_OBJECT(appsink));
+	DANN_dec_objs(GST_OBJECT(queue)); //accounting
+	DANN_dec_objs(GST_OBJECT(appsink));
 	return ret;
 
 error: // TODO: check if we should deallocate other things here
@@ -764,6 +764,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 	ddirRX_exit:
 		//DA_gst_object_unref(GST_OBJECT(tee)); // kills audio from BP to phone - TODO-chack where it is deallocated
+		DANN_dec_objs(GST_OBJECT(tee)); // accounting
 		;
 	}
 
@@ -976,7 +977,10 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			}
 			DA_gst_caps_unref(caps);
 			caps = NULL;
-			goto bksnd_exit;
+			//accounting
+			DANN_dec_objs(GST_OBJECT(udpsrc));
+			DANN_dec_objs(GST_OBJECT(fakesink));
+
 
 		bksnd_error:
 			DA_gst_caps_unref(caps);
@@ -1062,6 +1066,10 @@ error:
 	return NULL;
 
 exit:
+	//accounting
+	DANN_dec_objs(GST_OBJECT(pipeline));
+	DANN_dec_objs(GST_OBJECT(rtp_pay));
+	DANN_dec_objs(GST_OBJECT(rtpdepay));
 	return stream;
 }
 

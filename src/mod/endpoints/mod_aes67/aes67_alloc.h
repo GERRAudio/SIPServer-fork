@@ -141,6 +141,12 @@ extern switch_mutex_t *alloc_bkup_lock;
 #define G_WRAP_DEC(counter, name, t, p)                                                                                \
 	inline void DA_##name(t p) { g_alloc_counts.counter--; p=NULL; }
 
+// --- Macro for decrement-only wrappers no nulling (for manual tracking and accounting) ---
+#define G_WRAP_DECNN(counter, name, t, p)                                                                                \
+	inline void DANN_##name(t p)                                                                                         \
+	{                                                                                                                  \
+		g_alloc_counts.counter--;                                                                                      \
+	}
 
 //==== Mutex wrappers
 //
@@ -289,6 +295,7 @@ G_WRAP_ALLOC(gchar *, gst_structure_to_string, chars, const GstStructure *, s)
 G_WRAP_INC(bufs, cnt_bufs, GstStructure *, p)
 G_WRAP_INC(samples, cnt_samples, GstStructure *, p)
 G_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p)
+G_WRAP_DECNN(objs, dec_objs, GstElement *, p)
 
 // --- Structure wrappers ---
 G_WRAP_INC(structs, cnt_structs, GstStructure *, p)
