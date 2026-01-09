@@ -1939,6 +1939,7 @@ static void *init_ptp(int domain, char *iface)
 	if (!gst_clock_wait_for_sync(GST_CLOCK(clock), timeout)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Timed out waiting for the clock to sync\n");
 		g_signal_connect(G_OBJECT(clock), "synced", G_CALLBACK(clock_synced_cb), NULL);
+		gst_object_unref(clock);	//added to deref extras - check
 		return NULL;
 	}
 
