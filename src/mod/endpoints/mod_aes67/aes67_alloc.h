@@ -135,26 +135,12 @@ extern switch_mutex_t *alloc_bkup_lock;
 #define G_WRAP_INC(counter, name, t, p)                                                                                \
 	inline void AL_##name(t p) { g_alloc_counts.counter++; }
 // --- Sample increment wrapper ---
-// G_WRAP_INC(samples, cnt_samples, GstSample *, p)
+//G_WRAP_INC(samples, cnt_samples, GstSample *, p)
 
-// --- Macro for decrement-only wrappers unconditional used in error flows only (for manual tracking) ---
-// --- assumes the count needs to be decremented regardless of the state of the pointer - revisit if necessary
-// --- sets pointer to null to avoid double decrements
+// --- Macro for decrement-only wrappers (for manual tracking) ---
 #define G_WRAP_DEC(counter, name, t, p)                                                                                \
-	inline void DA_##name(t p)                                                                                         \
-	{                                                                                                                  \
-		g_alloc_counts.counter--;                                                                                  \
-		p = NULL;                                                                                                  \
-	}
+	inline void DA_##name(t p) { g_alloc_counts.counter--; p=NULL; }
 
-// --- Macro for decrement-only wrappers with pointer check (for premptive manual tracking) ---
-// --- decrements the count assuming that the object owner will later null the pointer
-// --- does not set pointer to null as it may be in use
-#define G_WRAP_DECNN(counter, name, t, p)                                                                              \
-	inline void DANN_##name(t p)                                                                                       \
-	{                                                                                                                  \
-		if (p) {g_alloc_counts.counter--;}                                                                               \
-	}
 
 //==== Mutex wrappers
 //
@@ -203,14 +189,14 @@ extern switch_mutex_t *alloc_bkup_lock;
 	}
 
 #define MU_WRAPV2p(fname, tp1, p1, tp2, p2, l)                                                                         \
-	inline void MUp_##fname(tp1 p1, tp2 p2)                                                                            \
+	inline void MUp_##fname(tp1 p1, tp2 p2)                                                                           \
 	{                                                                                                                  \
 		switch_mutex_lock(l);                                                                                          \
 		fname(p1, p2);                                                                                                 \
 		switch_mutex_unlock(l);                                                                                        \
 	}
 
-MU_WRAPV2p(gst_element_release_request_pad, GstElement *, element, GstPad *, p, alloc_pipl_lock)
+MU_WRAPV2p(gst_element_release_request_pad, GstElement*, element, GstPad*, p, alloc_pipl_lock)
 
 #define MU_WRAP3(ret_type, fname, tp1, p1, tp2, p2, tp3, p3, l)                                                        \
 	inline ret_type MU_##fname(tp1 p1, tp2 p2, tp3 p3)                                                                 \
@@ -264,16 +250,16 @@ MU_WRAPV2p(gst_element_release_request_pad, GstElement *, element, GstPad *, p, 
 		return _result;                                                                                                \
 	}
 
-	// ===
-	// gst functions that may require mutexes
-	//
-	//  === memcpy lock
-	// void *memcpy(void *dest, const void *src, size_t n);
-	MU_WRAPV3(memcpy, void *, dest, const void *, src, size_t, n, alloc_mcp_lock)
+// ===
+// gst functions that may require mutexes
+//
+//  === memcpy lock
+// void *memcpy(void *dest, const void *src, size_t n);
+MU_WRAPV3(memcpy, void *, dest, const void *, src, size_t, n, alloc_mcp_lock)
 
-	// ===element (obj) locks
+// ===element (obj) locks
 
-	MU_WRAP2(gboolean, gst_bin_add, GstBin *, bin, GstElement *, element, alloc_pipl_lock)
+MU_WRAP2(gboolean, gst_bin_add, GstBin *, bin, GstElement *, element, alloc_pipl_lock)
 
 #define MU_g_object_set(p1, ...)                                                                                       \
 	do {                                                                                                               \
@@ -290,28 +276,29 @@ MU_WRAPV2p(gst_element_release_request_pad, GstElement *, element, GstPad *, p, 
 		switch_mutex_unlock(alloc_elem_lock);                                                                          \
 	} while (0)
 
-	// G_WRAP_INC(objs, cnt_objs, gpointer, p)
-	//  chars
-	G_WRAP_INC(chars, cnt_chars, gchar *, p)
+// G_WRAP_INC(objs, cnt_objs, gpointer, p)
+//  chars
+G_WRAP_INC(chars, cnt_chars, gchar *, p)
 
-	G_WRAP_FREE(g_free, chars, gpointer) G_WRAP_ALLOC(gpointer, g_malloc0, chars, gsize, c)
-	G_WRAP_ALLOC(gchar *, g_strdup, chars, gchar *, str)
-	G_WRAP_ALLOC(gchar *, gst_structure_to_string, chars, const GstStructure *, s)
+G_WRAP_FREE(g_free, chars, gpointer)
+G_WRAP_ALLOC(gpointer, g_malloc0, chars, gsize, c)
+G_WRAP_ALLOC(gchar *, g_strdup, chars, gchar *, str)
+G_WRAP_ALLOC(gchar *, gst_structure_to_string, chars, const GstStructure *, s)
 
-	// --- Buffer wrappers ---
-	G_WRAP_INC(bufs, cnt_bufs, GstStructure *, p) 
-	G_WRAP_INC(samples, cnt_samples, GstStructure *, p)
-	G_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p) 
-	G_WRAP_DECNN(bufs, dec_bufs, GstBuffer *, p)
+// --- Buffer wrappers ---
+G_WRAP_INC(bufs, cnt_bufs, GstStructure *, p)
+G_WRAP_INC(samples, cnt_samples, GstStructure *, p)
+G_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p)
 
-	// --- Structure wrappers ---
-	G_WRAP_INC(structs, cnt_structs, GstStructure *, p) G_WRAP_FREE(gst_structure_free, structs, GstStructure *)
-	G_WRAP_ALLOC(GstStructure *, gst_structure_copy, structs, const GstStructure *, s)
-	G_WRAP_ALLOC(GstStructure *, gst_structure_new_empty, structs, const gchar *, name)
-	//
-	// no macro for variadic function below
-	//
-	inline GstStructure *AL_gst_structure_new(const gchar *name, const gchar *first, ...)
+// --- Structure wrappers ---
+G_WRAP_INC(structs, cnt_structs, GstStructure *, p)
+G_WRAP_FREE(gst_structure_free, structs, GstStructure *)
+G_WRAP_ALLOC(GstStructure *, gst_structure_copy, structs, const GstStructure *, s)
+G_WRAP_ALLOC(GstStructure *, gst_structure_new_empty, structs, const gchar *, name)
+//
+// no macro for variadic function below
+//
+inline GstStructure *AL_gst_structure_new(const gchar *name, const gchar *first, ...)
 {
 	va_list args;
 	va_start(args, first);
@@ -328,11 +315,8 @@ G_WRAP_FREE(g_error_free, errs, GError *)
 // --- Object wrappers ---
 G_WRAP_FREE(gst_object_unref, objs, GstObject *)
 
-G_WRAP_DECNN(caps, dec_caps, GstCaps*, p)
 G_WRAP_DEC(objs, dec_objs, GstObject *, p)
-G_WRAP_DECNN(objs, dec_objs, GstObject *, p)
-G_WRAP_DEC(caps, dec_caps, GstCaps* , p)
-
+G_WRAP_DEC(caps, dec_caps, GstCaps *, p)
 
 G_WRAP_INC(objs, cnt_objs, GstObject *, p)
 G_WRAP_INC(objs, cnt_caps, GstCaps *, p)
@@ -341,12 +325,11 @@ G_WRAP_ALLOC_M(GstBus *, gst_pipeline_get_bus, objs, GstPipeline *, b, alloc_pip
 G_WRAP_ALLOC2_M(GstElement *, gst_bin_get_by_name, objs, GstBin *, bin, const gchar *, n, alloc_pipl_lock)
 G_WRAP_ALLOC_M(GstElement *, gst_pipeline_new, objs, const gchar *, n, alloc_pipl_lock)
 // Add to document 3
-G_WRAP_ALLOC3(GstBuffer *, gst_buffer_new_allocate, bufs, GstAllocator *, allocator, gsize, size, GstAllocationParams *,
-			  params)
+G_WRAP_ALLOC3(GstBuffer *, gst_buffer_new_allocate, bufs, GstAllocator *, allocator, gsize, size, GstAllocationParams *, params)
 G_WRAP_ALLOC2(GstElement *, gst_element_factory_make, objs, const gchar *, factoryname, const gchar *, name)
-// G_WRAP_ALLOC2(GstPad *, gst_element_get_static_pad, objs, GstElement *, e, const gchar *, n)
-// G_WRAP_ALLOC2(GstPad *, gst_element_request_pad_simple, objs, GstElement *, e, const gchar *, n)
-// G_WRAP_ALLOC(GstPad *, gst_pad_get_peer, objs, GstPad *, p)
+//G_WRAP_ALLOC2(GstPad *, gst_element_get_static_pad, objs, GstElement *, e, const gchar *, n)
+//G_WRAP_ALLOC2(GstPad *, gst_element_request_pad_simple, objs, GstElement *, e, const gchar *, n)
+//G_WRAP_ALLOC(GstPad *, gst_pad_get_peer, objs, GstPad *, p)
 G_WRAP_ALLOC2(GstSample *, gst_app_sink_try_pull_sample, samples, GstAppSink *, sink, GstClockTime, timeout)
 
 G_WRAP_ALLOC2(GstPad *, gst_element_get_request_pad, objs, GstElement *, e, const gchar *, n)
@@ -354,6 +337,10 @@ G_WRAP_ALLOC2_M(GstPad *, gst_element_request_pad_simple, objs, GstElement *, e,
 G_WRAP_ALLOC2_M(GstPad *, gst_element_get_static_pad, objs, GstElement *, e, const gchar *, n, alloc_pipl_lock)
 G_WRAP_ALLOC_M(GstPad *, gst_pad_get_peer, objs, GstPad *, p, alloc_pipl_lock)
 // Add after other pad wrappers
+
+
+
+
 
 // ===pipeline locks
 
@@ -363,35 +350,36 @@ MU_WRAP2(gboolean, gst_pipeline_set_clock, GstPipeline *, p, GstClock *, c, allo
 MU_WRAPV2(gst_pipeline_use_clock, GstPipeline *, pipeline, GstClock *, clock, alloc_pipl_lock)
 // gst_object_unref(GST_OBJECT(stream->pipeline));
 MU_WRAPV1p(gst_object_unref, gpointer, pipeline, alloc_pipl_lock)
-	// gboolean gst_bin_remove(GstBin *bin, GstElement *element);
-	MU_WRAP2(gboolean, gst_bin_remove, GstBin *, bin, GstElement *, element, alloc_pipl_lock)
-	// GstStateChangeReturn gst_element_get_state(GstElement *e, GstState *s,GstState *pending, GstClockTime timeout);
-	MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime,
-			 t, alloc_pipl_lock)
-	// gboolean gst_bus_remove_watch(GstBus *bus);
-	MU_WRAP1(gboolean, gst_bus_remove_watch, GstBus *, bus, alloc_pipl_lock)
-	// GstObject* gst_element_get_parent(GstElement *element);
-	G_WRAP_ALLOC_M(GstObject *, gst_element_get_parent, objs, GstElement *, e, alloc_pipl_lock)
-	// --- Sample  wrappers ---
-	G_WRAP_FREE(gst_sample_unref, samples, GstSample *)
+// gboolean gst_bin_remove(GstBin *bin, GstElement *element);
+MU_WRAP2(gboolean, gst_bin_remove, GstBin *, bin, GstElement *, element, alloc_pipl_lock)
+// GstStateChangeReturn gst_element_get_state(GstElement *e, GstState *s,GstState *pending, GstClockTime timeout);
+MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime,t, alloc_pipl_lock)
+// gboolean gst_bus_remove_watch(GstBus *bus);
+MU_WRAP1(gboolean, gst_bus_remove_watch, GstBus *, bus, alloc_pipl_lock)
+// GstObject* gst_element_get_parent(GstElement *element);
+G_WRAP_ALLOC_M(GstObject *, gst_element_get_parent, objs, GstElement *, e, alloc_pipl_lock)
+// --- Sample  wrappers ---
+G_WRAP_FREE(gst_sample_unref, samples, GstSample *)
 
-	// --- caps wrappers ---
-	G_WRAP_FREE(gst_caps_unref, caps, GstCaps *)
+// --- caps wrappers ---
+G_WRAP_FREE(gst_caps_unref, caps, GstCaps *)
 
-	// --- buffer wrapper ---
-	G_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *)
+// --- buffer wrapper ---
+G_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *)
 
-	// Pad name allocation
-	G_WRAP_ALLOC(gchar *, gst_pad_get_name, chars, GstPad *, p)
+// Pad name allocation
+G_WRAP_ALLOC(gchar *, gst_pad_get_name, chars, GstPad *, p)
 
-	// Clock allocations
-	G_WRAP_ALLOC(GstClock *, gst_element_get_clock, objs, GstElement *, e)
 
-	// Network string allocation
-	// G_WRAP_ALLOC(gchar *, g_inet_address_to_string, chars, GInetAddress *, addr)
-	// G_WRAP_ALLOC2(GstClock*, gst_ptp_clock_new, objs, const gchar*, name, guint, domain)
 
-	inline GstClock *AL_g_object_new_clock(GType object_type, const gchar *first_prop, ...)
+// Clock allocations
+G_WRAP_ALLOC(GstClock *, gst_element_get_clock, objs, GstElement *, e)
+
+// Network string allocation
+//G_WRAP_ALLOC(gchar *, g_inet_address_to_string, chars, GInetAddress *, addr)
+//G_WRAP_ALLOC2(GstClock*, gst_ptp_clock_new, objs, const gchar*, name, guint, domain)
+
+inline GstClock *AL_g_object_new_clock(GType object_type, const gchar *first_prop, ...)
 {
 	va_list args;
 	va_start(args, first_prop);

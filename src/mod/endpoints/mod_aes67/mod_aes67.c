@@ -2533,10 +2533,12 @@ static switch_status_t load_config(void)
 		if (NULL == ptp_clock) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Switching to Synthetic PTP \n");
 			globals.synthetic_ptp = 1;
-			DANN_dec_objs(GST_OBJECT(globals.clock)); // for accounting only
 		} else {
 			/* using PTP clock, clean up the default GST_CLOCK_TYPE_REALTIME clock */
-			DA_gst_object_unref(GST_OBJECT(globals.clock));
+			if (globals.clock != NULL) {
+				DA_gst_object_unref(GST_OBJECT(globals.clock));
+				globals.clock = NULL;
+			}
 			globals.clock = ptp_clock; // check
 		}
 	}
