@@ -339,8 +339,9 @@ exit:
 	/* success: drop our local refs */
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
-	DA_gst_object_unref(GST_OBJECT(tee));	
+	//DA_gst_object_unref(GST_OBJECT(tee));	
 
+	DANN_dec_objs(GST_OBJECT(tee)); // accounting
 	DANN_dec_objs(GST_OBJECT(queue)); //accounting
 	DANN_dec_objs(GST_OBJECT(appsink));
 	return ret;
