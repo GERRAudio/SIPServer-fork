@@ -1898,8 +1898,11 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void *data)
 		if (globals.clock) {
 			DA_gst_object_unref(GST_OBJECT(globals.clock));
 			globals.clock = NULL;
+		} 
+		else {
+			// accounting
+			DANN_dec_objs(clock);
 		}
-
 		// No ref needed, we are taking over the reference from init_ptp()
 		globals.clock = ptp_clock;
 	}
@@ -1918,6 +1921,7 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void *data)
 		use_ptp_clock(s->stream, ptp_clock);
 		STREAM_WRITER_UNLOCK(s);
 	}
+
 	switch_mutex_unlock(globals.sh_shtreams_lock);
 }
 
@@ -2541,6 +2545,9 @@ static switch_status_t load_config(void)
 			if (globals.clock != NULL) {
 				DA_gst_object_unref(GST_OBJECT(globals.clock));
 				globals.clock = NULL;
+			} else {
+				// accounting
+				DANN_dec_objs(clock);
 			}
 			globals.clock = ptp_clock; // check
 		}
@@ -2596,6 +2603,9 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 	if (globals.clock) {
 		DA_gst_object_unref(GST_OBJECT(globals.clock));
 		globals.clock = NULL;
+	} else {
+		// accounting
+		DANN_dec_objs(clock);
 	}
 
 	switch_core_hash_destroy(&globals.call_hash);
