@@ -169,11 +169,11 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link deinterleave %s pad in the rx pipeline",
 						  pad_name);
 	}
-
+	//fall thru
 error:
 	//fall thru
 	dump_pipeline(GST_PIPELINE(pipeline), pad_name);
-	DA_gst_object_unref(GST_OBJECT(tee_sink_pad));
+	DA_gst_object_unref(tee_sink_pad);
 	DA_gst_object_unref(GST_OBJECT(tee));
 	// setting pipeline state to null here kills audio so just deref the pointer
 	gst_object_unref(GST_OBJECT(pipeline));	
@@ -550,9 +550,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			switch_mutex_unlock(alloc_bkup_lock); /// added check
 			DA_gst_sample_unref(last_sample);
 			last_sample = NULL;
-			if (buffer) {
-				DANN_dec_bufs(buffer);	//accounting
-			}
+
 			DA_gst_object_unref(GST_OBJECT(clock));
 
 		} else {
@@ -566,7 +564,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 
 exit:
 	DA_gst_sample_unref(last_sample);
-	//if (buffer) DANN_dec_bufs(buffer);			//double accounting
+	DANN_dec_bufs(buffer);			//accounting
 	DA_gst_object_unref(GST_OBJECT(clock));
 	DA_gst_object_unref(GST_OBJECT(fakesink));
 	DA_g_free(host);
@@ -689,7 +687,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		g_object_set(split, "output-buffer-duration", data->codec_ms, 1000, NULL);
 
 		deinterleave = AL_gst_element_factory_make("deinterleave", "rx-deinterleave");
-		int tee_cnt = 0;	
+
 		for (guint ch = 0; ch < data->channels; ch++) {
 			gchar name[ELEMENT_NAME_SIZE];
 
@@ -753,8 +751,8 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		rx_audioconv = NULL;
 		DA_gst_object_unref(GST_OBJECT(capsfilter));
 		capsfilter = NULL;
-		//DA_gst_object_unref(GST_OBJECT(tee));		//the other tees will be de-aloc when pipeline does
-		//tee = NULL;
+		//DA_gst_object_unref(GST_OBJECT(tee));		//not needed since not counted
+		tee = NULL;
 		DA_gst_object_unref(GST_OBJECT(split));
 		split = NULL;
 		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));		//added to pipeline
@@ -773,6 +771,8 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		if (capsfilter) DANN_dec_objs(capsfilter);
 		if (split) DANN_dec_objs(split);
 		if (deinterleave) DANN_dec_objs(deinterleave);
+		if (rx_caps) DANN_dec_caps(rx_caps);
+		if (udp_caps) DANN_dec_caps(udp_caps);
 		;
 	}
 
@@ -910,8 +910,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		capsfilter = NULL;
 		DA_gst_object_unref(GST_OBJECT(tx_valve));
 		tx_valve = NULL;
-		gst_object_unref(GST_OBJECT(appsrc));	//added to pipeline in loop, so all deallocated there
-		appsrc = NULL;
+		gst_object_unref(GST_OBJECT(appsrc));	//added to pipeline in loop, not counted
 		goto error;
 
 	ddirTX_exit:
@@ -921,8 +920,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		DANN_dec_objs(GST_OBJECT(audiointerleave));
 		DANN_dec_objs(GST_OBJECT(capsfilter));
 		DANN_dec_objs(GST_OBJECT(tx_valve));
-		//DANN_dec_objs(GST_OBJECT(appsrc)); // added to pipeline in loop, so all deallocated there
-		;
+		//DANN_dec_objs(GST_OBJECT(appsrc)); // added to pipeline in loop, not counted
 	}
 
 	/* if this stream is configured to be a backup sender, we pause our Tx if we find another sender doing Tx
@@ -996,7 +994,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			//DANN_dec_objs(GST_OBJECT(udpsrc));
 			//DANN_dec_objs(GST_OBJECT(fakesink));
 
-
+			///fall thru
 		bksnd_error:
 			DA_gst_caps_unref(caps);
 			caps = NULL;
@@ -1065,14 +1063,14 @@ error:
 	pipeline = NULL;
 	DA_gst_object_unref(GST_OBJECT(rtp_pay));
 	rtp_pay = NULL;
-	DA_gst_object_unref(GST_OBJECT(rtpdepay));
-	rtpdepay = NULL;
+	//DA_gst_object_unref(GST_OBJECT(rtpdepay));
+	//rtpdepay = NULL;
 	if (stream != NULL) {
 		if (stream->clock != NULL) {
 			DA_gst_object_unref(GST_OBJECT(stream->clock)); // added - check
 			stream->clock = NULL;
 		} else {
-			DANN_dec_objs(clock);//accounting
+			DANN_dec_objs(stream->clock);//accounting
 		}
 		teardown_mainloop(stream->mainloop);								// added - check
 		if (stream->mainloop != NULL) g_main_loop_unref(stream->mainloop);	// added - check
@@ -1086,7 +1084,8 @@ exit:
 	//accounting
 	DANN_dec_objs(GST_OBJECT(pipeline));
 	DANN_dec_objs(GST_OBJECT(rtp_pay));	
-	DANN_dec_objs(clock); 
+	DANN_dec_objs(clock);
+	DANN_dec_chars(stream);
 	//DANN_dec_objs(GST_OBJECT(rtpdepay));		//done above
 	return stream;
 }
@@ -1224,7 +1223,7 @@ void stop_pipeline(g_stream_t *stream)
 		DA_gst_object_unref(GST_OBJECT(stream->clock)); 
 		stream->clock = NULL;
 	} else {
-		DANN_dec_objs(clock); // accounting
+		DANN_dec_objs(stream->clock); // accounting
 	}
 
 	teardown_mainloop(stream->mainloop);
@@ -1454,6 +1453,7 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	g_object_set(valve, "drop", drop, NULL);
 	g_snprintf(name, 2*STR_SIZE, "drop-ch%d-%d", ch_idx, drop);		//check increased string size
 	dump_pipeline(stream->pipeline, name);
+	//fall thru
 error: 
 	DA_gst_object_unref(GST_OBJECT(valve));		//check 
 	return;
@@ -1499,6 +1499,7 @@ void drop_output_buffers(gboolean drop, g_stream_t *stream)
 
 	g_snprintf(name, ELEMENT_NAME_SIZE, "tx-drop-%d", drop);
 	dump_pipeline(stream->pipeline, name);
+	//fall thru
 error:
 	DA_gst_object_unref(GST_OBJECT(tx_valve));
 }

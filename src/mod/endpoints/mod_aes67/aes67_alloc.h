@@ -298,10 +298,12 @@ G_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p)
 G_WRAP_DECNN(bufs, dec_bufs, GstBuffer *, p)
 G_WRAP_DECNN(objs, dec_objs, GstElement *, p) 
 G_WRAP_DECNN(caps, dec_caps, GstCaps *, p)
+G_WRAP_DECNN(chars, dec_chars, gchar *, c)
 
 // --- Structure wrappers ---
 G_WRAP_INC(structs, cnt_structs, GstStructure *, p)
 G_WRAP_FREE(gst_structure_free, structs, GstStructure *)
+
 G_WRAP_ALLOC(GstStructure *, gst_structure_copy, structs, const GstStructure *, s)
 G_WRAP_ALLOC(GstStructure *, gst_structure_new_empty, structs, const gchar *, name)
 //

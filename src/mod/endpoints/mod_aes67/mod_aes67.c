@@ -2547,7 +2547,7 @@ static switch_status_t load_config(void)
 				globals.clock = NULL;
 			} else {
 				// accounting
-				DANN_dec_objs(clock);
+				DANN_dec_objs(globals.clock);
 			}
 			globals.clock = ptp_clock; // check
 		}
@@ -3222,6 +3222,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		stream->write_function(stream, "\tobjs: %d\n", g_alloc_counts.objs);
 		stream->write_function(stream, "\tdebugs: %d\n", g_alloc_counts.debugs);
 		stream->write_function(stream, "\tstats: %d\n", g_alloc_counts.stats);
+		stream->write_function(stream, "\tchars: %d\n", g_alloc_counts.chars);
 		// stream->write_function(stream, "\tgobjects: %d\n", g_alloc_counts.gobjects);
 		stream->write_function(stream, "\tFDA: %d\n", g_alloc_counts.FDA);
 		stream->write_function(stream, "\tFAL: %d\n", g_alloc_counts.FAL);
