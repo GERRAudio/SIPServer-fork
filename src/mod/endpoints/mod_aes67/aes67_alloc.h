@@ -139,7 +139,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 
 // --- Macro for decrement-only wrappers (for manual tracking) ---
 #define G_WRAP_DEC(counter, name, t, p)                                                                                \
-	inline void DA_##name(t p) { g_alloc_counts.counter--; p=NULL; }
+	inline void DA_##name(t p) { if (p) {g_alloc_counts.counter--; p=NULL;} }
 
 // --- Macro for decrement-only wrappers no nulling (for manual tracking and accounting) ---
 #define G_WRAP_DECNN(counter, name, t, p)                                                                                \
