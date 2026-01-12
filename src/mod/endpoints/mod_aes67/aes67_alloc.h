@@ -291,10 +291,11 @@ G_WRAP_ALLOC(gpointer, g_malloc0, chars, gsize, c)
 G_WRAP_ALLOC(gchar *, g_strdup, chars, gchar *, str)
 G_WRAP_ALLOC(gchar *, gst_structure_to_string, chars, const GstStructure *, s)
 
-// --- Buffer wrappers ---
+// --- inc/dec wrappers ---
 G_WRAP_INC(bufs, cnt_bufs, GstStructure *, p)
 G_WRAP_INC(samples, cnt_samples, GstStructure *, p)
-G_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p)
+G_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p) 
+G_WRAP_DECNN(bufs, dec_bufs, GstBuffer *, p)
 G_WRAP_DECNN(objs, dec_objs, GstElement *, p)
 
 // --- Structure wrappers ---
@@ -369,10 +370,12 @@ G_WRAP_ALLOC_M(GstObject *, gst_element_get_parent, objs, GstElement *, e, alloc
 G_WRAP_FREE(gst_sample_unref, samples, GstSample *)
 
 // --- caps wrappers ---
-G_WRAP_FREE(gst_caps_unref, caps, GstCaps *)
+G_WRAP_FREE(gst_caps_unref, caps, GstCaps *) 
+G_WRAP_ALLOC(GstCaps*, gst_caps_copy, caps, GstCaps*, c)
 
 // --- buffer wrapper ---
-G_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *)
+G_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *) 
+G_WRAP_ALLOC(GstBuffer *, gst_sample_get_buffer, bufs, GstBuffer *, b)
 
 // Pad name allocation
 G_WRAP_ALLOC(gchar *, gst_pad_get_name, chars, GstPad *, p)

@@ -127,9 +127,9 @@ static GstCaps *request_pt_map(GstElement *jitterbuffer, guint pt, gpointer user
 	GstCaps *caps = GST_CAPS(user_data);
 	GstCaps *ret = NULL;
 
-	ret = gst_caps_copy(caps);
+	ret = AL_gst_caps_copy(caps);
 	gst_caps_set_simple(ret, "payload", G_TYPE_INT, pt, NULL);
-
+	
 	return ret;
 }
 
@@ -173,12 +173,12 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 error:
 
 	dump_pipeline(GST_PIPELINE(pipeline), pad_name);
-	//DA_gst_object_unref(deinterleave);//causes crash, not required!
-	// these need to be unconditionally deref'd
+	//DANN_dec_objs(pipeline);		//deref causes crash, just do accounting
 	DA_gst_object_unref(GST_OBJECT(tee_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(tee));
-	// setting pipeline state to null here kills audio
-	DA_gst_object_unref(GST_OBJECT(pipeline));
+	// setting pipeline state to null here kills audio so just deref the pointer
+	gst_object_unref(GST_OBJECT(pipeline));	
+	DANN_dec_objs(pipeline);		
 	DA_g_free(pad_name);
 }
 
@@ -507,10 +507,11 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			switch_mutex_unlock(alloc_bkup_lock);			///added check
 
 			g_object_get(G_OBJECT(fakesink), "last-sample", &last_sample, NULL);//allocates!
+			AL_cnt_samples(last_sample);		//accounting
 			if (!last_sample) goto exit;
 
-			// no memory allocated
-			buffer = gst_sample_get_buffer(last_sample);	//no alloc
+
+			buffer = AL_gst_sample_get_buffer(last_sample);	//no alloc but count it
 			timestamp = GST_BUFFER_DTS_OR_PTS(buffer);
 			meta = gst_buffer_get_net_address_meta(buffer);
 			//
@@ -552,6 +553,9 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 
 			DA_gst_sample_unref(last_sample);
 			last_sample = NULL;
+			if (buffer) {
+				DANN_dec_bufs(buffer);	//accounting
+			}
 			DA_gst_object_unref(GST_OBJECT(clock));
 
 		} else {
@@ -565,6 +569,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 
 exit:
 	DA_gst_sample_unref(last_sample);
+	//if (buffer) DANN_dec_bufs(buffer);			//double accounting
 	DA_gst_object_unref(GST_OBJECT(clock));
 	DA_gst_object_unref(GST_OBJECT(fakesink));
 	DA_g_free(host);
@@ -1157,6 +1162,7 @@ void stop_pipeline(g_stream_t *stream)
 		if (deinterleave) {
 			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
 			DA_gst_object_unref(GST_OBJECT(deinterleave));
+			deinterleave = NULL;
 		} 
 
 		stream->deinterleave_signal_id = 0;
@@ -1166,6 +1172,7 @@ void stop_pipeline(g_stream_t *stream)
 		if (rtpjitbuf) {
 			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
 			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+			rtpjitbuf = NULL;
 		}
 		stream->jitterbuf_signal_id = 0;
 	}
@@ -1351,11 +1358,13 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			break;
 		}
 		AL_cnt_samples(sample);				 // count the sample allocation
-		buf = gst_sample_get_buffer(sample); // no alloc
+		buf = AL_gst_sample_get_buffer(sample); // no alloc but count it
+
 
 		if (!buf) {
 			if (sample != NULL) { // added in case
 				DA_gst_sample_unref(sample);
+				sample = NULL;
 			} 
 			continue;
 		}
@@ -1376,6 +1385,9 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		if (sample != NULL) {
 			DA_gst_sample_unref(sample); // check
 			sample = NULL;
+			if (buf) {
+				DANN_dec_bufs(buf);
+			}
 		}
 
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got %d\n", total_bytes);
