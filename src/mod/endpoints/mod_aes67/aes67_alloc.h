@@ -296,7 +296,8 @@ G_WRAP_INC(bufs, cnt_bufs, GstStructure *, p)
 G_WRAP_INC(samples, cnt_samples, GstStructure *, p)
 G_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p) 
 G_WRAP_DECNN(bufs, dec_bufs, GstBuffer *, p)
-G_WRAP_DECNN(objs, dec_objs, GstElement *, p)
+G_WRAP_DECNN(objs, dec_objs, GstElement *, p) 
+G_WRAP_DECNN(caps, dec_caps, GstCaps *, p)
 
 // --- Structure wrappers ---
 G_WRAP_INC(structs, cnt_structs, GstStructure *, p)
@@ -326,7 +327,7 @@ G_WRAP_FREE(gst_object_unref, objs, GstObject *)
 G_WRAP_DEC(objs, dec_objs, GstObject *, p)
 G_WRAP_DEC(caps, dec_caps, GstCaps *, p)
 
-G_WRAP_INC(objs, cnt_objs, GstObject *, p)
+//G_WRAP_INC(objs, cnt_objs, GstObject *, p)
 G_WRAP_INC(objs, cnt_caps, GstCaps *, p)
 
 G_WRAP_ALLOC_M(GstBus *, gst_pipeline_get_bus, objs, GstPipeline *, b, alloc_pipl_lock)

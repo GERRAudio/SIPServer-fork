@@ -2940,20 +2940,24 @@ void error_callback(char *msg, g_stream_t *stream)
 	switch_channel_t *channel;
 	private_t *tp;
 	if (msg) switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Stream error: %s\n", msg); // added check
-	switch_mutex_lock(globals.pvt_lock);														 // added check
+	//switch_mutex_lock(globals.pvt_lock);
+
 	for (tp = globals.call_list; tp; tp = tp->next) {
 		if (!tp->audio_endpoint) continue;
+		STREAM_READER_LOCK(tp->audio_endpoint->in_stream);		//added
 		if ((tp->audio_endpoint->in_stream && (tp->audio_endpoint->in_stream->stream == stream)) ||
 			(tp->audio_endpoint->out_stream && (tp->audio_endpoint->out_stream->stream == stream))) {
 			channel = switch_core_session_get_channel(tp->session);
+			STREAM_READER_UNLOCK(tp->audio_endpoint->in_stream);
 			goto hangup;
+		STREAM_READER_UNLOCK(tp->audio_endpoint->in_stream);
 		}
 	}
-	switch_mutex_unlock(globals.pvt_lock); // added check
+	//switch_mutex_unlock(globals.pvt_lock); // added check
 	return;
 
 hangup:
-	switch_mutex_unlock(globals.pvt_lock); // added check
+	//switch_mutex_unlock(globals.pvt_lock); // added check
 	// Note: this could be sync blocking call, would prefer a more asyn event kind which will call channel_kill
 	// switch_channel_hangup(channel, SWITCH_CAUSE_PROTOCOL_ERROR);
 	if (channel) switch_channel_hangup(channel, SWITCH_CAUSE_PROTOCOL_ERROR); // check
@@ -2963,7 +2967,8 @@ static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
 {
 	switch_hash_index_t *hi;
 	int cnt = 0;
-	switch_mutex_lock(globals.sh_shtreams_lock);
+
+	switch_mutex_lock(globals.sh_shtreams_lock); //changed
 	for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 		const void *var;
 		void *val;
@@ -2979,7 +2984,8 @@ static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
 							   s->codec_ms, s->channels, s->synthetic_ptp, s->txflow ? "on" : "off");
 		cnt++;
 	}
-	switch_mutex_unlock(globals.sh_shtreams_lock);
+	switch_mutex_unlock(globals.sh_shtreams_lock);//changed
+
 	stream->write_function(stream, "Total streams: %d\n", cnt);
 	return SWITCH_STATUS_SUCCESS;
 }

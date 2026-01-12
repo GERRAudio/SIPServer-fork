@@ -129,7 +129,7 @@ static GstCaps *request_pt_map(GstElement *jitterbuffer, guint pt, gpointer user
 
 	ret = AL_gst_caps_copy(caps);
 	gst_caps_set_simple(ret, "payload", G_TYPE_INT, pt, NULL);
-	
+	DANN_dec_caps(caps); //accounting
 	return ret;
 }
 
@@ -171,7 +171,7 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 	}
 
 error:
-
+	//fall thru
 	dump_pipeline(GST_PIPELINE(pipeline), pad_name);
 	DA_gst_object_unref(GST_OBJECT(tee_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(tee));
@@ -689,7 +689,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		g_object_set(split, "output-buffer-duration", data->codec_ms, 1000, NULL);
 
 		deinterleave = AL_gst_element_factory_make("deinterleave", "rx-deinterleave");
-
+		int tee_cnt = 0;	
 		for (guint ch = 0; ch < data->channels; ch++) {
 			gchar name[ELEMENT_NAME_SIZE];
 
@@ -699,11 +699,9 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			if (!tee) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 								  "Failed to create tee element in rx pipeline\n");
-				//DA_dec_objs(tee); //do not count, since pipeline deallocs
 				continue;
 			}
 			g_object_set(tee, "allow-not-linked", TRUE, NULL);
-
 			gst_bin_add(GST_BIN(pipeline), tee);
 			// The deinterleave will be linked to the tee dynamically
 		}
@@ -775,7 +773,6 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		if (capsfilter) DANN_dec_objs(capsfilter);
 		if (split) DANN_dec_objs(split);
 		if (deinterleave) DANN_dec_objs(deinterleave);
-		if (tee) DANN_dec_objs(GST_OBJECT(tee)); 
 		;
 	}
 
@@ -814,7 +811,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			NAME_ELEMENT(name, "appsrc", ch);
 			g_snprintf(pad_name, STR_SIZE, "sink_%u", ch);
 
-			appsrc = AL_gst_element_factory_make("appsrc", name);
+			appsrc = gst_element_factory_make("appsrc", name);			//do not count - deallocated automatically
 			if (!appsrc) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create %s \n", name);
 				continue;
@@ -913,7 +910,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		capsfilter = NULL;
 		DA_gst_object_unref(GST_OBJECT(tx_valve));
 		tx_valve = NULL;
-		DA_gst_object_unref(GST_OBJECT(appsrc));	//added to pipeline in loop, so all deallocated there
+		gst_object_unref(GST_OBJECT(appsrc));	//added to pipeline in loop, so all deallocated there
 		appsrc = NULL;
 		goto error;
 
@@ -924,7 +921,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		DANN_dec_objs(GST_OBJECT(audiointerleave));
 		DANN_dec_objs(GST_OBJECT(capsfilter));
 		DANN_dec_objs(GST_OBJECT(tx_valve));
-		DANN_dec_objs(GST_OBJECT(appsrc)); // added to pipeline in loop, so all deallocated there
+		//DANN_dec_objs(GST_OBJECT(appsrc)); // added to pipeline in loop, so all deallocated there
 		;
 	}
 
@@ -996,8 +993,8 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			DA_gst_caps_unref(caps);
 			caps = NULL;
 			//accounting
-			DANN_dec_objs(GST_OBJECT(udpsrc));
-			DANN_dec_objs(GST_OBJECT(fakesink));
+			//DANN_dec_objs(GST_OBJECT(udpsrc));
+			//DANN_dec_objs(GST_OBJECT(fakesink));
 
 
 		bksnd_error:
@@ -1009,7 +1006,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			fakesink = NULL;
 			goto error;
 
-		bksnd_exit:
+
 			;
 		}
 
@@ -1074,6 +1071,8 @@ error:
 		if (stream->clock != NULL) {
 			DA_gst_object_unref(GST_OBJECT(stream->clock)); // added - check
 			stream->clock = NULL;
+		} else {
+			DANN_dec_objs(clock);//accounting
 		}
 		teardown_mainloop(stream->mainloop);								// added - check
 		if (stream->mainloop != NULL) g_main_loop_unref(stream->mainloop);	// added - check
@@ -1086,7 +1085,8 @@ error:
 exit:
 	//accounting
 	DANN_dec_objs(GST_OBJECT(pipeline));
-	DANN_dec_objs(GST_OBJECT(rtp_pay));		
+	DANN_dec_objs(GST_OBJECT(rtp_pay));	
+	DANN_dec_objs(clock); 
 	//DANN_dec_objs(GST_OBJECT(rtpdepay));		//done above
 	return stream;
 }
@@ -1108,6 +1108,8 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 	if (stream->clock) {
 		DA_gst_object_unref(GST_OBJECT(stream->clock)); // added check
 		stream->clock = NULL;
+	} else {
+		DANN_dec_objs(clock); // accounting
 	}
 
 	//switch_mutex_lock(alloc_pipl_lock); //added check
@@ -1201,6 +1203,7 @@ void stop_pipeline(g_stream_t *stream)
 		leaked_elements++;
 		g_value_unset(&item);
 		g_value_reset(&item);
+		gst_object_unref(element);	//added in case
 	}
 	gst_iterator_free(iter);
 
@@ -1220,7 +1223,9 @@ void stop_pipeline(g_stream_t *stream)
 	if (stream->clock) {
 		DA_gst_object_unref(GST_OBJECT(stream->clock)); 
 		stream->clock = NULL;
-	} 
+	} else {
+		DANN_dec_objs(clock); // accounting
+	}
 
 	teardown_mainloop(stream->mainloop);
 	if (stream->thread !=NULL) 
