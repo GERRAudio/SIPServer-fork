@@ -281,14 +281,14 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	g_object_set(appsink, "emit-signals", FALSE, "sync", FALSE, "async", FALSE, "drop", TRUE, "max-buffers", 1,
 				 "enable-last-sample", FALSE, NULL);
 
-	if (!MU_gst_bin_add(GST_BIN(stream->pipeline), appsink)) {
+	if (!gst_bin_add(GST_BIN(stream->pipeline), appsink)) {
 		DA_gst_object_unref(appsink);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to add appsink to the pipeline ch: %d, session: %s", ch_idx, session);
 		goto error;
 	}
 
-	if (!MU_gst_bin_add(GST_BIN(stream->pipeline), queue)) {
+	if (!gst_bin_add(GST_BIN(stream->pipeline), queue)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to add queue to the pipeline ch: %d, session: %s", ch_idx, session);
 		goto error;
@@ -339,7 +339,6 @@ exit:
 	/* success: drop our local refs */
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
-	//DA_gst_object_unref(GST_OBJECT(tee));	
 
 	DANN_dec_objs(GST_OBJECT(tee)); // accounting
 	DANN_dec_objs(GST_OBJECT(queue)); //accounting
@@ -434,7 +433,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 	gst_element_unlink(queue, appsink);
 
-  if (!MU_gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
+  if (!gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
         "Failed to remove queue from the pipeline ch: %d, session: %s", ch_idx, session);
   }
@@ -442,7 +441,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	if (queue) gst_element_set_state(queue, GST_STATE_NULL);
 	if (appsink) gst_element_set_state(appsink, GST_STATE_NULL);
 
-	if (!MU_gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal //check mutex
+	if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal //check mutex
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to remove appsink from the pipeline ch: %d, session: %s", ch_idx, session);
 	}
@@ -502,7 +501,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			// GstNetAddressMeta *meta=NULL;
 			// GSocketAddress * sock_addr=NULL;
 			// gchar *host=NULL;
-			switch_mutex_lock(alloc_bkup_lock);				///added check
+			switch_mutex_lock(alloc_bkup_lock);			///added check
 			GstClockTime max_delta = stream->backup_sender_idle_wait_ms * GST_MSECOND;
 			switch_mutex_unlock(alloc_bkup_lock);			///added check
 
@@ -521,7 +520,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			/* If the buffer timestamp is after the previous callback or before the next callback
 			  we know that new buffers are arriving and so pause our Tx */
 			delta = timestamp < current_time ? current_time - timestamp : timestamp - current_time;
-
+			
 			switch_mutex_lock(alloc_bkup_lock); /// added check
 			if (delta < max_delta && FALSE == stream->pause_backup_sender) {
 				stream->pause_backup_sender = TRUE;
@@ -550,7 +549,6 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 								  GST_TIME_ARGS(delta), GST_TIME_ARGS(current_time), GST_TIME_ARGS(timestamp));
 			}
 			switch_mutex_unlock(alloc_bkup_lock); /// added check
-
 			DA_gst_sample_unref(last_sample);
 			last_sample = NULL;
 			if (buffer) {
@@ -1246,9 +1244,10 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	GstElement *appsrc = NULL;
 	if (!stream) goto error;						//added check
 
-	switch_mutex_lock(alloc_pipl_lock);				//added check
+
+	//switch_mutex_lock(alloc_pipl_lock);				//added check caller locks stream
 	GstPipeline *pipeline = stream->pipeline;
-	switch_mutex_unlock(alloc_pipl_lock);			//added check
+	//switch_mutex_unlock(alloc_pipl_lock);			//added check
 
 	if (!pipeline) goto error;						//added check
 
@@ -1325,11 +1324,13 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	else
 		NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 
-	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // check
+
+	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // threadsafe
 	if (!appsink ) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
 		goto error;
 	}
+														
 	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0); // check
 
 	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) goto out;
@@ -1340,7 +1341,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// likely true (packet is limited to MTU, while buflen is 8192)
 	// FIXME: revisit this to check whether we need this anymore
 
-	// switch_mutex_lock(alloc_pipl_lock); // added check
+	// switch_mutex_lock(alloc_pipl_lock); // added check - no need, caller locks
 	if (stream->leftover_bytes[ch_idx]) {
 		int copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
 		MU_memcpy(payload, stream->leftover[ch_idx], copy); // check
@@ -1372,7 +1373,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		if (gst_buffer_map(buf, &info, GST_MAP_READ)) { // mutex here kills audio
 			if (total_bytes + info.size > needed_bytes) {
 				int want = needed_bytes - total_bytes;
-				// switch_mutex_lock(alloc_pipl_lock);		//added check
+				// switch_mutex_lock(alloc_pipl_lock);		//added check-no need, caller locks stream for read
 				stream->leftover_bytes[ch_idx] = info.size - want;
 				// switch_mutex_unlock(alloc_pipl_lock); // added check
 				MU_memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);

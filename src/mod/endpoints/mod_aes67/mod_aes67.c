@@ -1106,11 +1106,13 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 	if (tech_pvt->hfh) { tech_close_file(tech_pvt); }
 
 	switch_mutex_lock(globals.device_lock);
+	STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);	//added
 	bytes = pull_buffers(globals.main_stream->stream, (unsigned char *)globals.read_frame.data,
 						 globals.read_codec.implementation->samples_per_packet * 2 /* FIXME: S16LE-only */, 0,
 						 &globals.read_timer, session_id);
 	// FIXME: won't work for L24/L32
 	samples = bytes / sizeof(int16_t);
+	STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added
 	switch_mutex_unlock(globals.device_lock);
 
 	if (samples) {
