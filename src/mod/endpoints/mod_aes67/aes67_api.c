@@ -258,6 +258,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "%s already exists in the pipeline ch: %d, session %s",
 						  name, ch_idx, session);
 		DA_gst_object_unref(GST_OBJECT(queue));
+		queue = NULL;
 		goto error;
 	}
 #ifndef ENABLE_THREADSHARE
@@ -282,6 +283,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 	if (!gst_bin_add(GST_BIN(stream->pipeline), appsink)) {
 		DA_gst_object_unref(appsink);
+		appsink = NULL;
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to add appsink to the pipeline ch: %d, session: %s", ch_idx, session);
 		goto error;
@@ -552,11 +554,13 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			last_sample = NULL;
 
 			DA_gst_object_unref(GST_OBJECT(clock));
+			clock = NULL;
 
 		} else {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Clock not available, pipeline is not PLAYING\n");
 		}
 		DA_gst_object_unref(GST_OBJECT(fakesink));
+		fakesink = NULL;
 
 	} else {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Could not find fakesink the stream\n");
@@ -715,15 +719,17 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		DA_gst_caps_unref(udp_caps);
 		udp_caps = NULL;
 
+                                                                                     \
+
 		if (!udp_source || !rtpdepay || !rtpjitbuf || !rx_audioconv || !capsfilter || !split || !deinterleave) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create rx elements\n");
-			if (udp_source) DA_dec_objs(udp_source);		//the dec macro nulls the ptrs
-			if (rtpdepay) DA_dec_objs(rtpdepay);
-			if (rtpjitbuf) DA_dec_objs(rtpjitbuf);
-			if (rx_audioconv) DA_dec_objs(rx_audioconv);
-			if (capsfilter) DA_dec_objs(capsfilter);
-			if (split) DA_dec_objs(split);
-			if (deinterleave) DA_dec_objs(deinterleave);
+			FORCENULL(udp_source);
+			FORCENULL(rtpdepay);
+			FORCENULL(rtpjitbuf);
+			FORCENULL(rx_audioconv);
+			FORCENULL(capsfilter);
+			FORCENULL(split);
+			FORCENULL(deinterleave);
 			goto ddirRX_error;
 		}
 
@@ -882,11 +888,11 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		}
 
 		if (!audiointerleave || !tx_valve || !tx_audioconv || !rtp_pay || !udpsink) {
-			if (audiointerleave) DA_dec_objs(audiointerleave); //ptrs are nulled by the macto
-			if (tx_valve) DA_dec_objs(tx_valve);
-			if (tx_audioconv) DA_dec_objs(tx_audioconv);
-			if (rtp_pay) DA_dec_objs(rtp_pay);
-			if (udpsink) DA_dec_objs(udpsink);
+			FORCENULL(audiointerleave);
+			FORCENULL(tx_valve);
+			FORCENULL(tx_audioconv);
+			FORCENULL(rtp_pay);
+			FORCENULL(udpsink);
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create tx elements\n");
 			goto ddirTX_error;
 		}

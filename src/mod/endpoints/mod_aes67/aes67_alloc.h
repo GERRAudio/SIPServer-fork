@@ -118,6 +118,15 @@ extern switch_mutex_t *alloc_bkup_lock;
 // G_WRAP_ALLOC2(GstPad *, gst_element_get_static_pad, pads, GstElement *, e, const gchar *, n)
 // G_WRAP_ALLOC(GstPad *, gst_pad_get_peer, pads, GstPad *, p)
 
+// used to wrap deallocators to set ptr to NULL
+#define FORCENULL(a)                                                                                                   \
+	{                                                                                                                  \
+		if (a) {                                                                                                       \
+			DA_dec_objs(a);                                                                                            \
+			a = NULL;                                                                                                  \
+		}                                                                                                              \
+	}
+
 // --- Macro for deallocation wrappers ---
 #define G_WRAP_FREE(fname, counter, arg_type)                                                                          \
 	inline void DA_##fname(arg_type p)                                                                                 \
