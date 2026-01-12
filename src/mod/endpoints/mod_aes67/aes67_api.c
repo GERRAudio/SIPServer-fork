@@ -173,7 +173,6 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 error:
 
 	dump_pipeline(GST_PIPELINE(pipeline), pad_name);
-	//DANN_dec_objs(pipeline);		//deref causes crash, just do accounting
 	DA_gst_object_unref(GST_OBJECT(tee_sink_pad));
 	DA_gst_object_unref(GST_OBJECT(tee));
 	// setting pipeline state to null here kills audio so just deref the pointer
@@ -768,7 +767,15 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 	ddirRX_exit:
 		//DA_gst_object_unref(GST_OBJECT(tee)); // kills audio from BP to phone - TODO-chack where it is deallocated
-		DANN_dec_objs(GST_OBJECT(tee)); // accounting
+		//  accounting
+		if (udp_source) DANN_dec_objs(udp_source); // the dec macro nulls the ptrs
+		if (rtpdepay) DANN_dec_objs(rtpdepay);
+		if (rtpjitbuf) DANN_dec_objs(rtpjitbuf);
+		if (rx_audioconv) DANN_dec_objs(rx_audioconv);
+		if (capsfilter) DANN_dec_objs(capsfilter);
+		if (split) DANN_dec_objs(split);
+		if (deinterleave) DANN_dec_objs(deinterleave);
+		if (tee) DANN_dec_objs(GST_OBJECT(tee)); 
 		;
 	}
 
@@ -911,6 +918,13 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		goto error;
 
 	ddirTX_exit:
+		//accounting
+		DANN_dec_objs(GST_OBJECT(udpsink));
+		DANN_dec_objs(GST_OBJECT(tx_audioconv));
+		DANN_dec_objs(GST_OBJECT(audiointerleave));
+		DANN_dec_objs(GST_OBJECT(capsfilter));
+		DANN_dec_objs(GST_OBJECT(tx_valve));
+		DANN_dec_objs(GST_OBJECT(appsrc)); // added to pipeline in loop, so all deallocated there
 		;
 	}
 
@@ -1072,8 +1086,8 @@ error:
 exit:
 	//accounting
 	DANN_dec_objs(GST_OBJECT(pipeline));
-	DANN_dec_objs(GST_OBJECT(rtp_pay));
-	DANN_dec_objs(GST_OBJECT(rtpdepay));
+	DANN_dec_objs(GST_OBJECT(rtp_pay));		
+	//DANN_dec_objs(GST_OBJECT(rtpdepay));		//done above
 	return stream;
 }
 
