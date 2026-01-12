@@ -963,8 +963,14 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			}
 
 			if (!udpsrc || !fakesink) {
-				if (udpsrc) DA_dec_objs(udpsrc);
-				if (fakesink) DA_dec_objs(fakesink);
+				if (udpsrc) {
+					DA_dec_objs(udpsrc);
+					udpsrc = NULL;
+				}
+				if (fakesink) {
+					DA_dec_objs(fakesink);
+					fakesink = NULL;
+				}
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 								  "Failed to create tx-monitor elements, cannot listen for primary sender\n");
 				goto bksnd_error;

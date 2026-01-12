@@ -103,15 +103,6 @@ extern switch_mutex_t *alloc_bkup_lock;
 		return _ret;                                                                                                   \
 	}
 
-#define G_WRAP_FREE(fname, counter, arg_type)                                                                          \
-	inline void DA_##fname(arg_type p)                                                                                 \
-	{                                                                                                                  \
-		if (p != NULL) {                                                                                               \
-			fname(p);                                                                                                  \
-			g_alloc_counts.counter--;                                                                                  \
-			p = NULL;                                                                                                  \
-		}                                                                                                              \
-	}
 
 // TODO define
 // G_WRAP_ALLOC2(GstPad *, gst_element_get_request_pad, pads, GstElement *, e, const gchar *, n)
@@ -128,6 +119,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 	}
 
 // --- Macro for deallocation wrappers ---
+// the nulling will not work unless I do weird & stuff - worked around it
 #define G_WRAP_FREE(fname, counter, arg_type)                                                                          \
 	inline void DA_##fname(arg_type p)                                                                                 \
 	{                                                                                                                  \
@@ -147,6 +139,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 //G_WRAP_INC(samples, cnt_samples, GstSample *, p)
 
 // --- Macro for decrement-only wrappers (for manual tracking) ---
+// the nulling will not work due to the function
 #define G_WRAP_DEC(counter, name, t, p)                                                                                \
 	inline void DA_##name(t p) { if (p) {g_alloc_counts.counter--; p=NULL;} }
 
