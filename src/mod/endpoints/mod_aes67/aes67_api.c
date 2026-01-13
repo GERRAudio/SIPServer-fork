@@ -1145,6 +1145,44 @@ void *start_pipeline(void *data)
 	return NULL;
 }
 
+/// <summary>
+///  added to account for object added to pipeline
+/// </summary>
+/// <param name="stream"></param>
+static void account_pipeline_destruction(g_stream_t *stream)
+{
+	if (!stream || !stream->pipeline) return;
+
+	GstIterator *iter = gst_bin_iterate_recurse(GST_BIN(stream->pipeline));
+	GValue item = G_VALUE_INIT;
+	int elements = 0, pads = 0;
+
+	while (gst_iterator_next(iter, &item) == GST_ITERATOR_OK) {
+		GstObject *obj = g_value_get_object(&item);
+		if (GST_IS_ELEMENT(obj)) {
+			elements++;
+			// Count pads on this element
+			GstIterator *pad_iter = gst_element_iterate_pads(GST_ELEMENT(obj));
+			GValue pad_item = G_VALUE_INIT;
+			while (gst_iterator_next(pad_iter, &pad_item) == GST_ITERATOR_OK) {
+				pads++;
+				g_value_reset(&pad_item);
+			}
+			gst_iterator_free(pad_iter);
+		}
+		g_value_reset(&item);
+	}
+	gst_iterator_free(iter);
+
+	// Decrement counters for all objects about to be destroyed
+	g_alloc_counts.objs -= (elements + pads);
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+					  "Accounted for %d elements, %d pads in pipeline destruction\n", elements, pads);
+}
+
+
+
 void stop_pipeline(g_stream_t *stream)
 {
 	if (!stream) goto error;
@@ -1239,6 +1277,7 @@ void stop_pipeline(g_stream_t *stream)
 	DA_gst_object_unref(GST_OBJECT(bus));
 	bus = NULL;
 
+	account_pipeline_destruction(stream);		//added
 	DA_gst_object_unref(GST_OBJECT(stream->pipeline)); 
 	stream->pipeline = NULL;
 	if (stream->clock) {
