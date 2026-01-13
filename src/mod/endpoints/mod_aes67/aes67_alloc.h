@@ -111,12 +111,12 @@ extern switch_mutex_t *alloc_bkup_lock;
 
 // used to wrap deallocators to set ptr to NULL
 #define DEC_objs_forceNULL(a)                                                                                                   \
-	{                                                                                                                  \
+	do {                                                                                                                  \
 		if (a) {                                                                                                       \
 			DA_dec_objs(a);                                                                                            \
 			a = NULL;                                                                                                  \
 		}                                                                                                              \
-	}
+	} while (0);
 
 // --- Macro for deallocation wrappers ---
 // the nulling will not work unless I do weird & stuff - worked around it
@@ -126,7 +126,6 @@ extern switch_mutex_t *alloc_bkup_lock;
 		if (p != NULL) {                                                                                               \
 			fname(p);                                                                                                  \
 			g_alloc_counts.counter--;                                                                                  \
-			p = NULL;                                                                                                  \
 		}                                                                                                              \
 	}
 

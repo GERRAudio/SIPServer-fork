@@ -2551,7 +2551,8 @@ static switch_status_t load_config(void)
 			}
 			globals.clock = ptp_clock; // check
 		}
-	}
+	}else
+		DANN_dec_objs(globals.clock);		//accounting only
 
 	globals.enable_ptp_stats = FALSE;
 
