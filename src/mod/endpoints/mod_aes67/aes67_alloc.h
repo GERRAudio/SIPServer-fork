@@ -110,7 +110,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 // G_WRAP_ALLOC(GstPad *, gst_pad_get_peer, pads, GstPad *, p)
 
 // used to wrap deallocators to set ptr to NULL
-#define FORCENULL(a)                                                                                                   \
+#define DEC_objs_forceNULL(a)                                                                                                   \
 	{                                                                                                                  \
 		if (a) {                                                                                                       \
 			DA_dec_objs(a);                                                                                            \
