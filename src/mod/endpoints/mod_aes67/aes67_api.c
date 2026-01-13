@@ -1152,11 +1152,20 @@ void stop_pipeline(g_stream_t *stream)
 	
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 
+
+	guint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
+	if (timer_id > 0) {
+		g_source_remove(timer_id);
+		g_atomic_int_set(&stream->backup_sender_idle_timer, 0);
+	}
+
+	/* changed to above for atomicity
 	// Stop backup sender timer FIRST
 	if (stream->backup_sender_idle_timer > 0) { // Add check
 		g_source_remove(stream->backup_sender_idle_timer);
 		stream->backup_sender_idle_timer = 0;
 	}
+	*/
 
 	// Set to NULL state BEFORE disconnecting signals
 	//gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
@@ -1169,6 +1178,7 @@ void stop_pipeline(g_stream_t *stream)
 		g_source_remove(stream->bus_watch_id);
 		stream->bus_watch_id = 0;
 	}
+
 	// after
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 	/* cb_rx_stats_id will be non zero only when
@@ -1393,10 +1403,9 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 
 		if (!buf) {
-			if (sample != NULL) { // added in case
-				DA_gst_sample_unref(sample);
-				sample = NULL;
-			} 
+			DA_gst_sample_unref(sample);
+			sample = NULL;
+			DANN_dec_bufs(buf); //accounting
 			continue;
 		}
 
