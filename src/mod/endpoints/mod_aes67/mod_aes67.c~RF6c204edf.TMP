@@ -1901,7 +1901,7 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void *data)
 		} 
 		else {
 			// accounting
-			DA_NoNulling_dec_objs(clock);
+			DANN_dec_objs(clock);
 		}
 		// No ref needed, we are taking over the reference from init_ptp()
 		globals.clock = ptp_clock;
@@ -2547,12 +2547,12 @@ static switch_status_t load_config(void)
 				globals.clock = NULL;
 			} else {
 				// accounting
-				DA_NoNulling_dec_objs(globals.clock);
+				DANN_dec_objs(globals.clock);
 			}
 			globals.clock = ptp_clock; // check
 		}
 	}else
-		DA_NoNulling_dec_objs(globals.clock);		//accounting only
+		DANN_dec_objs(globals.clock);		//accounting only
 
 	globals.enable_ptp_stats = FALSE;
 
@@ -2606,7 +2606,7 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 		globals.clock = NULL;
 	} else {
 		// accounting
-		DA_NoNulling_dec_objs(clock);
+		DANN_dec_objs(clock);
 	}
 
 	switch_core_hash_destroy(&globals.call_hash);

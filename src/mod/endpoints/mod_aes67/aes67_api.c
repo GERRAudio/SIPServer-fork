@@ -129,7 +129,7 @@ static GstCaps *request_pt_map(GstElement *jitterbuffer, guint pt, gpointer user
 
 	ret = AL_gst_caps_copy(caps);
 	gst_caps_set_simple(ret, "payload", G_TYPE_INT, pt, NULL);
-	DANN_dec_caps(ret); //accounting
+	DA_NoNulling_dec_caps(ret); //accounting
 	return ret;
 }
 
@@ -334,16 +334,16 @@ exit:
 
 	/* success: drop our local refs */
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
-	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
+	DA_gst_object_unref(queue_sink_pad);
 	// accounting
-	DANN_dec_objs(GST_OBJECT(tee)); 
-	DANN_dec_objs(GST_OBJECT(queue));
-	DANN_dec_objs(GST_OBJECT(appsink));
+	DA_NoNulling_dec_objs(GST_OBJECT(tee)); 
+	DA_NoNulling_dec_objs(GST_OBJECT(queue));
+	DA_NoNulling_dec_objs(GST_OBJECT(appsink));
 	return ret;
 
 error: // TODO: check if we should deallocate other things here
-	DA_gst_object_unref(GST_OBJECT(tee_src_pad)); 
-	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
+	DA_gst_object_unref(tee_src_pad); 
+	DA_gst_object_unref(queue_sink_pad);
 	DA_gst_object_unref(GST_OBJECT(appsink));			//check
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
@@ -411,11 +411,11 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	}
 	MUp_gst_element_release_request_pad(tee, tee_src_pad);
 
-	//DA_gst_object_unref(GST_OBJECT(tee_src_pad));
+	//DA_gst_object_unref(tee_src_pad);
 	//DA_dec_objs(tee_src_pad);							//deref by gst_bin_remove
 	//tee_src_pad = NULL;
 
-	//DA_gst_object_unref(GST_OBJECT(queue_sink_pad)); //deref by gst_bin_remove
+	//DA_gst_object_unref(queue_sink_pad); //deref by gst_bin_remove
 	//DA_dec_objs(queue_sink_pad);
 	//queue_sink_pad = NULL;
 
@@ -448,8 +448,8 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	ret = TRUE;
 
 exit:
-	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
-	DA_gst_object_unref(GST_OBJECT(queue_sink_pad));
+	DA_gst_object_unref(tee_src_pad);
+	DA_gst_object_unref(queue_sink_pad);
 	DA_gst_object_unref(GST_OBJECT(appsink));
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
@@ -477,8 +477,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 
 		if (!clock) {
 			//switch_log_printf(...);
-			DA_gst_object_unref(GST_OBJECT(fakesink)); // added
-			DA_gst_object_unref(fakesink);				//added
+			DA_gst_object_unref(GST_OBJECT(GST_OBJECT(fakesink))); // added
 			return G_SOURCE_CONTINUE;
 		} 
 		if (clock) {
@@ -551,7 +550,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 
 exit:
 	DA_gst_sample_unref(last_sample);
-	//DANN_dec_bufs(buffer);			//not counted, just borrowed
+	//DA_NoNulling_bufs(buffer);			//not counted, just borrowed
 	DA_gst_object_unref(GST_OBJECT(clock));
 	DA_gst_object_unref(GST_OBJECT(fakesink));
 	DA_g_free(host);
@@ -710,6 +709,11 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		gst_bin_add_many(GST_BIN(pipeline), udp_source, rtpdepay, rtpjitbuf, rx_audioconv, capsfilter, split,
 						 deinterleave, NULL);
 
+		//if (!gst_bin_get_by_name(GST_BIN(pipeline), "udp_source")) {			//added clause to check previous call
+			//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to add elements in the rx pipeline");
+			//goto ddirRX_error;
+		//}
+
 		if (!gst_element_link_many(udp_source, rtpjitbuf, rtpdepay, split, rx_audioconv, capsfilter, deinterleave,
 								   NULL)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements in the rx pipeline");
@@ -744,15 +748,15 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	ddirRX_exit:
 		//DA_gst_object_unref(GST_OBJECT(tee)); // kills audio from BP to phone - TODO-check where it is deallocated
 		//  accounting
-		if (udp_source) DANN_dec_objs(udp_source); 
-		if (rtpdepay) DANN_dec_objs(rtpdepay);
-		if (rtpjitbuf) DANN_dec_objs(rtpjitbuf);
-		if (rx_audioconv) DANN_dec_objs(rx_audioconv);
-		if (capsfilter) DANN_dec_objs(capsfilter);
-		if (split) DANN_dec_objs(split);
-		if (deinterleave) DANN_dec_objs(deinterleave);
-		if (rx_caps) DANN_dec_caps(rx_caps);
-		if (udp_caps) DANN_dec_caps(udp_caps);
+		if (udp_source) DA_NoNulling_dec_objs(udp_source); 
+		if (rtpdepay) DA_NoNulling_dec_objs(rtpdepay);
+		if (rtpjitbuf) DA_NoNulling_dec_objs(rtpjitbuf);
+		if (rx_audioconv) DA_NoNulling_dec_objs(rx_audioconv);
+		if (capsfilter) DA_NoNulling_dec_objs(capsfilter);
+		if (split) DA_NoNulling_dec_objs(split);
+		if (deinterleave) DA_NoNulling_dec_objs(deinterleave);
+		if (rx_caps) DA_NoNulling_dec_caps(rx_caps);
+		if (udp_caps) DA_NoNulling_dec_caps(udp_caps);
 		;
 	}
 
@@ -868,6 +872,10 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		gst_bin_add_many(GST_BIN(pipeline), tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL);
 
+		//if (!gst_bin_get_by_name(GST_BIN(pipeline), "tx_valve")) {		//added to check for failure
+			//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to add many tx elements\n");
+			//goto ddirTX_error;
+		//}
 		if (!gst_element_link_many(audiointerleave, tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements");
 			goto ddirTX_error;
@@ -893,12 +901,12 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 	ddirTX_exit:
 		//accounting
-		DANN_dec_objs(GST_OBJECT(udpsink));
-		DANN_dec_objs(GST_OBJECT(tx_audioconv));
-		DANN_dec_objs(GST_OBJECT(audiointerleave));
-		DANN_dec_objs(GST_OBJECT(capsfilter));
-		DANN_dec_objs(GST_OBJECT(tx_valve));
-		//DANN_dec_objs(GST_OBJECT(appsrc)); // added to pipeline in loop, not counted
+		DA_NoNulling_dec_objs(GST_OBJECT(udpsink));
+		DA_NoNulling_dec_objs(GST_OBJECT(tx_audioconv));
+		DA_NoNulling_dec_objs(GST_OBJECT(audiointerleave));
+		DA_NoNulling_dec_objs(GST_OBJECT(capsfilter));
+		DA_NoNulling_dec_objs(GST_OBJECT(tx_valve));
+		//DA_NoNulling_dec_objs(GST_OBJECT(appsrc)); // added to pipeline in loop, not counted
 	}
 
 	/* if this stream is configured to be a backup sender, we pause our Tx if we find another sender doing Tx
@@ -907,76 +915,83 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	GstElement *udpsrc = NULL;
 	GstElement *fakesink = NULL;
 	GstCaps *caps = NULL;
-		if (data->is_backup_sender) {
+	if (data->is_backup_sender) {
 
-			/* create a dummy pipeline with `udpsrc ! fakesink` just to receive on udp and read the last-sample from fakesink */
+		/* create a dummy pipeline with `udpsrc ! fakesink` just to receive on udp and read the last-sample from
+		 * fakesink */
 #ifndef ENABLE_THREADSHARE
-			udpsrc = AL_gst_element_factory_make("udpsrc", "tx-monitor-udpsrc");
+		udpsrc = AL_gst_element_factory_make("udpsrc", "tx-monitor-udpsrc");
 #else
-			MAKE_TS_ELEMENT(udpsrc, "ts-udpsrc", "tx-monitor-udpsrc", ts_ctx);
+		MAKE_TS_ELEMENT(udpsrc, "ts-udpsrc", "tx-monitor-udpsrc", ts_ctx);
 #endif
 
-			fakesink = AL_gst_element_factory_make("fakesink", "tx-monitor-fakesink");
+		fakesink = AL_gst_element_factory_make("fakesink", "tx-monitor-fakesink");
 
-			if (data->tx_codec == L16) {
+		if (data->tx_codec == L16) {
 				caps =	gst_caps_new_simple("application/x-rtp", 
 				"clock-rate", G_TYPE_INT, data->sample_rate, 
 				"channels",	G_TYPE_INT, data->channels, 
 				"channel-order", G_TYPE_STRING, "unpositioned",
 				"encoding-name", G_TYPE_STRING, "L16", 
 				"media", G_TYPE_STRING, "audio", NULL);
-			} else {
+		} else {
 				caps = gst_caps_new_simple("application/x-rtp", 
 				"clock-rate", G_TYPE_INT, data->sample_rate, 
 				"channels",	G_TYPE_INT, data->channels, 
 				"channel-order", G_TYPE_STRING, "unpositioned",
 				"encoding-name", G_TYPE_STRING, "L24", 
 				"media", G_TYPE_STRING, "audio", NULL);
-			}
+		}
 
-			if (!udpsrc || !fakesink) {
+		if (!udpsrc || !fakesink) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+							  "Failed to create tx-monitor elements, cannot listen for primary sender\n");
+			goto bksnd_error;
+		} else {
+			g_object_set(udpsrc, "address", data->tx_ip_addr, "port", data->tx_port,
+						 // #ifdef _WIN32
+						 //  Disable IP_MULTICAST_LOOP to avoid listening packets from same host
+						 //  For Windows this needs to be set on the receiver's side
+						 "loop", FALSE,
+						 // #endif
+						 "multicast-iface", data->rtp_iface, "caps", caps, NULL);
+
+			g_object_set(fakesink, "async", FALSE, NULL);
+
+			gst_bin_add_many(GST_BIN(pipeline), udpsrc, fakesink, NULL);
+			//if (!gst_bin_get_by_name(GST_BIN(pipeline), "udpsrc")) {		//added for check
+				//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+				//				  "Failed to add many tx-monitor elements, cannot listen for primary sender\n");
+				//goto bksnd_error;
+			//}
+
+			if (!gst_element_link_many(udpsrc, fakesink, NULL)) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-								  "Failed to create tx-monitor elements, cannot listen for primary sender\n");
+								  "Failed to link tx-monitor elements, cannot listen for primary sender\n");
 				goto bksnd_error;
 			} else {
-				g_object_set(udpsrc, "address", data->tx_ip_addr, "port", data->tx_port,
-							 // #ifdef _WIN32
-							 //  Disable IP_MULTICAST_LOOP to avoid listening packets from same host
-							 //  For Windows this needs to be set on the receiver's side
-							 "loop", FALSE,
-							 // #endif
-							 "multicast-iface", data->rtp_iface, "caps", caps, NULL);
+				stream->pause_backup_sender = FALSE;
+				stream->backup_sender_idle_wait_ms = data->backup_sender_idle_wait_ms;
 
-				g_object_set(fakesink, "async", FALSE, NULL);
-
-				gst_bin_add_many(GST_BIN(pipeline), udpsrc, fakesink, NULL);
-				if (!gst_element_link_many(udpsrc, fakesink, NULL)) {
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-									  "Failed to link tx-monitor elements, cannot listen for primary sender\n");
-					goto bksnd_error;
-				} else {
-					stream->pause_backup_sender = FALSE;
-					stream->backup_sender_idle_wait_ms = data->backup_sender_idle_wait_ms;
-
-					/* add a timer to check for remote sender's buffers every `backup_sender_idle_wait_ms` to resumek
-					  our Tx as soon as possible once the remote Tx stops */
-					stream->backup_sender_idle_timer = g_timeout_add_full(
-						G_PRIORITY_DEFAULT, data->backup_sender_idle_wait_ms, backup_sender_timeout_cb, stream, NULL);
-				}
+				/* add a timer to check for remote sender's buffers every `backup_sender_idle_wait_ms` to resumek
+				  our Tx as soon as possible once the remote Tx stops */
+				stream->backup_sender_idle_timer = g_timeout_add_full(
+					G_PRIORITY_DEFAULT, data->backup_sender_idle_wait_ms, backup_sender_timeout_cb, stream, NULL);
 			}
-			DA_gst_caps_unref(caps);
-			caps = NULL;
-
-			///fall thru
-		bksnd_error:
-			DA_gst_caps_unref(caps);
-			caps = NULL;
-			DA_gst_object_unref(GST_OBJECT(udpsrc));
-			udpsrc = NULL;
-			DA_gst_object_unref(GST_OBJECT(fakesink));
-			fakesink = NULL;
-			goto error;
 		}
+		DA_gst_caps_unref(caps);
+		caps = NULL;
+
+		/// fall thru
+	bksnd_error:
+		DA_gst_caps_unref(caps);
+		caps = NULL;
+		DA_gst_object_unref(GST_OBJECT(udpsrc));
+		udpsrc = NULL;
+		DA_gst_object_unref(GST_OBJECT(fakesink));
+		fakesink = NULL;
+		goto error;
+	}
 
 	// ---
 
@@ -1006,7 +1021,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 	if (rtpdepay && data->synthetic_ptp) {
 		if (stream->clock) {
-			DA_gst_object_unref(GST_OBJECT(stream->clock)); // check - added 
+			DA_gst_object_unref(GST_OBJECT(stream->clock)); // check - added
 			stream->clock = NULL;
 		}
 		stream->clock = AL_g_object_new_clock(GST_TYPE_SYSTEM_CLOCK, "name", "SyntheticPtpClock", NULL);
@@ -1016,7 +1031,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		/* We'll set the pipeline clock once it's synced */
 	} else {
 		if (stream->clock) {
-			DA_gst_object_unref(GST_OBJECT(stream->clock));			/// added check
+			DA_gst_object_unref(GST_OBJECT(stream->clock)); /// added check
 			stream->clock = NULL;
 		}
 		gst_pipeline_use_clock(GST_PIPELINE(pipeline), data->clock);
@@ -1028,38 +1043,38 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	goto exit;
 
 error:
-	if (pipeline) gst_element_set_state(pipeline, GST_STATE_NULL);				//added check
+	if (pipeline) gst_element_set_state(pipeline, GST_STATE_NULL); // added check
 	DA_gst_object_unref(GST_OBJECT(pipeline));
 	pipeline = NULL;
 	DA_gst_object_unref(GST_OBJECT(rtp_pay));
 	rtp_pay = NULL;
-	//DA_gst_object_unref(GST_OBJECT(rtpdepay));
-	//rtpdepay = NULL;
+	// DA_gst_object_unref(GST_OBJECT(rtpdepay));
+	// rtpdepay = NULL;
 	if (stream != NULL) {
 		if (stream->clock != NULL) {
 			DA_gst_object_unref(GST_OBJECT(stream->clock)); // added - check
 			stream->clock = NULL;
 		} else {
-			DANN_dec_objs(stream->clock);//accounting
+			DA_NoNulling_dec_objs(stream->clock); // accounting
 		}
-		teardown_mainloop(stream->mainloop);								// added - check
-		if (stream->mainloop != NULL) g_main_loop_unref(stream->mainloop);	// added - check
-		if (stream->thread != NULL) g_thread_join(stream->thread);			// added - check
+		teardown_mainloop(stream->mainloop);							   // added - check
+		if (stream->mainloop != NULL) g_main_loop_unref(stream->mainloop); // added - check
+		if (stream->thread != NULL) g_thread_join(stream->thread);		   // added - check
 		DA_g_free(stream);
 		stream = NULL;
 	}
 	return NULL;
 
 exit:
-	//accounting
-	DANN_dec_objs(GST_OBJECT(pipeline));
-	DANN_dec_objs(GST_OBJECT(rtp_pay));	
-	DANN_dec_objs(stream->clock);
-	DANN_dec_chars(stream);
-	DANN_dec_objs(udpsrc);
-	DANN_dec_objs(fakesink);
+	// accounting
+	DA_NoNulling_dec_objs(GST_OBJECT(pipeline));
+	DA_NoNulling_dec_objs(GST_OBJECT(rtp_pay));
+	DA_NoNulling_dec_objs(stream->clock);
+	DA_NoNulling_dec_chars(stream);
+	DA_NoNulling_dec_objs(udpsrc);
+	DA_NoNulling_dec_objs(fakesink);
 
-	//DANN_dec_objs(GST_OBJECT(rtpdepay));		//done above
+	// DA_NoNulling_dec_objs(GST_OBJECT(rtpdepay));		//done above
 	return stream;
 }
 
@@ -1081,7 +1096,7 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 		DA_gst_object_unref(GST_OBJECT(stream->clock)); // added check
 		stream->clock = NULL;
 	} else {
-		DANN_dec_objs(clock); // accounting
+		DA_NoNulling_dec_objs(clock); // accounting
 	}
 
 	//switch_mutex_lock(alloc_pipl_lock); //added check
@@ -1242,7 +1257,7 @@ void stop_pipeline(g_stream_t *stream)
 		DA_gst_object_unref(GST_OBJECT(stream->clock)); 
 		stream->clock = NULL;
 	} else {
-		DANN_dec_objs(stream->clock); // accounting
+		DA_NoNulling_dec_objs(stream->clock); // accounting
 	}
 
 	teardown_mainloop(stream->mainloop);
@@ -1361,13 +1376,12 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	else
 		NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 
-
 	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // threadsafe
-	if (!appsink ) {
+	if (!appsink) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
 		goto error;
 	}
-														
+
 	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0); // check
 
 	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) goto out;
@@ -1395,14 +1409,12 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			switch_cond_next();
 			break;
 		}
-		AL_cnt_samples(sample);				 // count the sample allocation
+		AL_cnt_samples(sample);					// count the sample allocation
 		buf = AL_gst_sample_get_buffer(sample); // no alloc but count it
-
 
 		if (!buf) {
 			DA_gst_sample_unref(sample);
 			sample = NULL;
-			if (buf) DANN_dec_bufs(buf); //accounting
 			continue;
 		}
 
@@ -1422,13 +1434,12 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		if (sample != NULL) {
 			DA_gst_sample_unref(sample); // check
 			sample = NULL;
-			if (buf) {
-				DANN_dec_bufs(buf);
-			}
 		}
 
+		DA_NoNulling_dec_bufs(buf); // just accounting
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got %d\n", total_bytes);
 	}
+
 
 #if 0
   {
