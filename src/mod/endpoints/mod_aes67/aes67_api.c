@@ -699,24 +699,25 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		DA_gst_caps_unref(udp_caps);
 		udp_caps = NULL;
 
-                                                                                     \
+                                                                                     
 
 		if (!udp_source || !rtpdepay || !rtpjitbuf || !rx_audioconv || !capsfilter || !split || !deinterleave) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create rx elements\n");
 			goto ddirRX_error;
 		}
 
-		gst_bin_add_many(GST_BIN(pipeline), udp_source, rtpdepay, rtpjitbuf, rx_audioconv, capsfilter, split,
-						 deinterleave, NULL);
+		gst_bin_add_many(GST_BIN(pipeline), udp_source, rtpdepay, rtpjitbuf, rx_audioconv, capsfilter, split, deinterleave, NULL);
 
-		//if (!gst_bin_get_by_name(GST_BIN(pipeline), "udp_source")) {			//added clause to check previous call
-			//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to add elements in the rx pipeline");
-			//goto ddirRX_error;
-		//}
 
-		if (!gst_element_link_many(udp_source, rtpjitbuf, rtpdepay, split, rx_audioconv, capsfilter, deinterleave,
-								   NULL)) {
+		if (!gst_element_link_many(udp_source, rtpjitbuf, rtpdepay, split, rx_audioconv, capsfilter, deinterleave, NULL)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements in the rx pipeline");
+			goto ddirRX_error;
+		}
+
+		
+		GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED);			//added extra check
+		if (ret == GST_STATE_CHANGE_FAILURE) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline state change failed\n");
 			goto ddirRX_error;
 		}
 
@@ -746,7 +747,9 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		goto error;
 
 	ddirRX_exit:
+		//		if (!udp_source || !rtpdepay || !rtpjitbuf || !rx_audioconv || !capsfilter || !split || !deinterleave) {
 		//DA_gst_object_unref(GST_OBJECT(tee)); // kills audio from BP to phone - TODO-check where it is deallocated
+
 		//  accounting
 		if (udp_source) DA_NoNulling_dec_objs(udp_source); 
 		if (rtpdepay) DA_NoNulling_dec_objs(rtpdepay);
@@ -755,9 +758,16 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		if (capsfilter) DA_NoNulling_dec_objs(capsfilter);
 		if (split) DA_NoNulling_dec_objs(split);
 		if (deinterleave) DA_NoNulling_dec_objs(deinterleave);
+		/*
 		if (rx_caps) DA_NoNulling_dec_caps(rx_caps);
 		if (udp_caps) DA_NoNulling_dec_caps(udp_caps);
-		;
+		*/
+		DA_gst_caps_unref(udp_caps); 
+		udp_caps = NULL;
+		DA_gst_caps_unref(rx_caps); 
+		rx_caps = NULL;
+		//gst_object_unref(GST_OBJECT(tee));		//dereferencing crashes DA not needed since not counted
+		//tee = NULL;
 	}
 
 	if (data->direction & DIRECTION_TX) {
@@ -872,14 +882,18 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		gst_bin_add_many(GST_BIN(pipeline), tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL);
 
-		//if (!gst_bin_get_by_name(GST_BIN(pipeline), "tx_valve")) {		//added to check for failure
-			//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to add many tx elements\n");
-			//goto ddirTX_error;
-		//}
+
 		if (!gst_element_link_many(audiointerleave, tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements");
 			goto ddirTX_error;
 		}
+
+		GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED); // added extra check
+		if (ret == GST_STATE_CHANGE_FAILURE) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline state change failed\n");
+			goto ddirTX_error;
+		}
+
 		goto ddirTX_exit;
 
 	ddirTX_error:
@@ -901,11 +915,15 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 	ddirTX_exit:
 		//accounting
-		DA_NoNulling_dec_objs(GST_OBJECT(udpsink));
-		DA_NoNulling_dec_objs(GST_OBJECT(tx_audioconv));
+		//DA_gst_object_unref(GST_OBJECT(capsfilter));
+		//capsfilter = NULL;
 		DA_NoNulling_dec_objs(GST_OBJECT(audiointerleave));
-		DA_NoNulling_dec_objs(GST_OBJECT(capsfilter));
 		DA_NoNulling_dec_objs(GST_OBJECT(tx_valve));
+		DA_NoNulling_dec_objs(GST_OBJECT(tx_audioconv));
+		DA_NoNulling_dec_objs(GST_OBJECT(udpsink));
+		// rtp_pay done later
+		DA_NoNulling_dec_objs(GST_OBJECT(capsfilter));
+
 		//DA_NoNulling_dec_objs(GST_OBJECT(appsrc)); // added to pipeline in loop, not counted
 	}
 
@@ -959,11 +977,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			g_object_set(fakesink, "async", FALSE, NULL);
 
 			gst_bin_add_many(GST_BIN(pipeline), udpsrc, fakesink, NULL);
-			//if (!gst_bin_get_by_name(GST_BIN(pipeline), "udpsrc")) {		//added for check
-				//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-				//				  "Failed to add many tx-monitor elements, cannot listen for primary sender\n");
-				//goto bksnd_error;
-			//}
+
 
 			if (!gst_element_link_many(udpsrc, fakesink, NULL)) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -982,7 +996,23 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		DA_gst_caps_unref(caps);
 		caps = NULL;
 
-		/// fall thru
+		GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED); // added extra check
+		if (ret == GST_STATE_CHANGE_FAILURE) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline state change failed\n");
+			goto bksnd_error;
+		}
+
+// normal exit
+		DA_gst_caps_unref(caps);
+		caps = NULL;
+		DA_NoNulling_dec_objs(udpsrc);
+		//DA_gst_object_unref(GST_OBJECT(udpsrc));
+		//udpsrc = NULL;
+		DA_NoNulling_dec_objs(fakesink);
+		//DA_gst_object_unref(GST_OBJECT(fakesink));
+		//fakesink = NULL;
+		goto bksnd_continue;
+
 	bksnd_error:
 		DA_gst_caps_unref(caps);
 		caps = NULL;
@@ -994,7 +1024,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	}
 
 	// ---
-
+bksnd_continue: 
 	bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
 	gst_bus_add_watch(bus, bus_callback, stream);
 	DA_gst_object_unref(GST_OBJECT(bus));
@@ -1067,8 +1097,8 @@ error:
 
 exit:
 	// accounting
-	DA_NoNulling_dec_objs(GST_OBJECT(pipeline));
-	DA_NoNulling_dec_objs(GST_OBJECT(rtp_pay));
+	DA_NoNulling_dec_objs(pipeline);
+	DA_NoNulling_dec_objs(rtp_pay);
 	DA_NoNulling_dec_objs(stream->clock);
 	DA_NoNulling_dec_chars(stream);
 	DA_NoNulling_dec_objs(udpsrc);
