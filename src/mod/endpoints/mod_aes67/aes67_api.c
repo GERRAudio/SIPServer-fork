@@ -764,10 +764,10 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		if (rx_caps) DA_NoNulling_dec_caps(rx_caps);
 		if (udp_caps) DA_NoNulling_dec_caps(udp_caps);
 		*/
-		//DA_gst_caps_unref(udp_caps); 
-		//udp_caps = NULL;
-		//DA_gst_caps_unref(rx_caps); 
-		//rx_caps = NULL;
+		DA_gst_caps_unref(udp_caps); 
+		udp_caps = NULL;
+		DA_gst_caps_unref(rx_caps); 
+		rx_caps = NULL;
 		//gst_object_unref(GST_OBJECT(tee));		//dereferencing crashes DA not needed since not counted
 		//tee = NULL;
 	}
@@ -997,16 +997,15 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		DA_gst_caps_unref(caps);
 		caps = NULL;
 
-		// this stops audio in one direction!!
-		//GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED); // added extra check
-		//if (ret == GST_STATE_CHANGE_FAILURE) {
-			//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline state change failed\n");
-			//goto bksnd_error;
-		//}
+		GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED); // added extra check
+		if (ret == GST_STATE_CHANGE_FAILURE) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline state change failed\n");
+			goto bksnd_error;
+		}
 
 // normal exit
-		//DA_gst_caps_unref(caps);
-		//caps = NULL;
+		DA_gst_caps_unref(caps);
+		caps = NULL;
 		DA_NoNulling_dec_objs(udpsrc);
 		//DA_gst_object_unref(GST_OBJECT(udpsrc));
 		//udpsrc = NULL;
@@ -1376,6 +1375,8 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	}
 
 	if (!gst_buffer_map(buf, &info, GST_MAP_WRITE)) {		//MU here kills audio from phone to BP
+		DA_gst_buffer_unref(buf);//added
+		buf = NULL;
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get buffer map\n");
 		goto exit;
 	}
