@@ -1542,13 +1542,13 @@ static void gst_logger(GstDebugCategory *category, GstDebugLevel level, const gc
 		switch_log_printf(SWITCH_CHANNEL_LOG, fs_log_level, "%s %p %s:%d:%s:%s %s\n", tag, (void *)g_thread_self(),
 						  file, line, function, obj, gst_debug_message_get(message));
 
-		DA_g_free(obj);
+		g_free(obj); //not counted
 		obj = NULL;
 	} else {
 		switch_log_printf(SWITCH_CHANNEL_LOG, fs_log_level, "%s %p %s:%d:%s %s\n", tag, (void *)g_thread_self(), file,
 						  line, function, gst_debug_message_get(message));
 	}
-	DA_g_free(tag);
+	g_free(tag);		//not counted
 }
 
 SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
@@ -3129,7 +3129,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		}
 		if (rtp_stats) {
 			stream->write_function(stream, "%s\n", rtp_stats);
-			DA_g_free(rtp_stats); // counting of allocation occurs get_rtp_stats
+			g_free(rtp_stats); // allocation occurs in get_rtp_stats
 			rtp_stats = NULL;
 		}
 

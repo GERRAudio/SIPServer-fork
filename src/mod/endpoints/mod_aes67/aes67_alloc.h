@@ -285,21 +285,21 @@ MU_WRAPV3(memcpy, void *, dest, const void *, src, size_t, n, alloc_mcp_lock)
 
 // G_WRAP_INC(objs, cnt_objs, gpointer, p)
 //  chars
-G_WRAP_INC(chars, cnt_chars, gchar *, p)
+//G_WRAP_INC(chars, cnt_chars, gchar *, p)
 
 G_WRAP_FREE(g_free, chars, gpointer)
-G_WRAP_ALLOC(gpointer, g_malloc0, chars, gsize, c)
-G_WRAP_ALLOC(gchar *, g_strdup, chars, gchar *, str)
-G_WRAP_ALLOC(gchar *, gst_structure_to_string, chars, const GstStructure *, s)
+//G_WRAP_ALLOC(gpointer, g_malloc0, chars, gsize, c)
+//G_WRAP_ALLOC(gchar *, g_strdup, chars, gchar *, str)
+//G_WRAP_ALLOC(gchar *, gst_structure_to_string, chars, const GstStructure *, s)
 
 // --- inc/dec wrappers ---
-G_WRAP_INC(bufs, cnt_bufs, GstStructure *, p)
+//G_WRAP_INC(bufs, cnt_bufs, GstStructure *, p)
 G_WRAP_INC(samples, cnt_samples, GstStructure *, p)
-G_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p) 
+//G_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p) 
 G_WRAP_DECNN(bufs, dec_bufs, GstBuffer *, p)
 G_WRAP_DECNN(objs, dec_objs, GstElement *, p) 
 G_WRAP_DECNN(caps, dec_caps, GstCaps *, p)
-G_WRAP_DECNN(chars, dec_chars, gchar *, c)
+//G_WRAP_DECNN(chars, dec_chars, gchar *, c)
 
 // --- Structure wrappers ---
 G_WRAP_INC(structs, cnt_structs, GstStructure *, p)
@@ -379,7 +379,7 @@ G_WRAP_ALLOC(GstCaps*, gst_caps_copy, caps, GstCaps*, c)
 
 // --- buffer wrapper ---
 G_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *) 
-G_WRAP_ALLOC(GstBuffer *, gst_sample_get_buffer, bufs, GstBuffer *, b)
+//G_WRAP_ALLOC(GstBuffer *, gst_sample_get_buffer, bufs, GstBuffer *, b)
 
 // Pad name allocation
 G_WRAP_ALLOC(gchar *, gst_pad_get_name, chars, GstPad *, p)

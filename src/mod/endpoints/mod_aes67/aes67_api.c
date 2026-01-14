@@ -105,11 +105,11 @@ static gboolean bus_callback(GstBus *bus, GstMessage *msg, gpointer data)
 							  GST_OBJECT_NAME(msg->src), old_state, new_state);
 			g_snprintf(transition, len, "%s_to_%s", old_state, new_state);
 			dump_pipeline(pipe, transition);
-			DA_g_free(old_state);
+			g_free(old_state);		//not counted
 			old_state = NULL;
-			DA_g_free(new_state);
+			g_free(new_state);		//not counted
 			new_state = NULL;
-			DA_g_free(transition);
+			g_free(transition);		//not counted
 			transition = NULL;
 		}
 		break;
@@ -175,7 +175,7 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(tee));
 	// setting pipeline state to null here kills audio so just deref the pointer
 	DA_gst_object_unref(GST_OBJECT(pipeline));	
-	DA_g_free(pad_name);
+	DA_g_free(pad_name);			//counted
 }
 
 gboolean update_clock(gpointer userdata)
@@ -553,8 +553,8 @@ exit:
 	//DA_NoNulling_bufs(buffer);			//not counted, just borrowed
 	DA_gst_object_unref(GST_OBJECT(clock));
 	DA_gst_object_unref(GST_OBJECT(fakesink));
-	DA_g_free(host);
-
+	g_free(host);			//not counted
+		
 	return retval;
 }
 
@@ -916,16 +916,13 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 	ddirTX_exit:
 		//accounting
-		//DA_gst_object_unref(GST_OBJECT(capsfilter));
-		//capsfilter = NULL;
-		DA_NoNulling_dec_objs(GST_OBJECT(audiointerleave));
-		DA_NoNulling_dec_objs(GST_OBJECT(tx_valve));
-		DA_NoNulling_dec_objs(GST_OBJECT(tx_audioconv));
 		DA_NoNulling_dec_objs(GST_OBJECT(udpsink));
-		// rtp_pay done later
+		DA_NoNulling_dec_objs(GST_OBJECT(tx_audioconv));
+		DA_NoNulling_dec_objs(GST_OBJECT(audiointerleave));
 		DA_NoNulling_dec_objs(GST_OBJECT(capsfilter));
-
-		//DA_NoNulling_dec_objs(GST_OBJECT(appsrc)); // added to pipeline in loop, not counted
+		DA_NoNulling_dec_objs(GST_OBJECT(tx_valve));
+		// rtp_pay done later
+		// appsrc not counted added to pipeline in loop, not counted
 	}
 
 	/* if this stream is configured to be a backup sender, we pause our Tx if we find another sender doing Tx
@@ -1091,7 +1088,7 @@ error:
 		teardown_mainloop(stream->mainloop);							   // added - check
 		if (stream->mainloop != NULL) g_main_loop_unref(stream->mainloop); // added - check
 		if (stream->thread != NULL) g_thread_join(stream->thread);		   // added - check
-		DA_g_free(stream);
+		g_free(stream);			//not counted
 		stream = NULL;
 	}
 	return NULL;
@@ -1101,11 +1098,17 @@ exit:
 	DA_NoNulling_dec_objs(pipeline);
 	DA_NoNulling_dec_objs(rtp_pay);
 	DA_NoNulling_dec_objs(stream->clock);
-	DA_NoNulling_dec_chars(stream);
+	//DA_NoNulling_dec_chars(stream);  not counted
 	DA_NoNulling_dec_objs(udpsrc);
 	DA_NoNulling_dec_objs(fakesink);
-
 	// DA_NoNulling_dec_objs(GST_OBJECT(rtpdepay));		//done above
+
+	// added to init channel mutexes
+	for (int i = 0; i < MAX_CHANNELS; i++) {
+		g_static_mutex_init(&stream->appsrc_mutexes[i]); 
+	}
+	
+
 	return stream;
 }
 
@@ -1281,6 +1284,13 @@ void stop_pipeline(g_stream_t *stream)
 	DA_gst_object_unref(GST_OBJECT(bus));
 	bus = NULL;
 
+//added for multiple mutexes
+	for (int i = 0; i < MAX_CHANNELS; i++) {
+		g_static_rec_mutex_lock(&stream->appsrc_mutexes[i]);
+		g_static_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
+		g_static_rec_mutex_free(&stream->appsrc_mutexes[i]);
+	}
+
 	account_pipeline_destruction(stream);		//added - do we need atomicity?
 	DA_gst_object_unref(GST_OBJECT(stream->pipeline)); 
 	stream->pipeline = NULL;
@@ -1294,7 +1304,7 @@ void stop_pipeline(g_stream_t *stream)
 	teardown_mainloop(stream->mainloop);
 	if (stream->thread !=NULL) 
 		g_thread_join(stream->thread);		
-	DA_g_free(stream);					//allocated elsewhere
+	g_free(stream);					//allocated elsewhere, not counted
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 error:
 	;
@@ -1313,8 +1323,33 @@ void start_mainloop(GMainLoop *mainloop)
 	g_main_loop_run(mainloop);
 }
 
+/*
+#define MAX_CHANNELS 256
+typedef struct {
+	GstElement *pipeline;
+	// ... other fields
+	GStaticMutex appsrc_mutexes[MAX_CHANNELS]; // One per channel
+} g_stream_t;
+*/
+
+/*
+// In stream init:
+for (int i = 0; i < MAX_CHANNELS; i++) {
+	g_static_mutex_init(&stream->appsrc_mutexes[i]);
+}
+
+for (int i = 0; i < MAX_CHANNELS; i++) {
+	g_static_rec_mutex_lock(&stream->appsrc_mutexes[i]);
+	g_static_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
+	g_static_rec_mutex_free(&stream->appsrc_mutexes[i]);
+}
+*/
 gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guint ch_idx, switch_timer_t *timer)
 {
+	// PER-CHANNEL lock (critical)
+	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	g_static_rec_mutex_lock(ch_mutex);
+
 	GstState cur_state = GST_STATE_NULL;
 	GstState pending_state = GST_STATE_NULL;
 	GstBuffer *buf = NULL;
@@ -1339,6 +1374,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	switch_core_timer_next(timer);	//wait a bit
 
 	if (!appsrc ) {
+
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Failed to find appsrc in the pipeline\n");
 		goto exit;
 	}
@@ -1361,6 +1397,8 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	}
 
 	if (!gst_buffer_map(buf, &info, GST_MAP_WRITE)) {		//MU here kills audio from phone to BP
+		DA_gst_buffer_unref(buf);//added
+		buf = NULL;
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get buffer map\n");
 		goto exit;
 	}
@@ -1384,7 +1422,8 @@ done:
 
 exit:
 	DA_gst_object_unref(GST_OBJECT(appsrc));				
-	DA_gst_buffer_unref(buf);							
+	DA_gst_buffer_unref(buf);	
+	g_static_rec_mutex_unlock(ch_mutex);		//added
 	return retval;
 }
 
@@ -1441,8 +1480,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			break;
 		}
 		AL_cnt_samples(sample);					// count the sample allocation
-		buf = AL_gst_sample_get_buffer(sample); // no alloc but count it
-
+		buf = gst_sample_get_buffer(sample); // no alloc no count
 		if (!buf) {
 			DA_gst_sample_unref(sample);
 			sample = NULL;
@@ -1467,7 +1505,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			sample = NULL;
 		}
 
-		DA_NoNulling_dec_bufs(buf); // just accounting
+		//if (buf) DA_NoNulling_dec_bufs(buf); // no accounting
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got %d\n", total_bytes);
 	}
 
