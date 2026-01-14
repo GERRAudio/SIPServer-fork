@@ -835,6 +835,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 								  "Failed to link pads of %s with audiointerleave\n", name);
 				goto ddirTX_error;				// on errors, dealloc of added elemets occurs when pipeline de-allocated
 			}
+			//do not remove appsrc, it goes when pipeline is torn down
 		}
 
 		tx_valve = AL_gst_element_factory_make("valve", "tx-valve");
