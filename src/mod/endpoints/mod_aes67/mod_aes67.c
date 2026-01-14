@@ -1941,7 +1941,7 @@ static void *init_ptp(int domain, char *iface)
 	}
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Creating ptp clock client\n");
-	clock = gst_ptp_clock_new("ptp-clock", domain);
+	clock = gst_ptp_clock_new("ptp-v2-clock", domain);
 	if (!gst_clock_wait_for_sync(GST_CLOCK(clock), timeout)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Timed out waiting for the clock to sync\n");
 		g_signal_connect(G_OBJECT(clock), "synced", G_CALLBACK(clock_synced_cb), NULL);

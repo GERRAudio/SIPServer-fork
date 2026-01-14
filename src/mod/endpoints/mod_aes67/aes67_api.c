@@ -332,10 +332,12 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 exit:
 	ret = TRUE;
 
-	/* success: drop our local refs */
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	DA_gst_object_unref(queue_sink_pad);
-	// accounting
+	//  accounting
+	//DA_NoNulling_dec_objs(GST_OBJECT(tee_src_pad));
+	//DA_NoNulling_dec_objs(GST_OBJECT(queue_sink_pad));
+
 	DA_NoNulling_dec_objs(GST_OBJECT(tee)); 
 	DA_NoNulling_dec_objs(GST_OBJECT(queue));
 	DA_NoNulling_dec_objs(GST_OBJECT(appsink));
@@ -567,16 +569,15 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	GstElement *rtpjitbuf = NULL;
 	char *pipeline_name = NULL;
 
-	//g_stream_t *stream = g_new(g_stream_t, 1);
+	g_stream_t *stream = g_new(g_stream_t, 1);
 
-	/* added init
+	//added init
 	stream->bus_watch_id = 0;				
 	stream->deinterleave_signal_id = 0;
 	stream->jitterbuf_signal_id = 0;
 	stream->cb_rx_stats_id = 0;
 	stream->backup_sender_idle_timer = 0;
-	*/
-	g_stream_t *stream = g_new0(g_stream_t, 1); // Zeros ALL fields
+	//
 
 	char fixed_name[25] = {"pipeline"};
 	char *ts_ctx = DEFAULT_CONTEXT_NAME;
@@ -715,12 +716,12 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			goto ddirRX_error;
 		}
 
-		
-		GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED);			//added extra check
-		if (ret == GST_STATE_CHANGE_FAILURE) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline state change failed\n");
-			goto ddirRX_error;
-		}
+		// this stops audio in one direction!!
+		//GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED);			//added extra check
+		//if (ret == GST_STATE_CHANGE_FAILURE) {
+			//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline state change failed\n");
+			//goto ddirRX_error;
+		//}
 
 		goto ddirRX_exit;
 
@@ -763,10 +764,10 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		if (rx_caps) DA_NoNulling_dec_caps(rx_caps);
 		if (udp_caps) DA_NoNulling_dec_caps(udp_caps);
 		*/
-		DA_gst_caps_unref(udp_caps); 
-		udp_caps = NULL;
-		DA_gst_caps_unref(rx_caps); 
-		rx_caps = NULL;
+		//DA_gst_caps_unref(udp_caps); 
+		//udp_caps = NULL;
+		//DA_gst_caps_unref(rx_caps); 
+		//rx_caps = NULL;
 		//gst_object_unref(GST_OBJECT(tee));		//dereferencing crashes DA not needed since not counted
 		//tee = NULL;
 	}
@@ -890,11 +891,12 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			goto ddirTX_error;
 		}
 
-		GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED); // added extra check
-		if (ret == GST_STATE_CHANGE_FAILURE) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline state change failed\n");
-			goto ddirTX_error;
-		}
+		// this stops audio in one direction!!
+		//GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED); // added extra check
+		//if (ret == GST_STATE_CHANGE_FAILURE) {
+			//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline state change failed\n");
+			//goto ddirTX_error;
+		//}
 
 		goto ddirTX_exit;
 
@@ -995,15 +997,16 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		DA_gst_caps_unref(caps);
 		caps = NULL;
 
-		GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED); // added extra check
-		if (ret == GST_STATE_CHANGE_FAILURE) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline state change failed\n");
-			goto bksnd_error;
-		}
+		// this stops audio in one direction!!
+		//GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED); // added extra check
+		//if (ret == GST_STATE_CHANGE_FAILURE) {
+			//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline state change failed\n");
+			//goto bksnd_error;
+		//}
 
 // normal exit
-		DA_gst_caps_unref(caps);
-		caps = NULL;
+		//DA_gst_caps_unref(caps);
+		//caps = NULL;
 		DA_NoNulling_dec_objs(udpsrc);
 		//DA_gst_object_unref(GST_OBJECT(udpsrc));
 		//udpsrc = NULL;
@@ -1282,12 +1285,6 @@ void stop_pipeline(g_stream_t *stream)
 	DA_gst_object_unref(GST_OBJECT(bus));
 	bus = NULL;
 
-//added for multiple mutexes
-	for (int i = 0; i < MAX_CHANNELS; i++) {
-		g_static_rec_mutex_lock(&stream->appsrc_mutexes[i]);
-		g_static_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
-		g_static_rec_mutex_free(&stream->appsrc_mutexes[i]);
-	}
 
 	account_pipeline_destruction(stream);		//added - do we need atomicity?
 	DA_gst_object_unref(GST_OBJECT(stream->pipeline)); 
@@ -1301,7 +1298,14 @@ void stop_pipeline(g_stream_t *stream)
 
 	teardown_mainloop(stream->mainloop);
 	if (stream->thread !=NULL) 
-		g_thread_join(stream->thread);		
+		g_thread_join(stream->thread);
+	//added for multiple mutexes
+	for (int i = 0; i < MAX_CHANNELS; i++) {
+		g_static_rec_mutex_lock(&stream->appsrc_mutexes[i]);
+		g_static_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
+		g_static_rec_mutex_free(&stream->appsrc_mutexes[i]);
+	}
+		
 	g_free(stream);					//allocated elsewhere, not counted
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 error:
@@ -1336,25 +1340,23 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	GstElement *appsrc = NULL;
 	if (!stream) goto no_stream;						//added check
 
-	// PER-CHANNEL lock (critical)
-	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
-	g_static_rec_mutex_lock(ch_mutex);
-
 	//switch_mutex_lock(alloc_pipl_lock);				//added check remvoed, caller locks stream
 	GstPipeline *pipeline = stream->pipeline;
 	//switch_mutex_unlock(alloc_pipl_lock);			//added check
 
-	if (!pipeline) goto exit;						//added check
+	if (!pipeline) goto no_stream;						//added check
 
 	NAME_ELEMENT(name, "appsrc", ch_idx);
 	appsrc = AL_gst_bin_get_by_name(GST_BIN(pipeline), name);	//check 
 	switch_core_timer_next(timer);	//wait a bit
 
 	if (!appsrc ) {
-
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Failed to find appsrc in the pipeline\n");
-		goto exit;
+		goto no_stream;
 	}
+	// PER-CHANNEL lock (critical)
+	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	g_static_rec_mutex_lock(ch_mutex);
 
 	if (!g_atomic_int_get(&stream->clock_sync)) {
 		retval = TRUE;
@@ -1374,8 +1376,6 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	}
 
 	if (!gst_buffer_map(buf, &info, GST_MAP_WRITE)) {		//MU here kills audio from phone to BP
-		DA_gst_buffer_unref(buf);//added
-		buf = NULL;
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get buffer map\n");
 		goto exit;
 	}
@@ -1398,10 +1398,9 @@ done:
 	retval = TRUE;
 //fall thru
 exit:
-	DA_gst_object_unref(GST_OBJECT(appsrc));				
 	DA_gst_buffer_unref(buf);
-
-	g_static_rec_mutex_unlock(ch_mutex);		//added
+	g_static_rec_mutex_unlock(ch_mutex); // added
+	DA_gst_object_unref(GST_OBJECT(appsrc));				
 	return retval;
 no_stream:
 	return 0;
@@ -1421,8 +1420,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	GstElement *appsink = NULL;
 
 	if (!stream) goto no_stream;	 // added check
-	// PER-CHANNEL lock (critical)
-	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+
 
 	if (session == NULL)
 		NAME_ELEMENT(name, "appsink", ch_idx);
@@ -1430,6 +1428,10 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 
 	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // threadsafe
+	// PER-CHANNEL lock (critical)
+	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	g_static_rec_mutex_lock(ch_mutex);
+
 	if (!appsink) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
 		goto error;
