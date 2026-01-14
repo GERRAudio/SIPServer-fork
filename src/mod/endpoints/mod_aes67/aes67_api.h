@@ -48,7 +48,7 @@ typedef struct
   int backup_sender_idle_wait_ms;
 } pipeline_data_t;
 
-#define MAX_CHANNELS 256            //added
+#define MAX_CHANNELS 8            //added
 struct g_stream
 {
   GstPipeline *pipeline;
@@ -69,7 +69,7 @@ struct g_stream
   guint bus_watch_id;                   //added
   gulong deinterleave_signal_id;        //added
   guint jitterbuf_signal_id;
-  GStaticMutex appsrc_mutexes[MAX_CHANNELS]; // One per channel added
+  GRecMutex appsrc_mutexes[MAX_CHANNELS];  // One per channel added
 };
 
 g_stream_t *create_pipeline (pipeline_data_t *data, event_callback_t * error_cb);

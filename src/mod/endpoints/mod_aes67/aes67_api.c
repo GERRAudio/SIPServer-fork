@@ -567,15 +567,16 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	GstElement *rtpjitbuf = NULL;
 	char *pipeline_name = NULL;
 
-	g_stream_t *stream = g_new(g_stream_t, 1);
+	//g_stream_t *stream = g_new(g_stream_t, 1);
 
-	//added init
+	/* added init
 	stream->bus_watch_id = 0;				
 	stream->deinterleave_signal_id = 0;
 	stream->jitterbuf_signal_id = 0;
 	stream->cb_rx_stats_id = 0;
 	stream->backup_sender_idle_timer = 0;
-	//
+	*/
+	g_stream_t *stream = g_new0(g_stream_t, 1); // Zeros ALL fields
 
 	char fixed_name[25] = {"pipeline"};
 	char *ts_ctx = DEFAULT_CONTEXT_NAME;
@@ -1103,10 +1104,7 @@ exit:
 	DA_NoNulling_dec_objs(fakesink);
 	// DA_NoNulling_dec_objs(GST_OBJECT(rtpdepay));		//done above
 
-	// added to init channel mutexes
-	for (int i = 0; i < MAX_CHANNELS; i++) {
-		g_static_mutex_init(&stream->appsrc_mutexes[i]); 
-	}
+
 	
 
 	return stream;
@@ -1323,33 +1321,9 @@ void start_mainloop(GMainLoop *mainloop)
 	g_main_loop_run(mainloop);
 }
 
-/*
-#define MAX_CHANNELS 256
-typedef struct {
-	GstElement *pipeline;
-	// ... other fields
-	GStaticMutex appsrc_mutexes[MAX_CHANNELS]; // One per channel
-} g_stream_t;
-*/
 
-/*
-// In stream init:
-for (int i = 0; i < MAX_CHANNELS; i++) {
-	g_static_mutex_init(&stream->appsrc_mutexes[i]);
-}
-
-for (int i = 0; i < MAX_CHANNELS; i++) {
-	g_static_rec_mutex_lock(&stream->appsrc_mutexes[i]);
-	g_static_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
-	g_static_rec_mutex_free(&stream->appsrc_mutexes[i]);
-}
-*/
 gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guint ch_idx, switch_timer_t *timer)
 {
-	// PER-CHANNEL lock (critical)
-	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
-	g_static_rec_mutex_lock(ch_mutex);
-
 	GstState cur_state = GST_STATE_NULL;
 	GstState pending_state = GST_STATE_NULL;
 	GstBuffer *buf = NULL;
@@ -1360,8 +1334,11 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *appsrc = NULL;
-	if (!stream) goto exit;						//added check
+	if (!stream) goto no_stream;						//added check
 
+	// PER-CHANNEL lock (critical)
+	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	g_static_rec_mutex_lock(ch_mutex);
 
 	//switch_mutex_lock(alloc_pipl_lock);				//added check remvoed, caller locks stream
 	GstPipeline *pipeline = stream->pipeline;
@@ -1419,12 +1396,15 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 done:
 	retval = TRUE;
-
+//fall thru
 exit:
 	DA_gst_object_unref(GST_OBJECT(appsrc));				
-	DA_gst_buffer_unref(buf);	
+	DA_gst_buffer_unref(buf);
+
 	g_static_rec_mutex_unlock(ch_mutex);		//added
 	return retval;
+no_stream:
+	return 0;
 }
 
 int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes, guint ch_idx, switch_timer_t *timer,
@@ -1439,7 +1419,10 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	int total_bytes = 0;
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *appsink = NULL;
-	if (!stream) goto error; // added check
+
+	if (!stream) goto no_stream;	 // added check
+	// PER-CHANNEL lock (critical)
+	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 
 	if (session == NULL)
 		NAME_ELEMENT(name, "appsink", ch_idx);
@@ -1530,9 +1513,13 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 out:
 	DA_gst_object_unref(GST_OBJECT(appsink)); // check
+	g_static_rec_mutex_unlock(ch_mutex);	  // added
 	return total_bytes;
 error:
 	DA_gst_object_unref(GST_OBJECT(appsink)); // check
+	g_static_rec_mutex_unlock(ch_mutex);	  // added
+	return 0;
+no_stream:
 	return 0;
 }
 
