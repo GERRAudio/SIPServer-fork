@@ -1330,9 +1330,10 @@ void stop_pipeline(g_stream_t *stream)
 {
 	if (!stream) goto error;
 
+	switch_mutex_lock(alloc_pipl_lock);
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
 
-	// 1. STOP ALL TIMERS/SOURCES FIRST (atomic)
+	// STOP ALL TIMERS/SOURCES FIRST (atomic)
 	guint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
 	if (timer_id > 0) {
 		g_source_remove(timer_id);
@@ -1349,7 +1350,7 @@ void stop_pipeline(g_stream_t *stream)
 		stream->cb_rx_stats_id = 0;
 	}
 
-	// 2. DISCONNECT SIGNALS BEFORE NULL STATE (CRITICAL - elements still exist)
+	// DISCONNECT SIGNALS BEFORE NULL STATE (CRITICAL - elements still exist)
 	if (stream->deinterleave_signal_id > 0) {
 		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
 		if (deinterleave) {
@@ -1368,18 +1369,21 @@ void stop_pipeline(g_stream_t *stream)
 		stream->jitterbuf_signal_id = 0;
 	}
 
-	// 3. DUMP PIPELINE (still live)
+	// DUMP PIPELINE (still live)
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 
-	// 4. NULL STATE - destroys ALL elements safely
+	// ACCOUNT destroyed pipeline
+	account_pipeline_destruction(stream);
+
+	// NULL STATE - destroys ALL elements safely
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Setting pipeline to NULL...\n");
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 
-	// 5. UNREF PIPELINE (frees everything)
+	//UNREF PIPELINE (frees everything)
 	DA_gst_object_unref(GST_OBJECT(stream->pipeline));
 	stream->pipeline = NULL;
 
-	// 6. CLEANUP CLOCK
+	// CLEANUP CLOCK
 	if (stream->clock) {
 		DA_gst_object_unref(GST_OBJECT(stream->clock));
 		stream->clock = NULL;
@@ -1387,31 +1391,31 @@ void stop_pipeline(g_stream_t *stream)
 		DA_NoNulling_dec_objs(clock); // accounting
 	}
 
-	// 7. ACCOUNT destroyed pipeline (NOW correct timing)
-	account_pipeline_destruction(stream);
 
-	// 8. MAINLOOP + THREADS
+
+	// MAINLOOP + THREADS
 	teardown_mainloop(stream->mainloop);
 	if (stream->thread != NULL) {
 		g_thread_join(stream->thread);
 		stream->thread = NULL;
 	}
 
-	// 9. MUTEX CLEANUP (YOUR PERFECT CODE)
+	// MUTEX CLEANUP 
 	for (int i = 0; i < MAX_CHANNELS; i++) {
 		g_static_rec_mutex_lock(&stream->appsrc_mutexes[i]);
 		g_static_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
 		g_static_rec_mutex_free(&stream->appsrc_mutexes[i]);
 	}
 
-	// 10. FINAL FREE
+	//  FINAL FREE
 	g_free(stream);
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
+	switch_mutex_unlock(alloc_pipl_lock);
 	return;
 
 error:
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline stop error\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline stop erro, no streamr\n");
 	;
 }
 
