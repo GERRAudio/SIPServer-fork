@@ -1172,7 +1172,7 @@ void *start_pipeline(void *data)
 /// // not sure if we need critical section here
 /// </summary>
 /// <param name="stream"></param>
-static void account_pipeline_destruction(g_stream_t *stream)
+static void account_pipeline_children(g_stream_t *stream)
 {
 	if (!stream || !stream->pipeline) return;
 
@@ -1204,15 +1204,17 @@ static void account_pipeline_destruction(g_stream_t *stream)
 					  "Accounted for %d elements, %d pads in pipeline destruction\n", elements, pads);
 }
 
-
+#define PUTBACK 1
 #ifdef PUTBACK
 void stop_pipeline(g_stream_t *stream)
 {
 	if (!stream) goto error;
 	GstBus *bus = NULL;
-	
+
+
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 
+	switch_mutex_lock(alloc_pipl_lock);
 
 	guint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
 	if (timer_id > 0) {
@@ -1234,7 +1236,8 @@ void stop_pipeline(g_stream_t *stream)
 	// Wait for state change
 	GstStateChangeReturn ret = gst_element_get_state(GST_ELEMENT(stream->pipeline), NULL, NULL, GST_CLOCK_TIME_NONE);
 
-	account_pipeline_destruction(stream); // added - do we need atomicity?
+	account_pipeline_children(stream); // added - do we need atomicity?
+
 	// Now safe to disconnect signals 
 	if (stream->bus_watch_id > 0)
 	{
@@ -1300,7 +1303,6 @@ void stop_pipeline(g_stream_t *stream)
 	bus = NULL;
 
 
-	//account_pipeline_destruction(stream);		//moved into stop pipeline
 	DA_gst_object_unref(GST_OBJECT(stream->pipeline)); 
 	stream->pipeline = NULL;
 	if (stream->clock) {
@@ -1321,6 +1323,7 @@ void stop_pipeline(g_stream_t *stream)
 	}
 		
 	g_free(stream);					//allocated elsewhere, not counted
+	switch_mutex_unlock(alloc_pipl_lock);
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 error:
 	;
@@ -1330,8 +1333,9 @@ void stop_pipeline(g_stream_t *stream)
 {
 	if (!stream) goto error;
 
-	switch_mutex_lock(alloc_pipl_lock);
+
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
+	switch_mutex_lock(alloc_pipl_lock);
 
 	// STOP ALL TIMERS/SOURCES FIRST (atomic)
 	guint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
@@ -1356,6 +1360,7 @@ void stop_pipeline(g_stream_t *stream)
 		if (deinterleave) {
 			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
 			DA_gst_object_unref(GST_OBJECT(deinterleave));
+			deinterleave = NULL;
 		}
 		stream->deinterleave_signal_id = 0;
 	}
@@ -1365,6 +1370,7 @@ void stop_pipeline(g_stream_t *stream)
 		if (rtpjitbuf) {
 			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
 			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+			rtpjitbuf = NULL;
 		}
 		stream->jitterbuf_signal_id = 0;
 	}
@@ -1372,11 +1378,11 @@ void stop_pipeline(g_stream_t *stream)
 	// DUMP PIPELINE (still live)
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 
-	// ACCOUNT destroyed pipeline
+	// ACCOUNT destroyed pipeline objects
 	account_pipeline_destruction(stream);
 
 	// NULL STATE - destroys ALL elements safely
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Setting pipeline to NULL...\n");
+	//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Setting pipeline to NULL...\n");
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 
 	//UNREF PIPELINE (frees everything)
@@ -1390,8 +1396,6 @@ void stop_pipeline(g_stream_t *stream)
 	} else {
 		DA_NoNulling_dec_objs(clock); // accounting
 	}
-
-
 
 	// MAINLOOP + THREADS
 	teardown_mainloop(stream->mainloop);
@@ -1409,13 +1413,13 @@ void stop_pipeline(g_stream_t *stream)
 
 	//  FINAL FREE
 	g_free(stream);
+	switch_mutex_unlock(alloc_pipl_lock);
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
-	switch_mutex_unlock(alloc_pipl_lock);
 	return;
 
 error:
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline stop erro, no streamr\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline stop erro, no stream found\n");
 	;
 }
 

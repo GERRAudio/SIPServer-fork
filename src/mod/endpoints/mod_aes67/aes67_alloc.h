@@ -149,11 +149,15 @@ extern switch_mutex_t *alloc_bkup_lock;
 	}
 
 // --- Macro for decrement-only wrappers no nulling (for manual tracking and accounting) ---
-#define G_WRAP_DECNN(counter, name, t, p)                                                                                \
-	inline void DA_NoNulling_##name(t p)                                                                                         \
-	{                                                                                                                  \
-		g_atomic_int_dec(&g_alloc_counts.counter);                                                                                      \
-	}
+// can be disabled
+#define COUNT_OBJS 1
+#ifdef COUNT_OBJS
+#define G_WRAP_DECNN(counter, name, t, p)                                                                              \
+	inline void DA_NoNulling_##name(t p) { g_atomic_int_dec(&g_alloc_counts.counter); }
+#else
+#define G_WRAP_DECNN(counter, name, t, p)                                                                              \
+	inline void DA_NoNulling_##name(t p) { ; }
+#endif
 
 //==== Mutex wrappers
 //
