@@ -178,7 +178,7 @@ exit:
 	DA_g_free(pad_name);			//counted
 }
 
-gboolean update_clock(gpointer userdata)
+gboolean update_clock(gpointer userdata)			//is this a (critical) section
 {
 	g_stream_t *stream = (g_stream_t *)userdata;
 	GstStructure *stats = NULL;
@@ -1123,7 +1123,7 @@ exit:
 }
 
 
-void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
+void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locaked by caller
 {
 	if (!stream) goto error; //added check
 	g_atomic_int_set(&stream->clock_sync, 0);
@@ -1167,6 +1167,7 @@ void *start_pipeline(void *data)
 
 /// <summary>
 ///  added to account for object added to pipeline
+/// // not sure if we need critical section here
 /// </summary>
 /// <param name="stream"></param>
 static void account_pipeline_destruction(g_stream_t *stream)
@@ -1230,6 +1231,8 @@ void stop_pipeline(g_stream_t *stream)
 
 	// Wait for state change
 	GstStateChangeReturn ret = gst_element_get_state(GST_ELEMENT(stream->pipeline), NULL, NULL, GST_CLOCK_TIME_NONE);
+
+	account_pipeline_destruction(stream); // added - do we need atomicity?
 	// Now safe to disconnect signals 
 	if (stream->bus_watch_id > 0)
 	{
@@ -1295,7 +1298,7 @@ void stop_pipeline(g_stream_t *stream)
 	bus = NULL;
 
 
-	account_pipeline_destruction(stream);		//added - do we need atomicity?
+	//account_pipeline_destruction(stream);		//moved into stop pipeline
 	DA_gst_object_unref(GST_OBJECT(stream->pipeline)); 
 	stream->pipeline = NULL;
 	if (stream->clock) {
@@ -1543,7 +1546,11 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	if (!stream) goto exit;			//added check
 
 	NAME_ELEMENT(name, "valve", ch_idx);
+	// PER-CHANNEL lock (critical)
+	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	g_static_rec_mutex_lock(ch_mutex);
 	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count check 
+	g_static_rec_mutex_unlock(ch_mutex);
 	if (!valve ) {
 		g_object_set(valve, "drop", drop, NULL); // Atomic property set added
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
@@ -1551,7 +1558,9 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	}
 	g_object_set(valve, "drop", drop, NULL);
 	g_snprintf(name, 2*STR_SIZE, "drop-ch%d-%d", ch_idx, drop);		//check increased string size
+	g_static_rec_mutex_lock(ch_mutex);				//added
 	dump_pipeline(stream->pipeline, name);
+	g_static_rec_mutex_unlock(ch_mutex);			//added
 	//fall thru
 exit: 
 	DA_gst_object_unref(GST_OBJECT(valve));		//check 
