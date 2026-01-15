@@ -1511,11 +1511,13 @@ exit:
 	DA_gst_buffer_unref(buf);
 	DA_gst_object_unref(GST_OBJECT(appsrc));				
 	return retval;
-no_stream:
-	return 0;
 error_unlock:
+	DA_gst_buffer_unref(buf);
+	DA_gst_object_unref(GST_OBJECT(appsrc));	
 	g_static_rec_mutex_unlock(ch_mutex); // added
 	return retval;
+no_stream:
+	return 0;
 }
 
 int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes, guint ch_idx, switch_timer_t *timer,
