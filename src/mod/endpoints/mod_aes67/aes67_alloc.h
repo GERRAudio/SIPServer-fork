@@ -342,7 +342,7 @@ G_WRAP_ALLOC2(GstElement *, gst_element_factory_make, objs, const gchar *, facto
 //G_WRAP_ALLOC2(GstPad *, gst_element_get_static_pad, objs, GstElement *, e, const gchar *, n)
 //G_WRAP_ALLOC2(GstPad *, gst_element_request_pad_simple, objs, GstElement *, e, const gchar *, n)
 //G_WRAP_ALLOC(GstPad *, gst_pad_get_peer, objs, GstPad *, p)
-G_WRAP_ALLOC2(GstSample *, gst_app_sink_try_pull_sample, samples, GstAppSink *, sink, GstClockTime, timeout)
+//G_WRAP_ALLOC2(GstSample *, gst_app_sink_try_pull_sample, samples, GstAppSink *, sink, GstClockTime, timeout)
 
 G_WRAP_ALLOC2(GstPad *, gst_element_get_request_pad, objs, GstElement *, e, const gchar *, n)
 G_WRAP_ALLOC2_M(GstPad *, gst_element_request_pad_simple, objs, GstElement *, e, const gchar *, n, alloc_pipl_lock)
