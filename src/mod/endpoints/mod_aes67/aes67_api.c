@@ -261,7 +261,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 #ifndef ENABLE_THREADSHARE
 	queue = AL_gst_element_factory_make("queue", name);
 #else
-	//switch_mutex_lock(alloc_pipl_lock);		///added check
+	//switch_mutex_lock(alloc_pipl_lock);		///added check - caller locks stream
 	MAKE_TS_ELEMENT(queue, "ts-queue", name, stream->ts_ctx);
 	//switch_mutex_unlock(alloc_pipl_lock); /// added check
 #endif
@@ -442,14 +442,14 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	if (appsink) gst_element_set_state(appsink, GST_STATE_NULL);
 
 	// PER-CHANNEL lock (critical)
-	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
-	g_static_rec_mutex_lock(ch_mutex);
+	//GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	//g_static_rec_mutex_lock(ch_mutex); //caller locks stream
 
 	if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal //check mutex
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to remove appsink from the pipeline ch: %d, session: %s", ch_idx, session);
 	}
-	g_static_rec_mutex_unlock(ch_mutex);		//added
+	//g_static_rec_mutex_unlock(ch_mutex);		//added
 
 	g_snprintf(dot_name, ELEMENT_NAME_SIZE + 10, "%s-del", name);
 	dump_pipeline(GST_PIPELINE(stream->pipeline), dot_name);			//for info only
@@ -581,18 +581,15 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	GstElement *rtpjitbuf = NULL;
 	char *pipeline_name = NULL;
 
-	g_stream_t *stream = g_new(g_stream_t, 1);
+	g_stream_t *stream = g_new0(g_stream_t, 1);			//note the 0
 
-	for (int i = 0; i < MAX_CHANNELS; i++) 	{ //added ch mutexes
-		g_static_rec_mutex_init(&stream->appsrc_mutexes[i]); 
-	}		
-
+	/*
 	stream->bus_watch_id = 0;				
 	stream->deinterleave_signal_id = 0;
 	stream->jitterbuf_signal_id = 0;
 	stream->cb_rx_stats_id = 0;
 	stream->backup_sender_idle_timer = 0;
-	//
+	*/
 
 	char fixed_name[25] = {"pipeline"};
 	char *ts_ctx = DEFAULT_CONTEXT_NAME;
@@ -1148,7 +1145,7 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locaked by caller
 		DA_NoNulling_dec_objs(clock); // accounting
 	}
 
-	//switch_mutex_lock(alloc_pipl_lock); //added check (critical)?
+	//switch_mutex_lock(alloc_pipl_lock); //aGStreamer + GLib atomics handle everything. 
 	gst_pipeline_use_clock(GST_PIPELINE(stream->pipeline), ptp_clock);		
 	gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);		
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);	
@@ -1208,7 +1205,7 @@ static void account_pipeline_destruction(g_stream_t *stream)
 }
 
 
-
+#ifdef PUTBACK
 void stop_pipeline(g_stream_t *stream)
 {
 	if (!stream) goto error;
@@ -1328,6 +1325,98 @@ void stop_pipeline(g_stream_t *stream)
 error:
 	;
 }
+#else
+void stop_pipeline(g_stream_t *stream)
+{
+	if (!stream) goto error;
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
+
+	// 1. STOP ALL TIMERS/SOURCES FIRST (atomic)
+	guint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
+	if (timer_id > 0) {
+		g_source_remove(timer_id);
+		g_atomic_int_set(&stream->backup_sender_idle_timer, 0);
+	}
+
+	if (stream->bus_watch_id > 0) {
+		g_source_remove(stream->bus_watch_id);
+		stream->bus_watch_id = 0;
+	}
+
+	if (stream->cb_rx_stats_id > 0) {
+		g_source_remove(stream->cb_rx_stats_id);
+		stream->cb_rx_stats_id = 0;
+	}
+
+	// 2. DISCONNECT SIGNALS BEFORE NULL STATE (CRITICAL - elements still exist)
+	if (stream->deinterleave_signal_id > 0) {
+		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
+		if (deinterleave) {
+			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
+			DA_gst_object_unref(GST_OBJECT(deinterleave));
+		}
+		stream->deinterleave_signal_id = 0;
+	}
+
+	if (stream->jitterbuf_signal_id > 0) {
+		GstElement *rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
+		if (rtpjitbuf) {
+			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
+			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+		}
+		stream->jitterbuf_signal_id = 0;
+	}
+
+	// 3. DUMP PIPELINE (still live)
+	dump_pipeline(stream->pipeline, "pipeline-stop");
+
+	// 4. NULL STATE - destroys ALL elements safely
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Setting pipeline to NULL...\n");
+	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
+
+	// 5. UNREF PIPELINE (frees everything)
+	DA_gst_object_unref(GST_OBJECT(stream->pipeline));
+	stream->pipeline = NULL;
+
+	// 6. CLEANUP CLOCK
+	if (stream->clock) {
+		DA_gst_object_unref(GST_OBJECT(stream->clock));
+		stream->clock = NULL;
+	} else {
+		DA_NoNulling_dec_objs(clock); // accounting
+	}
+
+	// 7. ACCOUNT destroyed pipeline (NOW correct timing)
+	account_pipeline_destruction(stream);
+
+	// 8. MAINLOOP + THREADS
+	teardown_mainloop(stream->mainloop);
+	if (stream->thread != NULL) {
+		g_thread_join(stream->thread);
+		stream->thread = NULL;
+	}
+
+	// 9. MUTEX CLEANUP (YOUR PERFECT CODE)
+	for (int i = 0; i < MAX_CHANNELS; i++) {
+		g_static_rec_mutex_lock(&stream->appsrc_mutexes[i]);
+		g_static_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
+		g_static_rec_mutex_free(&stream->appsrc_mutexes[i]);
+	}
+
+	// 10. FINAL FREE
+	g_free(stream);
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
+	return;
+
+error:
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline stop error\n");
+	;
+}
+
+#endif 
+
 
 void teardown_mainloop(GMainLoop *mainloop)
 {

@@ -69,7 +69,7 @@ struct g_stream
   guint bus_watch_id;                   //added
   gulong deinterleave_signal_id;        //added
   guint jitterbuf_signal_id;
-  GRecMutex appsrc_mutexes[MAX_CHANNELS];  // One per channel added
+  GRecMutex appsrc_mutexes[MAX_CHANNELS];  // One per channel added - self init
 };
 
 g_stream_t *create_pipeline (pipeline_data_t *data, event_callback_t * error_cb);
