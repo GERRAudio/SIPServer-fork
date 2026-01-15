@@ -431,6 +431,8 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 	gst_element_unlink(queue, appsink);
 
+
+
   if (!gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
         "Failed to remove queue from the pipeline ch: %d, session: %s", ch_idx, session);
@@ -439,10 +441,15 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	if (queue) gst_element_set_state(queue, GST_STATE_NULL);
 	if (appsink) gst_element_set_state(appsink, GST_STATE_NULL);
 
+	// PER-CHANNEL lock (critical)
+	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	g_static_rec_mutex_lock(ch_mutex);
+
 	if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal //check mutex
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to remove appsink from the pipeline ch: %d, session: %s", ch_idx, session);
 	}
+	g_static_rec_mutex_unlock(ch_mutex);		//added
 
 	g_snprintf(dot_name, ELEMENT_NAME_SIZE + 10, "%s-del", name);
 	dump_pipeline(GST_PIPELINE(stream->pipeline), dot_name);			//for info only
@@ -571,7 +578,10 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 	g_stream_t *stream = g_new(g_stream_t, 1);
 
-	//added init
+	for (int i = 0; i < MAX_CHANNELS; i++) 	{ //added ch mutexes
+		g_static_rec_mutex_init(&stream->appsrc_mutexes[i]); 
+	}		
+
 	stream->bus_watch_id = 0;				
 	stream->deinterleave_signal_id = 0;
 	stream->jitterbuf_signal_id = 0;
@@ -1133,7 +1143,7 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)
 		DA_NoNulling_dec_objs(clock); // accounting
 	}
 
-	//switch_mutex_lock(alloc_pipl_lock); //added check
+	//switch_mutex_lock(alloc_pipl_lock); //added check (critical)?
 	gst_pipeline_use_clock(GST_PIPELINE(stream->pipeline), ptp_clock);		
 	gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);		
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);	
@@ -1339,12 +1349,13 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	GstElement *appsrc = NULL;
 	if (!stream) goto no_stream;						//added check
 
-	//switch_mutex_lock(alloc_pipl_lock);				//added check remvoed, caller locks stream
+	// PER-CHANNEL lock (critical)
+	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	g_static_rec_mutex_lock(ch_mutex);
 	GstPipeline *pipeline = stream->pipeline;
-	//switch_mutex_unlock(alloc_pipl_lock);			//added check
+	g_static_rec_mutex_unlock(ch_mutex); // added
 
 	if (!pipeline) goto no_stream;						//added check
-
 	NAME_ELEMENT(name, "appsrc", ch_idx);
 	appsrc = AL_gst_bin_get_by_name(GST_BIN(pipeline), name);	//check 
 	switch_core_timer_next(timer);	//wait a bit
@@ -1353,22 +1364,21 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Failed to find appsrc in the pipeline\n");
 		goto no_stream;
 	}
-	// PER-CHANNEL lock (critical)
-	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
-	g_static_rec_mutex_lock(ch_mutex);
 
+	g_static_rec_mutex_lock(ch_mutex);				// PER-CHANNEL lock (critical)
 	if (!g_atomic_int_get(&stream->clock_sync)) {
 		retval = TRUE;
-		goto done;
+		goto error_unlock;
 	}
 
 	gst_element_get_state(GST_ELEMENT(pipeline), &cur_state, &pending_state, 0);
 	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) {
 		retval = TRUE;
-		goto done;
+		goto error_unlock;
 	}
-	buf = AL_gst_buffer_new_allocate(NULL, len, NULL);			
+	g_static_rec_mutex_unlock(ch_mutex); // added
 
+	buf = AL_gst_buffer_new_allocate(NULL, len, NULL);			
 	if (!buf ) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
 		goto exit;
@@ -1400,11 +1410,13 @@ done:
 //fall thru
 exit:
 	DA_gst_buffer_unref(buf);
-	g_static_rec_mutex_unlock(ch_mutex); // added
 	DA_gst_object_unref(GST_OBJECT(appsrc));				
 	return retval;
 no_stream:
 	return 0;
+error_unlock:
+	g_static_rec_mutex_unlock(ch_mutex); // added
+	return retval;
 }
 
 int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes, guint ch_idx, switch_timer_t *timer,
@@ -1422,40 +1434,39 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 	if (!stream) goto no_stream;	 // added check
 
-
 	if (session == NULL)
 		NAME_ELEMENT(name, "appsink", ch_idx);
 	else
 		NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 
-	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // threadsafe
-	// PER-CHANNEL lock (critical)
+	// PER-CHANNEL lock (critical) 
 	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 	g_static_rec_mutex_lock(ch_mutex);
-
+	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // threadsafe
 	if (!appsink) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
-		goto error;
+		goto error_unlock;
 	}
+	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0); 
+	g_static_rec_mutex_unlock(ch_mutex);												 // added
 
-	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0); // check
 
 	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) goto out;
-
 	if (gst_app_sink_is_eos(GST_APP_SINK(appsink))) goto out;
 
 	// Note: assumes leftover_bytes will never be more than buflen, which is
 	// likely true (packet is limited to MTU, while buflen is 8192)
 	// FIXME: revisit this to check whether we need this anymore
 
-	// switch_mutex_lock(alloc_pipl_lock); // added check - no need, caller locks
+
+	g_static_rec_mutex_lock(ch_mutex);			//may not need since caller locks
 	if (stream->leftover_bytes[ch_idx]) {
 		int copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
 		MU_memcpy(payload, stream->leftover[ch_idx], copy); // check
 		total_bytes += copy;
 		stream->leftover_bytes[ch_idx] -= copy;
 	}
-	// switch_mutex_unlock(alloc_pipl_lock); // added check
+	g_static_rec_mutex_unlock(ch_mutex);		//may not need since caller locks
 
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
@@ -1473,12 +1484,12 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			continue;
 		}
 
-		if (gst_buffer_map(buf, &info, GST_MAP_READ)) { // mutex here kills audio
+		if (gst_buffer_map(buf, &info, GST_MAP_READ)) { // mutex here kills audio, caller locks
 			if (total_bytes + info.size > needed_bytes) {
 				int want = needed_bytes - total_bytes;
-				// switch_mutex_lock(alloc_pipl_lock);		//added check-no need, caller locks stream for read
+				g_static_rec_mutex_lock(ch_mutex);			//added
 				stream->leftover_bytes[ch_idx] = info.size - want;
-				// switch_mutex_unlock(alloc_pipl_lock); // added check
+				g_static_rec_mutex_unlock(ch_mutex);		//added
 				MU_memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
 				info.size = want;
 			}
@@ -1516,13 +1527,12 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 out:
 	DA_gst_object_unref(GST_OBJECT(appsink)); // check
-	g_static_rec_mutex_unlock(ch_mutex);	  // added
 	return total_bytes;
-error:
-	DA_gst_object_unref(GST_OBJECT(appsink)); // check
-	g_static_rec_mutex_unlock(ch_mutex);	  // added
-	return 0;
 no_stream:
+	return 0;
+error_unlock:
+	DA_gst_object_unref(GST_OBJECT(appsink)); // check
+	g_static_rec_mutex_unlock(ch_mutex); // added
 	return 0;
 }
 
