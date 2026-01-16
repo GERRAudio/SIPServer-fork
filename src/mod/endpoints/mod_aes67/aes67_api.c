@@ -1220,10 +1220,47 @@ void stop_pipeline(g_stream_t *stream)
 		g_atomic_int_set(&stream->backup_sender_idle_timer, 0);
 	}
 
-
-	account_pipeline_children(stream);			//count before destruction
 	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(stream->pipeline));
 
+	// count leaked elements
+	GstIterator *iter = gst_bin_iterate_elements(GST_BIN(stream->pipeline));
+	GValue item = G_VALUE_INIT;
+	GstIteratorResult res;
+	int leaked_elements = 0;
+	while ((res = gst_iterator_next(iter, &item)) == GST_ITERATOR_OK) {
+		GstElement *element = g_value_get_object(&item);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Leaked element: %s\n", GST_ELEMENT_NAME(element));
+		leaked_elements++;
+		g_value_unset(&item);
+		g_value_reset(&item);
+		if (element) gst_object_unref(element); // added in case
+	}
+	gst_iterator_free(iter);
+
+	if (leaked_elements > 0) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Found %d leaked elements in pipeline\n",
+						  leaked_elements);
+	}
+
+	if (stream->deinterleave_signal_id > 0) {
+		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
+		if (deinterleave) {
+			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
+			DA_gst_object_unref(GST_OBJECT(deinterleave));
+		}
+		stream->deinterleave_signal_id = 0;
+	}
+
+	if (stream->jitterbuf_signal_id > 0) {
+		GstElement *rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
+		if (rtpjitbuf) {
+			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
+			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+		}
+		stream->jitterbuf_signal_id = 0;
+	}
+
+	account_pipeline_children(stream); // count
 	// Set to NULL state BEFORE disconnecting signals
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 
@@ -1237,50 +1274,11 @@ void stop_pipeline(g_stream_t *stream)
 		stream->bus_watch_id = 0;
 	}
 
+
 	/* cb_rx_stats_id will be non zero only when
 	Rx is operational and pipeline clock is not ptp*/
 	if (stream->cb_rx_stats_id) 
 		g_source_remove(stream->cb_rx_stats_id);
-
-
-	if (stream->deinterleave_signal_id > 0) {
-		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
-		if (deinterleave) {
-			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
-			DA_gst_object_unref(GST_OBJECT(deinterleave));
-		} 
-
-		stream->deinterleave_signal_id = 0;
-	}
-	if (stream->jitterbuf_signal_id > 0) {
-		GstElement *rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
-		if (rtpjitbuf) {
-			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
-			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
-		}
-		stream->jitterbuf_signal_id = 0;
-	}
-
-	// count leaked elements
-	GstIterator *iter = gst_bin_iterate_elements(GST_BIN(stream->pipeline));
-	GValue item = G_VALUE_INIT;
-	GstIteratorResult res;
-	int leaked_elements = 0;
-
-	while ((res = gst_iterator_next(iter, &item)) == GST_ITERATOR_OK) {
-		GstElement *element = g_value_get_object(&item);
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Leaked element: %s\n", GST_ELEMENT_NAME(element));
-		leaked_elements++;
-		g_value_unset(&item);
-		g_value_reset(&item);
-		if (element) gst_object_unref(element);	//added in case
-	}
-	gst_iterator_free(iter);
-
-	if (leaked_elements > 0) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Found %d leaked elements in pipeline\n",
-						  leaked_elements);
-	}
 
 
 	DA_gst_object_unref(GST_OBJECT(bus));
