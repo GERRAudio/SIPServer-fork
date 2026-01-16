@@ -1157,6 +1157,9 @@ error:
 	;
 }
 
+void account_pipeline_children(g_stream_t *stream);
+
+
 void *start_pipeline(void *data)
 {
 	g_stream_t *stream = (g_stream_t *)data;
@@ -1172,10 +1175,10 @@ void *start_pipeline(void *data)
 /// // not sure if we need critical section here
 /// </summary>
 /// <param name="stream"></param>
-static void account_pipeline_children(g_stream_t *stream)
+void account_pipeline_children(g_stream_t *stream)
 {
 	if (!stream || !stream->pipeline) return;
-
+	switch_mutex_lock(alloc_pipl_lock);			//redundant since stream is locked outside call, but leave for safety
 	GstIterator *iter = gst_bin_iterate_recurse(GST_BIN(stream->pipeline));
 	GValue item = G_VALUE_INIT;
 	int elements = 0, pads = 0;
@@ -1199,7 +1202,7 @@ static void account_pipeline_children(g_stream_t *stream)
 
 	// Decrement counters for all objects about to be destroyed
 	g_alloc_counts.objs -= (elements + pads);
-
+	switch_mutex_unlock(alloc_pipl_lock);
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
 					  "Accounted for %d elements, %d pads in pipeline destruction\n", elements, pads);
 }
@@ -1211,7 +1214,7 @@ void stop_pipeline(g_stream_t *stream)
 	if (!stream) goto error;
 	GstBus *bus = NULL;
 
-	switch_mutex_lock(alloc_pipl_lock);
+	//switch_mutex_lock(alloc_pipl_lock); //not needed, locked at stream level 
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 
 	guint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
@@ -1260,10 +1263,10 @@ void stop_pipeline(g_stream_t *stream)
 		stream->jitterbuf_signal_id = 0;
 	}
 
-	account_pipeline_children(stream); // count
+
 	// Set to NULL state BEFORE disconnecting signals
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
-
+	account_pipeline_children(stream); // count
 	// Wait for state change
 	GstStateChangeReturn ret = gst_element_get_state(GST_ELEMENT(stream->pipeline), NULL, NULL, GST_CLOCK_TIME_NONE);
 
@@ -1302,7 +1305,7 @@ void stop_pipeline(g_stream_t *stream)
 		g_thread_join(stream->thread);
 		
 	g_free(stream);					//allocated elsewhere, not counted
-	switch_mutex_unlock(alloc_pipl_lock);
+	//switch_mutex_unlock(alloc_pipl_lock);//not needed, locked at stream level 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 error:
 	;
