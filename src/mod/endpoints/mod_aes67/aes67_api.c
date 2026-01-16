@@ -1179,7 +1179,7 @@ static void account_pipeline_children(g_stream_t *stream)
 	GstIterator *iter = gst_bin_iterate_recurse(GST_BIN(stream->pipeline));
 	GValue item = G_VALUE_INIT;
 	int elements = 0, pads = 0;
-
+	
 	while (gst_iterator_next(iter, &item) == GST_ITERATOR_OK) {
 		GstObject *obj = g_value_get_object(&item);
 		if (GST_IS_ELEMENT(obj)) {
@@ -1211,10 +1211,8 @@ void stop_pipeline(g_stream_t *stream)
 	if (!stream) goto error;
 	GstBus *bus = NULL;
 
-
-	dump_pipeline(stream->pipeline, "pipeline-stop");
-
 	switch_mutex_lock(alloc_pipl_lock);
+	dump_pipeline(stream->pipeline, "pipeline-stop");
 
 	guint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
 	if (timer_id > 0) {
@@ -1222,21 +1220,15 @@ void stop_pipeline(g_stream_t *stream)
 		g_atomic_int_set(&stream->backup_sender_idle_timer, 0);
 	}
 
-	/* changed to above for atomicity
-	// Stop backup sender timer FIRST
-	if (stream->backup_sender_idle_timer > 0) { // Add check
-		g_source_remove(stream->backup_sender_idle_timer);
-		stream->backup_sender_idle_timer = 0;
-	}
-	*/
+
+	account_pipeline_children(stream);			//count before destruction
+	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(stream->pipeline));
 
 	// Set to NULL state BEFORE disconnecting signals
-	//gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
+	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 
 	// Wait for state change
 	GstStateChangeReturn ret = gst_element_get_state(GST_ELEMENT(stream->pipeline), NULL, NULL, GST_CLOCK_TIME_NONE);
-
-	account_pipeline_children(stream); // added - do we need atomicity?
 
 	// Now safe to disconnect signals 
 	if (stream->bus_watch_id > 0)
@@ -1245,17 +1237,10 @@ void stop_pipeline(g_stream_t *stream)
 		stream->bus_watch_id = 0;
 	}
 
-	// after
-	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 	/* cb_rx_stats_id will be non zero only when
 	Rx is operational and pipeline clock is not ptp*/
 	if (stream->cb_rx_stats_id) 
 		g_source_remove(stream->cb_rx_stats_id);
-
-	/* moved up  if (stream->backup_sender_idle_timer) 
-		g_source_remove(stream->backup_sender_idle_timer);*/
-
-	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(stream->pipeline));
 
 
 	if (stream->deinterleave_signal_id > 0) {
@@ -1263,7 +1248,6 @@ void stop_pipeline(g_stream_t *stream)
 		if (deinterleave) {
 			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
 			DA_gst_object_unref(GST_OBJECT(deinterleave));
-			//deinterleave = NULL;
 		} 
 
 		stream->deinterleave_signal_id = 0;
@@ -1273,12 +1257,11 @@ void stop_pipeline(g_stream_t *stream)
 		if (rtpjitbuf) {
 			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
 			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
-			//rtpjitbuf = NULL;
 		}
 		stream->jitterbuf_signal_id = 0;
 	}
-	// added
 
+	// count leaked elements
 	GstIterator *iter = gst_bin_iterate_elements(GST_BIN(stream->pipeline));
 	GValue item = G_VALUE_INIT;
 	GstIteratorResult res;
@@ -1299,20 +1282,17 @@ void stop_pipeline(g_stream_t *stream)
 						  leaked_elements);
 	}
 
+
 	DA_gst_object_unref(GST_OBJECT(bus));
-	//bus = NULL;
-
-
 	DA_gst_object_unref(GST_OBJECT(stream->pipeline)); 
-	//stream->pipeline = NULL;
+
 	if (stream->clock) {
 		DA_gst_object_unref(GST_OBJECT(stream->clock)); 
-		//stream->clock = NULL;
 	} else {
 		DA_NoNulling_dec_objs(stream->clock); // accounting
 	}
 
-		// added for multiple mutexes
+	// added for multiple mutexes
 	for (int i = 0; i < MAX_CHANNELS; i++) {
 		g_static_rec_mutex_lock(&stream->appsrc_mutexes[i]);
 		g_static_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
@@ -1322,7 +1302,6 @@ void stop_pipeline(g_stream_t *stream)
 	teardown_mainloop(stream->mainloop);
 	if (stream->thread !=NULL) 
 		g_thread_join(stream->thread);
-
 		
 	g_free(stream);					//allocated elsewhere, not counted
 	switch_mutex_unlock(alloc_pipl_lock);

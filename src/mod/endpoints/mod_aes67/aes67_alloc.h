@@ -16,9 +16,7 @@
 //
 #ifndef G_WRAP
 #define G_WRAP
-#include <glib.h>
-#define G_ATOMIC_LOCK_FREE 1
-inline void g_atomic_int_dec(int *i) { g_atomic_int_add(i, -1); }
+
 
 
 #include "aes67_counters.h"
@@ -36,6 +34,9 @@ extern switch_mutex_t *alloc_bkup_lock;
 
 // atomic incr/decr for debugging only
 #ifdef ATOMIC_INCR
+#include <glib.h>
+#define G_ATOMIC_LOCK_FREE 1
+inline void g_atomic_int_dec(int *i) { g_atomic_int_add(i, -1); }
 #define accounting_incr(c) g_atomic_int_inc(&c) 
 #define accounting_decr(c) g_atomic_int_dec(&c)
 #else
