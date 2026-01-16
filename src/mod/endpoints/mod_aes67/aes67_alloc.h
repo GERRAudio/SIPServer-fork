@@ -34,12 +34,22 @@ extern switch_mutex_t *alloc_pipl_lock;
 extern switch_mutex_t *alloc_mcp_lock;
 extern switch_mutex_t *alloc_bkup_lock;
 
+// atomic incr/decr for debugging only
+#ifdef ATOMIC_INCR
+#define accounting_incr(c) g_atomic_int_inc(&c) 
+#define accounting_decr(c) g_atomic_int_dec(&c)
+#else
+#define accounting_incr(c) (c++)
+#define accounting_decr(c) (c--)
+#endif
+
+
 // --- Macro for allocation wrappers ---
 #define G_WRAP_ALLOC(ret_type, func, counter, tp1, p1)                                                                 \
 	inline ret_type AL_##func(tp1 p1)                                                                                  \
 	{                                                                                                                  \
 		ret_type _ret = func(p1);                                                                                      \
-		if (_ret) g_atomic_int_inc(&g_alloc_counts.counter);                                                                            \
+		if (_ret) accounting_incr(g_alloc_counts.counter);                                                                            \
 		return _ret;                                                                                                   \
 	}
 
@@ -49,7 +59,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 	{                                                                                                                  \
 		switch_mutex_lock(l);                                                                                          \
 		ret_type _ret = func(p1);                                                                                      \
-		if (_ret) g_atomic_int_inc(&g_alloc_counts.counter);                                                                            \
+		if (_ret) accounting_incr(g_alloc_counts.counter);                                                                            \
 		switch_mutex_unlock(l);                                                                                        \
 		return _ret;                                                                                                   \
 	}
@@ -59,7 +69,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 	inline ret_type AL_##func(tp1 p1, tp2 p2)                                                                          \
 	{                                                                                                                  \
 		ret_type _ret = func(p1, p2);                                                                                  \
-		if (_ret) g_atomic_int_inc(&g_alloc_counts.counter);                                                                            \
+		if (_ret) accounting_incr(g_alloc_counts.counter);                                                                            \
 		return _ret;                                                                                                   \
 	}
 // with mutex
@@ -68,7 +78,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 	{                                                                                                                  \
 		switch_mutex_lock(l);                                                                                          \
 		ret_type _ret = func(p1, p2);                                                                                  \
-		if (_ret) g_atomic_int_inc(&g_alloc_counts.counter);                                                                            \
+		if (_ret) accounting_incr(g_alloc_counts.counter);                                                                            \
 		switch_mutex_unlock(l);                                                                                        \
 		return _ret;                                                                                                   \
 	}
@@ -77,7 +87,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 	inline ret_type AL_##func(tp1 p1, tp2 p2, tp3 p3)                                                                  \
 	{                                                                                                                  \
 		ret_type _ret = func(p1, p2, p3);                                                                              \
-		if (_ret) g_atomic_int_inc(&g_alloc_counts.counter);                                                                            \
+		if (_ret) accounting_incr(g_alloc_counts.counter);                                                                            \
 		return _ret;                                                                                                   \
 	}
 // with mutex
@@ -86,7 +96,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 	{                                                                                                                  \
 		switch_mutex_lock(l);                                                                                          \
 		ret_type _ret = func(p1, p2, p3);                                                                              \
-		if (_ret) g_atomic_int_inc(&g_alloc_counts.counter);                                                                            \
+		if (_ret) accounting_incr(g_alloc_counts.counter);                                                                            \
 		switch_mutex_unlock(l);                                                                                        \
 		return _ret;                                                                                                   \
 	}
@@ -95,7 +105,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 	inline ret_type AL_##func(tp1 p1, tp2 p2, tp3 p3, tp4 p4)                                                          \
 	{                                                                                                                  \
 		ret_type _ret = func(p1, p2, p3, p4);                                                                          \
-		if (_ret) g_atomic_int_inc(&g_alloc_counts.counter);                                                                            \
+		if (_ret) accounting_incr(g_alloc_counts.counter);                                                                            \
 		return _ret;                                                                                                   \
 	}
 
@@ -103,7 +113,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 	inline ret_type AL_##func(tp1 p1, tp2 p2, tp3 p3, tp4 p4, tp5 p5, tp6 p6, tp7 p7)                                  \
 	{                                                                                                                  \
 		ret_type _ret = func(p1, p2, p3, p4, p5, p6, p7);                                                              \
-		if (_ret) g_atomic_int_inc(&g_alloc_counts.counter);                                                                            \
+		if (_ret) accounting_incr(g_alloc_counts.counter);                                                                            \
 		return _ret;                                                                                                   \
 	}
 
@@ -129,7 +139,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 	{                                                                                                                  \
 		if (p != NULL) {                                                                                               \
 			fname(p);                                                                                                  \
-			g_atomic_int_dec(&g_alloc_counts.counter);                                                                                  \
+			accounting_decr(g_alloc_counts.counter);                                                                                  \
 		}                                                                                                              \
 	}
 
@@ -137,7 +147,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 // ==== incr/decr to use when wrapping is undesired
 // --- Macro for increment-only wrappers (for manual tracking) ---
 #define G_WRAP_INC(counter, name, t, p)                                                                                \
-	inline void AL_##name(t p) {g_atomic_int_inc(&g_alloc_counts.counter); }
+	inline void AL_##name(t p) {accounting_incr(g_alloc_counts.counter); }
 // --- Sample increment wrapper ---
 //G_WRAP_INC(samples, cnt_samples, GstSample *, p)
 
@@ -145,7 +155,10 @@ extern switch_mutex_t *alloc_bkup_lock;
 // the nulling will not work due to the function
 #define G_WRAP_DEC(counter, name, t, p)                                                                                \
 	inline void DA_##name(t p)  {                                                                                       \
-			if (p) {  g_atomic_int_dec(&g_alloc_counts.counter); p=NULL;	}										 \
+			if (p) {                                                                                                    \
+				accounting_decr(g_alloc_counts.counter);                                                              \
+			p = NULL;                                                                                                  \
+		}										 \
 	}
 
 // --- Macro for decrement-only wrappers no nulling (for manual tracking and accounting) ---
@@ -153,7 +166,7 @@ extern switch_mutex_t *alloc_bkup_lock;
 #define COUNT_OBJS 1
 #ifdef COUNT_OBJS
 #define G_WRAP_DECNN(counter, name, t, p)                                                                              \
-	inline void DA_NoNulling_##name(t p) { g_atomic_int_dec(&g_alloc_counts.counter); }
+	inline void DA_NoNulling_##name(t p) { accounting_decr(g_alloc_counts.counter); }
 #else
 #define G_WRAP_DECNN(counter, name, t, p)                                                                              \
 	inline void DA_NoNulling_##name(t p) { ; }
