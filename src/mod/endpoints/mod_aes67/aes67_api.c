@@ -1263,12 +1263,28 @@ void stop_pipeline(g_stream_t *stream)
 		stream->jitterbuf_signal_id = 0;
 	}
 
-
+	account_pipeline_children(stream); // count
 	// Set to NULL state BEFORE disconnecting signals
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
-	account_pipeline_children(stream); // count
+
 	// Wait for state change
-	GstStateChangeReturn ret = gst_element_get_state(GST_ELEMENT(stream->pipeline), NULL, NULL, GST_CLOCK_TIME_NONE);
+	//GstStateChangeReturn ret = gst_element_get_state(GST_ELEMENT(stream->pipeline), NULL, NULL, GST_CLOCK_TIME_NONE);
+	GstState current, pending;
+	GstStateChangeReturn ret;
+
+	do {
+		ret = gst_element_get_state(stream->pipeline, &current, &pending, 100 * GST_MSECOND);
+		if (ret == GST_STATE_CHANGE_FAILURE) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG ,"State change FAILED\n");
+			break;
+		}
+		if (ret == GST_STATE_CHANGE_SUCCESS) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG ,"State reached: \n");
+			break;
+		}
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG ,"Waiting for state change...\n");
+		g_usleep(10000); // 10ms
+	} while (TRUE);
 
 	// Now safe to disconnect signals 
 	if (stream->bus_watch_id > 0)
@@ -1276,7 +1292,6 @@ void stop_pipeline(g_stream_t *stream)
 		g_source_remove(stream->bus_watch_id);
 		stream->bus_watch_id = 0;
 	}
-
 
 	/* cb_rx_stats_id will be non zero only when
 	Rx is operational and pipeline clock is not ptp*/
