@@ -1187,7 +1187,7 @@ void account_pipeline_children(g_stream_t *stream)
 			// Count pads on this element
 			GstIterator *pad_iter = gst_element_iterate_pads(GST_ELEMENT(obj));
 			GValue pad_item = G_VALUE_INIT;
-			while (gst_iterator_next(pad_iter, &pad_item) == GST_ITERATOR_OK) {
+			while (pad_iter && gst_iterator_next(pad_iter, &pad_item) == GST_ITERATOR_OK) {
 				pads++;
 				g_value_reset(&pad_item);
 			}
@@ -1242,11 +1242,25 @@ void stop_pipeline(g_stream_t *stream)
 						  leaked_elements);
 	}
 
-	// added for multiple mutexes
-	for (int i = 0; i < MAX_CHANNELS; i++) {
-		g_rec_mutex_lock(&stream->appsrc_mutexes[i]);
-		g_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
-		g_rec_mutex_clear(&stream->appsrc_mutexes[i]);
+	/* cb_rx_stats_id will be non zero only when
+	Rx is operational and pipeline clock is not ptp*/
+	if (stream->cb_rx_stats_id) g_source_remove(stream->cb_rx_stats_id);
+	if (stream->deinterleave_signal_id > 0) {
+		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
+		if (deinterleave) {
+			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
+			DA_gst_object_unref(GST_OBJECT(deinterleave));
+		}
+		stream->deinterleave_signal_id = 0;
+	}
+
+	if (stream->jitterbuf_signal_id > 0) {
+		GstElement *rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
+		if (rtpjitbuf) {
+			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
+			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+		}
+		stream->jitterbuf_signal_id = 0;
 	}
 
 	// Set to NULL state BEFORE disconnecting signals
@@ -1283,32 +1297,10 @@ void stop_pipeline(g_stream_t *stream)
 		stream->bus_watch_id = 0;
 	}
 
-	/* cb_rx_stats_id will be non zero only when
-	Rx is operational and pipeline clock is not ptp*/
-	if (stream->cb_rx_stats_id) 
-		g_source_remove(stream->cb_rx_stats_id);
-	if (stream->deinterleave_signal_id > 0) {
-		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
-		if (deinterleave) {
-			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
-			DA_gst_object_unref(GST_OBJECT(deinterleave));
-		}
-		stream->deinterleave_signal_id = 0;
-	}
-
-	if (stream->jitterbuf_signal_id > 0) {
-		GstElement *rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
-		if (rtpjitbuf) {
-			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
-			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
-		}
-		stream->jitterbuf_signal_id = 0;
-	}
 
 	DA_gst_object_unref(GST_OBJECT(bus));
 	DA_gst_object_unref(GST_OBJECT(stream->pipeline));
 	stream->pipeline = NULL;
-
 
 	if (stream->clock) {
 		DA_gst_object_unref(GST_OBJECT(stream->clock)); 
@@ -1321,10 +1313,15 @@ void stop_pipeline(g_stream_t *stream)
 	if (stream->thread !=NULL) 
 		g_thread_join(stream->thread);
 
-
-
-	g_free(stream);					//allocated elsewhere, not counted
+	// added for channel multiple 
+	for (int i = 0; i < MAX_CHANNELS; i++) {
+		g_rec_mutex_lock(&stream->appsrc_mutexes[i]);
+		g_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
+		g_rec_mutex_clear(&stream->appsrc_mutexes[i]);
+	}
+	g_free(stream);		
 error_unlock:
+
 	switch_mutex_unlock(alloc_pipl_lock);		//also locked at stream level 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 error:
@@ -1639,8 +1636,10 @@ out_unlock:
 out:
 	DA_gst_object_unref(GST_OBJECT(appsink)); // check
 	return (int) total_bytes;
+
 no_stream:
 	return 0;
+
 error_unlock:
 	DA_gst_object_unref(GST_OBJECT(appsink)); // check
 	g_rec_mutex_unlock(ch_mutex); // added
