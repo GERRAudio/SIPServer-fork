@@ -99,7 +99,7 @@ static gboolean bus_callback(GstBus *bus, GstMessage *msg, gpointer data)
 			guint len = 0;
 			old_state = g_strdup(gst_element_state_get_name(old));
 			new_state = g_strdup(gst_element_state_get_name(new));
-			len = strlen(old_state) + strlen(new_state) + strlen("_to_") + 5;
+			len = (guint)(strlen(old_state) + strlen(new_state) + strlen("_to_") + 5);
 			transition = g_malloc0(len);
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pipeline %s changed state from %s to %s\n",
 							  GST_OBJECT_NAME(msg->src), old_state, new_state);
@@ -686,7 +686,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		deinterleave = AL_gst_element_factory_make("deinterleave", "rx-deinterleave");
 
-		for (guint ch = 0; ch < data->channels; ch++) {
+		for (gint ch = 0; ch < data->channels; ch++) {
 			gchar name[ELEMENT_NAME_SIZE];
 
 			NAME_ELEMENT(name, "tee", ch);
@@ -812,7 +812,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		}
 
 		
-		for (guint ch = 0; ch < data->channels; ch++) {
+		for (gint ch = 0; ch < data->channels; ch++) {
 			gchar name[ELEMENT_NAME_SIZE];
 			gchar pad_name[STR_SIZE];
 
@@ -1242,17 +1242,26 @@ void stop_pipeline(g_stream_t *stream)
 						  leaked_elements);
 	}
 
+	// added for multiple mutexes
+	for (int i = 0; i < MAX_CHANNELS; i++) {
+		g_rec_mutex_lock(&stream->appsrc_mutexes[i]);
+		g_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
+		g_rec_mutex_clear(&stream->appsrc_mutexes[i]);
+	}
+
 	// Set to NULL state BEFORE disconnecting signals
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 	account_pipeline_children(stream); // count
 
 	// Updated Wait for state change
 	//GstStateChangeReturn ret = gst_element_get_state(GST_ELEMENT(stream->pipeline), NULL, NULL, GST_CLOCK_TIME_NONE);
-	GstState current, pending;
-	GstStateChangeReturn ret;
+
 
 	do {
-		ret = gst_element_get_state(stream->pipeline, &current, &pending, 100 * GST_MSECOND);
+		GstState current, pending;
+		GstStateChangeReturn ret;
+		if (!stream->pipeline ) break;
+		ret = gst_element_get_state(GST_OBJECT(stream->pipeline), &current, &pending, 100 * GST_MSECOND);
 		if (ret == GST_STATE_CHANGE_FAILURE) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG ,"State change FAILED\n");
 			break;
@@ -1264,6 +1273,8 @@ void stop_pipeline(g_stream_t *stream)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG ,"Waiting for state change...\n");
 		g_usleep(10000); // 10ms
 	} while (TRUE);
+
+	if (!stream) goto error_unlock;
 
 	// Now safe to disconnect signals 
 	if (stream->bus_watch_id > 0)
@@ -1295,8 +1306,9 @@ void stop_pipeline(g_stream_t *stream)
 	}
 
 	DA_gst_object_unref(GST_OBJECT(bus));
-	DA_gst_object_unref(GST_OBJECT(stream->pipeline)); 
+	DA_gst_object_unref(GST_OBJECT(stream->pipeline));
 	stream->pipeline = NULL;
+
 
 	if (stream->clock) {
 		DA_gst_object_unref(GST_OBJECT(stream->clock)); 
@@ -1309,15 +1321,11 @@ void stop_pipeline(g_stream_t *stream)
 	if (stream->thread !=NULL) 
 		g_thread_join(stream->thread);
 
-	// added for multiple mutexes
-	for (int i = 0; i < MAX_CHANNELS; i++) {
-		g_static_rec_mutex_lock(&stream->appsrc_mutexes[i]);
-		g_static_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
-		g_static_rec_mutex_free(&stream->appsrc_mutexes[i]);
-	}
+
 
 	g_free(stream);					//allocated elsewhere, not counted
-	switch_mutex_unlock(alloc_pipl_lock);//also locked at stream level 
+error_unlock:
+	switch_mutex_unlock(alloc_pipl_lock);		//also locked at stream level 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 error:
 	;
@@ -1450,9 +1458,9 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	// PER-CHANNEL lock (critical)
 	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
-	g_static_rec_mutex_lock(ch_mutex);
+	g_rec_mutex_lock(ch_mutex);
 	GstPipeline *pipeline = stream->pipeline;
-	g_static_rec_mutex_unlock(ch_mutex); // added
+	g_rec_mutex_unlock(ch_mutex); // added
 
 	if (!pipeline) goto no_stream;						//added check
 	NAME_ELEMENT(name, "appsrc", ch_idx);
@@ -1464,7 +1472,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		goto no_stream;
 	}
 
-	g_static_rec_mutex_lock(ch_mutex);				// PER-CHANNEL lock (critical)
+	g_rec_mutex_lock(ch_mutex);				// PER-CHANNEL lock (critical)
 	if (!g_atomic_int_get(&stream->clock_sync)) {
 		retval = TRUE;
 		goto error_unlock;
@@ -1475,7 +1483,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		retval = TRUE;
 		goto error_unlock;
 	}
-	g_static_rec_mutex_unlock(ch_mutex); // added
+	g_rec_mutex_unlock(ch_mutex); // added
 
 	buf = AL_gst_buffer_new_allocate(NULL, len, NULL);			
 	if (!buf ) {
@@ -1516,7 +1524,7 @@ exit:
 error_unlock:
 	DA_gst_buffer_unref(buf);
 	DA_gst_object_unref(GST_OBJECT(appsrc));	
-	g_static_rec_mutex_unlock(ch_mutex); // added
+	g_rec_mutex_unlock(ch_mutex); // added
 	return retval;
 no_stream:
 	return 0;
@@ -1531,7 +1539,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	GstSample *sample = NULL;
 
 	GstMapInfo info;
-	int total_bytes = 0;
+	gsize total_bytes = 0;
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *appsink = NULL;
 
@@ -1544,7 +1552,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 	// PER-CHANNEL lock (critical) 
 	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
-	g_static_rec_mutex_lock(ch_mutex);
+	g_rec_mutex_lock(ch_mutex);
 	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // threadsafe
 	if (!appsink) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
@@ -1560,12 +1568,12 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// FIXME: revisit this to check whether we need this anymore
 
 	if (stream->leftover_bytes[ch_idx]) {
-		int copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
+		size_t copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
 		memcpy(payload, stream->leftover[ch_idx], copy); // check
 		total_bytes += copy;
 		stream->leftover_bytes[ch_idx] -= copy;
 	}
-	g_static_rec_mutex_unlock(ch_mutex);		//may not need since caller locks
+	g_rec_mutex_unlock(ch_mutex);		//may not need since caller locks
 
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
@@ -1586,13 +1594,13 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			continue;
 		}
 
-		g_static_rec_mutex_lock(ch_mutex);		
+		g_rec_mutex_lock(ch_mutex);		
 		gboolean r = gst_buffer_map(buf, &info, GST_MAP_READ);// mutex here may be redundant- check if critical
-		g_static_rec_mutex_unlock(ch_mutex);
+		g_rec_mutex_unlock(ch_mutex);
 
 		if (r) {			
 			if (total_bytes + info.size > needed_bytes) {
-				int want = needed_bytes - total_bytes;
+				gsize want = needed_bytes - total_bytes;
 				stream->leftover_bytes[ch_idx] = info.size - want;
 				MU_memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
 				info.size = want;
@@ -1627,15 +1635,15 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// stream->leftover_bytes[ch_idx]);
 
 out_unlock:
-	g_static_rec_mutex_unlock(ch_mutex); // added
+	g_rec_mutex_unlock(ch_mutex); // added
 out:
 	DA_gst_object_unref(GST_OBJECT(appsink)); // check
-	return total_bytes;
+	return (int) total_bytes;
 no_stream:
 	return 0;
 error_unlock:
 	DA_gst_object_unref(GST_OBJECT(appsink)); // check
-	g_static_rec_mutex_unlock(ch_mutex); // added
+	g_rec_mutex_unlock(ch_mutex); // added
 	return 0;
 }
 
@@ -1648,9 +1656,9 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	NAME_ELEMENT(name, "valve", ch_idx);
 	// PER-CHANNEL lock (critical)
 	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
-	g_static_rec_mutex_lock(ch_mutex);
+	g_rec_mutex_lock(ch_mutex);
 	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count check 
-	g_static_rec_mutex_unlock(ch_mutex);
+	g_rec_mutex_unlock(ch_mutex);
 	if (!valve ) {
 		g_object_set(valve, "drop", drop, NULL); // Atomic property set added
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
@@ -1658,9 +1666,9 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	}
 	g_object_set(valve, "drop", drop, NULL);
 	g_snprintf(name, 2*STR_SIZE, "drop-ch%d-%d", ch_idx, drop);		//check increased string size
-	g_static_rec_mutex_lock(ch_mutex);				//added
+	g_rec_mutex_lock(ch_mutex);				//added
 	dump_pipeline(stream->pipeline, name);
-	g_static_rec_mutex_unlock(ch_mutex);			//added
+	g_rec_mutex_unlock(ch_mutex);			//added
 	//fall thru
 exit: 
 	DA_gst_object_unref(GST_OBJECT(valve));		//check 

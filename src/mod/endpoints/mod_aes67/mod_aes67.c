@@ -2466,7 +2466,7 @@ static switch_status_t load_globals(switch_xml_t cfg)
 				globals.ptime_ms = strtod(val, NULL);
 			} else if (!strcasecmp(var, "ptp-domain")) {
 				char *iface;
-				globals.ptp_domain = atoi(val);
+				globals.ptp_domain = (int8_t)atoi(val);
 				iface = (char *)switch_xml_attr_soft(param, "iface");
 				if (!zstr(iface)) { strncpy(globals.ptp_iface, iface, NW_IFACE_LEN - 1); }
 			} else if (!strcasecmp(var, "ptp-interface")) {
