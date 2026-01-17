@@ -411,7 +411,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to unlink tee and queue ch: %d, session: %s",
 						  ch_idx, session);
 	}
-	MUp_gst_element_release_request_pad(tee, tee_src_pad);
+	gst_element_release_request_pad(tee, tee_src_pad);
 
 	//DA_gst_object_unref(tee_src_pad);
 	//DA_dec_objs(tee_src_pad);							//deref by gst_bin_remove
@@ -442,7 +442,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	if (appsink) gst_element_set_state(appsink, GST_STATE_NULL);
 
 	// PER-CHANNEL lock (critical)
-	//GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	//GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 	//g_static_rec_mutex_lock(ch_mutex); //caller locks stream
 
 	if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal //check mutex
@@ -1038,7 +1038,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 	// ---
 bksnd_continue: 
-	bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
+	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(pipeline));
 	gst_bus_add_watch(bus, bus_callback, stream);
 	DA_gst_object_unref(GST_OBJECT(bus));
 	bus = NULL;
@@ -1118,9 +1118,6 @@ exit:
 	DA_NoNulling_dec_objs(fakesink);
 	// DA_NoNulling_dec_objs(GST_OBJECT(rtpdepay));		//done above
 
-
-	
-
 	return stream;
 }
 
@@ -1142,7 +1139,7 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locaked by caller
 		DA_gst_object_unref(GST_OBJECT(stream->clock)); // added check
 		stream->clock = NULL;
 	} else {
-		DA_NoNulling_dec_objs(clock); // accounting
+		DA_NoNulling_dec_objs(stream->clock); // accounting
 	}
 
 	//switch_mutex_lock(alloc_pipl_lock); //aGStreamer + GLib atomics handle everything. 
@@ -1178,7 +1175,7 @@ void *start_pipeline(void *data)
 void account_pipeline_children(g_stream_t *stream)
 {
 	if (!stream || !stream->pipeline) return;
-	switch_mutex_lock(alloc_pipl_lock);			//redundant since stream is locked outside call, but leave for safety
+	//switch_mutex_lock(alloc_pipl_lock);			//redundant since stream is locked outside call, but leave for safety
 	GstIterator *iter = gst_bin_iterate_recurse(GST_BIN(stream->pipeline));
 	GValue item = G_VALUE_INIT;
 	int elements = 0, pads = 0;
@@ -1202,7 +1199,7 @@ void account_pipeline_children(g_stream_t *stream)
 
 	// Decrement counters for all objects about to be destroyed
 	g_alloc_counts.objs -= (elements + pads);
-	switch_mutex_unlock(alloc_pipl_lock);
+	//switch_mutex_unlock(alloc_pipl_lock);
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
 					  "Accounted for %d elements, %d pads in pipeline destruction\n", elements, pads);
 }
@@ -1214,10 +1211,10 @@ void stop_pipeline(g_stream_t *stream)
 	if (!stream) goto error;
 	GstBus *bus = NULL;
 
-	//switch_mutex_lock(alloc_pipl_lock); //not needed, locked at stream level 
+	switch_mutex_lock(alloc_pipl_lock); //also locked at stream level 
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 
-	guint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
+	gint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
 	if (timer_id > 0) {
 		g_source_remove(timer_id);
 		g_atomic_int_set(&stream->backup_sender_idle_timer, 0);
@@ -1245,29 +1242,11 @@ void stop_pipeline(g_stream_t *stream)
 						  leaked_elements);
 	}
 
-	if (stream->deinterleave_signal_id > 0) {
-		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
-		if (deinterleave) {
-			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
-			DA_gst_object_unref(GST_OBJECT(deinterleave));
-		}
-		stream->deinterleave_signal_id = 0;
-	}
-
-	if (stream->jitterbuf_signal_id > 0) {
-		GstElement *rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
-		if (rtpjitbuf) {
-			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
-			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
-		}
-		stream->jitterbuf_signal_id = 0;
-	}
-
-	account_pipeline_children(stream); // count
 	// Set to NULL state BEFORE disconnecting signals
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
+	account_pipeline_children(stream); // count
 
-	// Wait for state change
+	// Updated Wait for state change
 	//GstStateChangeReturn ret = gst_element_get_state(GST_ELEMENT(stream->pipeline), NULL, NULL, GST_CLOCK_TIME_NONE);
 	GstState current, pending;
 	GstStateChangeReturn ret;
@@ -1297,16 +1276,38 @@ void stop_pipeline(g_stream_t *stream)
 	Rx is operational and pipeline clock is not ptp*/
 	if (stream->cb_rx_stats_id) 
 		g_source_remove(stream->cb_rx_stats_id);
+	if (stream->deinterleave_signal_id > 0) {
+		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
+		if (deinterleave) {
+			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
+			DA_gst_object_unref(GST_OBJECT(deinterleave));
+		}
+		stream->deinterleave_signal_id = 0;
+	}
 
+	if (stream->jitterbuf_signal_id > 0) {
+		GstElement *rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
+		if (rtpjitbuf) {
+			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
+			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+		}
+		stream->jitterbuf_signal_id = 0;
+	}
 
 	DA_gst_object_unref(GST_OBJECT(bus));
 	DA_gst_object_unref(GST_OBJECT(stream->pipeline)); 
+	stream->pipeline = NULL;
 
 	if (stream->clock) {
 		DA_gst_object_unref(GST_OBJECT(stream->clock)); 
+		stream->clock = NULL;
 	} else {
 		DA_NoNulling_dec_objs(stream->clock); // accounting
 	}
+
+	teardown_mainloop(stream->mainloop);
+	if (stream->thread !=NULL) 
+		g_thread_join(stream->thread);
 
 	// added for multiple mutexes
 	for (int i = 0; i < MAX_CHANNELS; i++) {
@@ -1315,12 +1316,8 @@ void stop_pipeline(g_stream_t *stream)
 		g_static_rec_mutex_free(&stream->appsrc_mutexes[i]);
 	}
 
-	teardown_mainloop(stream->mainloop);
-	if (stream->thread !=NULL) 
-		g_thread_join(stream->thread);
-		
 	g_free(stream);					//allocated elsewhere, not counted
-	//switch_mutex_unlock(alloc_pipl_lock);//not needed, locked at stream level 
+	switch_mutex_unlock(alloc_pipl_lock);//also locked at stream level 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 error:
 	;
@@ -1452,7 +1449,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	if (!stream) goto no_stream;						//added check
 
 	// PER-CHANNEL lock (critical)
-	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 	g_static_rec_mutex_lock(ch_mutex);
 	GstPipeline *pipeline = stream->pipeline;
 	g_static_rec_mutex_unlock(ch_mutex); // added
@@ -1546,7 +1543,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 
 	// PER-CHANNEL lock (critical) 
-	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 	g_static_rec_mutex_lock(ch_mutex);
 	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // threadsafe
 	if (!appsink) {
@@ -1604,8 +1601,8 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			total_bytes += info.size;
 		}
 		gst_buffer_unmap(buf, &info); //check
-		DA_gst_sample_unref(sample); 
-
+		DA_gst_sample_unref(sample);
+		sample = NULL;
 		//if (buf) DA_NoNulling_dec_bufs(buf); // no accounting
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got %d\n", total_bytes);
 	}
@@ -1650,7 +1647,7 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 
 	NAME_ELEMENT(name, "valve", ch_idx);
 	// PER-CHANNEL lock (critical)
-	GStaticRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 	g_static_rec_mutex_lock(ch_mutex);
 	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count check 
 	g_static_rec_mutex_unlock(ch_mutex);

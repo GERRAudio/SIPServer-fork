@@ -1901,7 +1901,7 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void *data)
 		} 
 		else {
 			// accounting
-			DA_NoNulling_dec_objs(clock);
+			DA_NoNulling_dec_objs(globals.clock);
 		}
 		// No ref needed, we are taking over the reference from init_ptp()
 		globals.clock = ptp_clock;
@@ -2606,7 +2606,7 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 		globals.clock = NULL;
 	} else {
 		// accounting
-		DA_NoNulling_dec_objs(clock);
+		DA_NoNulling_dec_objs(globals.clock);
 	}
 
 	switch_core_hash_destroy(&globals.call_hash);
@@ -2951,8 +2951,8 @@ void error_callback(char *msg, g_stream_t *stream)
 			channel = switch_core_session_get_channel(tp->session);
 			STREAM_READER_UNLOCK(tp->audio_endpoint->in_stream);
 			goto hangup;
-		STREAM_READER_UNLOCK(tp->audio_endpoint->in_stream);
 		}
+		STREAM_READER_UNLOCK(tp->audio_endpoint->in_stream);
 	}
 	//switch_mutex_unlock(globals.pvt_lock); // added check
 	return;
