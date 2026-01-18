@@ -1562,7 +1562,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// PER-CHANNEL lock (critical) 
 	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 	g_rec_mutex_lock(ch_mutex);
-	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // threadsafe
+	appsink = gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // threadsafe
 	if (!appsink) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
 		goto error_unlock;
@@ -1570,7 +1570,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0); 
 
 	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) goto out_unlock;
-	if (gst_app_sink_is_eos(GST_APP_SINK(appsink))) goto out_unlock;
+	if (gst_app_sink_is_eos(GST_APP_SINK(appsink))) { goto error_unlock_noderef; }
 
 	// Note: assumes leftover_bytes will never be more than buflen, which is
 	// likely true (packet is limited to MTU, while buflen is 8192)
@@ -1599,7 +1599,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		buf = gst_sample_get_buffer(sample);	 // no alloc no count
 		if (!buf) {
 			DA_gst_sample_unref(sample);
-			sample = NULL;
+			//sample = NULL;
 			continue;
 		}
 
@@ -1619,7 +1619,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		}
 		gst_buffer_unmap(buf, &info); //check
 		DA_gst_sample_unref(sample);
-		//sample = NULL;
+		sample = NULL;
 		//if (buf) DA_NoNulling_dec_bufs(buf); // no accounting
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got %d\n", total_bytes);
 	}
@@ -1646,14 +1646,15 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 out_unlock:
 	g_rec_mutex_unlock(ch_mutex); // added
 out:
-	DA_gst_object_unref(GST_OBJECT(appsink)); // check
+	//gst_object_unref(GST_OBJECT(appsink)); // check
 	return (int) total_bytes;
 
 no_stream:
 	return 0;
 
 error_unlock:
-	DA_gst_object_unref(GST_OBJECT(appsink)); // check
+	//DA_gst_object_unref(GST_OBJECT(appsink)); // check
+error_unlock_noderef:
 	g_rec_mutex_unlock(ch_mutex); // added
 	return 0;
 }
