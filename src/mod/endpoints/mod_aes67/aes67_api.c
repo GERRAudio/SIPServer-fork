@@ -1204,7 +1204,7 @@ void account_pipeline_children(g_stream_t *stream)
 					  "Accounted for %d elements, %d pads in pipeline destruction\n", elements, pads);
 }
 
-#define PUTBACK 1
+//#define PUTBACK 1
 #ifdef PUTBACK
 void stop_pipeline(g_stream_t *stream)
 {
@@ -1254,14 +1254,7 @@ void stop_pipeline(g_stream_t *stream)
 		stream->deinterleave_signal_id = 0;
 	}
 
-	if (stream->jitterbuf_signal_id > 0) {
-		GstElement *rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
-		if (rtpjitbuf) {
-			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
-			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
-		}
-		stream->jitterbuf_signal_id = 0;
-	}
+
 
 	// Set to NULL state BEFORE disconnecting signals
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
@@ -1297,7 +1290,14 @@ void stop_pipeline(g_stream_t *stream)
 		stream->bus_watch_id = 0;
 	}
 
-
+	if (stream->jitterbuf_signal_id > 0) {
+		GstElement *rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
+		if (rtpjitbuf) {
+			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
+			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+		}
+		stream->jitterbuf_signal_id = 0;
+	}
 	DA_gst_object_unref(GST_OBJECT(bus));
 	DA_gst_object_unref(GST_OBJECT(stream->pipeline));
 	stream->pipeline = NULL;
@@ -1319,9 +1319,10 @@ void stop_pipeline(g_stream_t *stream)
 		g_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
 		g_rec_mutex_clear(&stream->appsrc_mutexes[i]);
 	}
-	g_free(stream);		
-error_unlock:
+	g_free(stream);	
+	DA_NoNulling_dec_objs(stream);  //accounting
 
+error_unlock:
 	switch_mutex_unlock(alloc_pipl_lock);		//also locked at stream level 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 error:
@@ -1378,7 +1379,7 @@ void stop_pipeline(g_stream_t *stream)
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 
 	// ACCOUNT destroyed pipeline objects
-	account_pipeline_destruction(stream);
+	account_pipeline_children(stream); // count
 
 	// NULL STATE - destroys ALL elements safely
 	//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Setting pipeline to NULL...\n");
@@ -1405,9 +1406,9 @@ void stop_pipeline(g_stream_t *stream)
 
 	// MUTEX CLEANUP 
 	for (int i = 0; i < MAX_CHANNELS; i++) {
-		g_static_rec_mutex_lock(&stream->appsrc_mutexes[i]);
-		g_static_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
-		g_static_rec_mutex_free(&stream->appsrc_mutexes[i]);
+		g_rec_mutex_lock(&stream->appsrc_mutexes[i]);
+		g_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
+		g_rec_mutex_clear(&stream->appsrc_mutexes[i]);
 	}
 
 	//  FINAL FREE
