@@ -28,6 +28,7 @@
 
 // specialized mutexes, must be declared and initialized in c module where MU_ functions are used
 
+extern switch_mutex_t *alloc_pipl_lock2;
 extern switch_mutex_t *alloc_pipl_lock;
 extern switch_mutex_t *alloc_mcp_lock;
 extern switch_mutex_t *alloc_bkup_lock;
@@ -227,7 +228,7 @@ inline void g_atomic_int_dec(int *i) { g_atomic_int_add(i, -1); }
 		switch_mutex_unlock(l);                                                                                        \
 	}
 
-//MU_WRAPV2p(gst_element_release_request_pad, GstElement*, element, GstPad*, p, alloc_pipl_lock)
+MU_WRAPV2p(gst_element_release_request_pad, GstElement*, element, GstPad*, p, alloc_pipl_lock2)
 
 #define MU_WRAP3(ret_type, fname, tp1, p1, tp2, p2, tp3, p3, l)                                                        \
 	inline ret_type MU_##fname(tp1 p1, tp2 p2, tp3 p3)                                                                 \
@@ -290,7 +291,7 @@ MU_WRAPV3(memcpy, void *, dest, const void *, src, size_t, n, alloc_mcp_lock)
 
 // ===element (obj) locks
 
-//MU_WRAP2(gboolean, gst_bin_add, GstBin *, bin, GstElement *, element, alloc_pipl_lock)
+MU_WRAP2(gboolean, gst_bin_add, GstBin *, bin, GstElement *, element, alloc_pipl_lock2)
 
 #define MU_g_object_set(p1, ...)                                                                                       \
 	do {                                                                                                               \
@@ -377,17 +378,17 @@ G_WRAP_ALLOC(GstPad *, gst_pad_get_peer, objs, GstPad *, p)
 // ===pipeline locks
 
 // gboolean gst_pipeline_set_clock(GstPipeline *pipeline, GstClock *clock);
-//MU_WRAP2(gboolean, gst_pipeline_set_clock, GstPipeline *, p, GstClock *, c, alloc_pipl_lock)
+MU_WRAP2(gboolean, gst_pipeline_set_clock, GstPipeline *, p, GstClock *, c, alloc_pipl_lock2)
 // void gst_pipeline_use_clock(GstPipeline *pipeline, GstClock *clock);
-//MU_WRAPV2(gst_pipeline_use_clock, GstPipeline *, pipeline, GstClock *, clock, alloc_pipl_lock)
+MU_WRAPV2(gst_pipeline_use_clock, GstPipeline *, pipeline, GstClock *, clock, alloc_pipl_lock2)
 // gst_object_unref(GST_OBJECT(stream->pipeline));
-//MU_WRAPV1p(gst_object_unref, gpointer, pipeline, alloc_pipl_lock)
+MU_WRAPV1p(gst_object_unref, gpointer, pipeline, alloc_pipl_lock2)
 // gboolean gst_bin_remove(GstBin *bin, GstElement *element);
-//MU_WRAP2(gboolean, gst_bin_remove, GstBin *, bin, GstElement *, element, alloc_pipl_lock)
+MU_WRAP2(gboolean, gst_bin_remove, GstBin *, bin, GstElement *, element, alloc_pipl_lock2)
 // GstStateChangeReturn gst_element_get_state(GstElement *e, GstState *s,GstState *pending, GstClockTime timeout);
-//MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime,t, alloc_pipl_lock)
+MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime,t, alloc_pipl_lock2)
 // gboolean gst_bus_remove_watch(GstBus *bus);
-//MU_WRAP1(gboolean, gst_bus_remove_watch, GstBus *, bus, alloc_pipl_lock)
+MU_WRAP1(gboolean, gst_bus_remove_watch, GstBus *, bus, alloc_pipl_lock2)
 // GstObject* gst_element_get_parent(GstElement *element);
 G_WRAP_ALLOC(GstObject *, gst_element_get_parent, objs, GstElement *, e)
 // --- Sample  wrappers ---

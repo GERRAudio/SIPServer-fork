@@ -278,13 +278,14 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	g_object_set(appsink, "emit-signals", FALSE, "sync", FALSE, "async", FALSE, "drop", TRUE, "max-buffers", 1,
 				 "enable-last-sample", FALSE, NULL);
 
-	if (!gst_bin_add(GST_BIN(stream->pipeline), appsink)) {
+	if (!MU_gst_bin_add(GST_BIN(stream->pipeline), appsink)) {
+		DA_gst_object_unref(appsink);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to add appsink to the pipeline ch: %d, session: %s", ch_idx, session);
 		goto error;
 	}
 
-	if (!gst_bin_add(GST_BIN(stream->pipeline), queue)) {
+	if (!MU_gst_bin_add(GST_BIN(stream->pipeline), queue)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to add queue to the pipeline ch: %d, session: %s", ch_idx, session);
 		goto error;
@@ -411,7 +412,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to unlink tee and queue ch: %d, session: %s",
 						  ch_idx, session);
 	}
-	gst_element_release_request_pad(tee, tee_src_pad);
+	MUp_gst_element_release_request_pad(tee, tee_src_pad);
 
 	//DA_gst_object_unref(tee_src_pad);
 	//DA_dec_objs(tee_src_pad);							//deref by gst_bin_remove
@@ -431,9 +432,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 	gst_element_unlink(queue, appsink);
 
-
-
-  if (!gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
+  if (!MU_gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
         "Failed to remove queue from the pipeline ch: %d, session: %s", ch_idx, session);
   }
@@ -445,7 +444,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 	g_rec_mutex_lock(ch_mutex);
 
-	if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal //check mutex
+	if (!MU_gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal //check mutex
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to remove appsink from the pipeline ch: %d, session: %s", ch_idx, session);
 	}
@@ -1501,8 +1500,8 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	}
 
 	if (!gst_buffer_map(buf, &info, GST_MAP_WRITE)) {		//MU here kills audio from phone to BP
-		DA_gst_buffer_unref(buf);//added
-		buf = NULL;
+		//DA_gst_buffer_unref(buf);//added
+		//buf = NULL;
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get buffer map\n");
 		goto exit;
 	}
@@ -1578,7 +1577,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 	if (stream->leftover_bytes[ch_idx]) {
 		size_t copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
-		memcpy(payload, stream->leftover[ch_idx], copy); // check
+		MU_memcpy(payload, stream->leftover[ch_idx], copy); // check
 		total_bytes += copy;
 		stream->leftover_bytes[ch_idx] -= copy;
 	}
@@ -1599,7 +1598,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		buf = gst_sample_get_buffer(sample);	 // no alloc no count
 		if (!buf) {
 			DA_gst_sample_unref(sample);
-			//sample = NULL;
+			sample = NULL;
 			continue;
 		}
 
