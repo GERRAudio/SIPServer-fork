@@ -241,7 +241,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GstElement *appsink = NULL;
 
 	gboolean ret = FALSE;
-	if (!stream) goto error; //added check
+	if (!stream || ch_idx >= MAX_CHANNELS) goto error; //added check
 
 	NAME_ELEMENT(name, "tee", ch_idx);
 	tee = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);		
@@ -374,7 +374,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GstPad *queue_sink_pad = NULL;
 
 	gboolean ret = FALSE;
-	if (!stream) goto exit;		//added check
+	if (!stream || ch_idx >= MAX_CHANNELS) goto exit; // added check
 	/*
 	 * tee -> queue -> appsink
 	 *
@@ -442,14 +442,14 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	if (appsink) gst_element_set_state(appsink, GST_STATE_NULL);
 
 	// PER-CHANNEL lock (critical)
-	//GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
-	//g_static_rec_mutex_lock(ch_mutex); //caller locks stream
+	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	g_rec_mutex_lock(ch_mutex);
 
 	if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal //check mutex
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to remove appsink from the pipeline ch: %d, session: %s", ch_idx, session);
 	}
-	//g_static_rec_mutex_unlock(ch_mutex);		//added
+	g_rec_mutex_unlock(ch_mutex);		//added
 
 	g_snprintf(dot_name, ELEMENT_NAME_SIZE + 10, "%s-del", name);
 	dump_pipeline(GST_PIPELINE(stream->pipeline), dot_name);			//for info only
@@ -1385,7 +1385,17 @@ void stop_pipeline(g_stream_t *stream)
 	//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Setting pipeline to NULL...\n");
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
 
-	//UNREF PIPELINE (frees everything)
+
+	GstState *state, *pending;
+	GstStateChangeReturn ret = gst_element_get_state(
+		stream->pipeline, &state, &pending, 5 * GST_SECOND); /* or GST_CLOCK_TIME_NONE */
+
+	if (ret != GST_STATE_CHANGE_SUCCESS || state != GST_STATE_NULL) { 
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Unable to stop pipeline ..\n");
+		goto error_unlock; 
+	}
+
+	// UNREF PIPELINE (frees everything)
 	DA_gst_object_unref(GST_OBJECT(stream->pipeline));
 	stream->pipeline = NULL;
 
@@ -1413,6 +1423,7 @@ void stop_pipeline(g_stream_t *stream)
 
 	//  FINAL FREE
 	g_free(stream);
+error_unlock:
 	switch_mutex_unlock(alloc_pipl_lock);
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
@@ -1452,7 +1463,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *appsrc = NULL;
-	if (!stream) goto no_stream;						//added check
+	if (!stream || ch_idx >= MAX_CHANNELS) goto no_stream; // added check
 
 	// PER-CHANNEL lock (critical)
 	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
@@ -1541,7 +1552,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *appsink = NULL;
 
-	if (!stream) goto no_stream;	 // added check
+	if (!stream || ch_idx >= MAX_CHANNELS) goto no_stream; // added check
 
 	if (session == NULL)
 		NAME_ELEMENT(name, "appsink", ch_idx);
@@ -1608,7 +1619,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		}
 		gst_buffer_unmap(buf, &info); //check
 		DA_gst_sample_unref(sample);
-		sample = NULL;
+		//sample = NULL;
 		//if (buf) DA_NoNulling_dec_bufs(buf); // no accounting
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got %d\n", total_bytes);
 	}
@@ -1651,7 +1662,7 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 {
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *valve = NULL;
-	if (!stream) goto exit;			//added check
+	if (!stream || ch_idx >= MAX_CHANNELS) goto exit; // added check
 
 	NAME_ELEMENT(name, "valve", ch_idx);
 	// PER-CHANNEL lock (critical)

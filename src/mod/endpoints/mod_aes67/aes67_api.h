@@ -48,7 +48,7 @@ typedef struct
   int backup_sender_idle_wait_ms;
 } pipeline_data_t;
 
-#define MAX_CHANNELS 12            //added
+#define MAX_CHANNELS 24           // beyond that is crazy
 struct g_stream
 {
   GstPipeline *pipeline;
