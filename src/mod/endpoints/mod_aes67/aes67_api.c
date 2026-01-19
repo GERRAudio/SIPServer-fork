@@ -268,6 +268,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		goto error;
 	}
 
+	g_rec_mutex_lock(ch_mutex);
 #ifndef ENABLE_THREADSHARE
 	queue = AL_gst_element_factory_make("queue", name);
 #else
@@ -275,7 +276,6 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	MAKE_TS_ELEMENT(queue, "ts-queue", name, stream->ts_ctx);
 	//switch_mutex_unlock(alloc_pipl_lock); /// added check
 #endif
-	g_rec_mutex_lock(ch_mutex);
 	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 	appsink = AL_gst_element_factory_make("appsink", name);
 	g_rec_mutex_unlock(ch_mutex);
