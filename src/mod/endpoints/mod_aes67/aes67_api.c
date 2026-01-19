@@ -1568,7 +1568,8 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	}
 	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0); 
 
-	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) goto out_unlock;
+	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) 
+		goto out_unlock;
 	if (gst_app_sink_is_eos(GST_APP_SINK(appsink))) { goto error_unlock_noderef; }
 
 	// Note: assumes leftover_bytes will never be more than buflen, which is
@@ -1581,7 +1582,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		total_bytes += copy;
 		stream->leftover_bytes[ch_idx] -= copy;
 	}
-	g_rec_mutex_unlock(ch_mutex);		//may not need since caller locks
+	g_rec_mutex_unlock(ch_mutex);		
 
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
@@ -1604,7 +1605,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 		g_rec_mutex_lock(ch_mutex);		
 		gboolean r = gst_buffer_map(buf, &info, GST_MAP_READ);// mutex here may be redundant- check if critical
-		g_rec_mutex_unlock(ch_mutex);
+
 
 		if (r) {			
 			if (total_bytes + info.size > needed_bytes) {
@@ -1619,6 +1620,8 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		gst_buffer_unmap(buf, &info); //check
 		DA_gst_sample_unref(sample);
 		sample = NULL;
+		g_rec_mutex_unlock(ch_mutex);
+
 		//if (buf) DA_NoNulling_dec_bufs(buf); // no accounting
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Got %d\n", total_bytes);
 	}
@@ -1642,12 +1645,13 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// needed_bytes, total_bytes); switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Leftover %lu\n",
 	// stream->leftover_bytes[ch_idx]);
 
-out_unlock:
-	g_rec_mutex_unlock(ch_mutex); // added
+
 out:
 	//gst_object_unref(GST_OBJECT(appsink)); // check
-	return (int) total_bytes;
-
+	return total_bytes;
+out_unlock:
+	g_rec_mutex_unlock(ch_mutex); // added
+	return total_bytes;
 no_stream:
 	return 0;
 
