@@ -89,5 +89,6 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session);
 gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session);
 void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock);
 void dump_pipeline (GstPipeline *pipe, const char *name);
+void account_pipeline_children(g_stream_t *stream);
 
 #endif /*__GSTREAMER_API__*/

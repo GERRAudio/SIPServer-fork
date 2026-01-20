@@ -15,8 +15,6 @@ typedef struct {
     int gobjects;
 	int debugs;
 	int stats;
-	int FDA;
-	int FAL;
 } G_alloc_counts;
 
 // -- need to define the following in c file --

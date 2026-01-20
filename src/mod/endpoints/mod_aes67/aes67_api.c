@@ -525,9 +525,10 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 
 			switch_mutex_lock(alloc_bkup_lock);			///added check
 			GstClockTime max_delta = stream->backup_sender_idle_wait_ms * GST_MSECOND;
-			switch_mutex_unlock(alloc_bkup_lock);			///added check
+			switch_mutex_unlock(alloc_bkup_lock);
 
 			g_object_get(G_OBJECT(fakesink), "last-sample", &last_sample, NULL);	//allocates!
+							 /// added check
 			if (!last_sample) goto exit;
 			AL_cnt_samples(last_sample); // accounting
 
@@ -1181,8 +1182,6 @@ error:
 	;
 }
 
-void account_pipeline_children(g_stream_t *stream);
-
 
 void *start_pipeline(void *data)
 {
@@ -1202,7 +1201,6 @@ void *start_pipeline(void *data)
 void account_pipeline_children(g_stream_t *stream)
 {
 	if (!stream || !stream->pipeline) return;
-	//switch_mutex_lock(alloc_pipl_lock);			//redundant since stream is locked outside call, but leave for safety
 	GstIterator *iter = gst_bin_iterate_recurse(GST_BIN(stream->pipeline));
 	GValue item = G_VALUE_INIT;
 	int elements = 0, pads = 0;
@@ -1226,136 +1224,11 @@ void account_pipeline_children(g_stream_t *stream)
 
 	// Decrement counters for all objects about to be destroyed
 	g_alloc_counts.objs -= (elements + pads);
-	//switch_mutex_unlock(alloc_pipl_lock);
+
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
 					  "Accounted for %d elements, %d pads in pipeline destruction\n", elements, pads);
 }
 
-//#define PUTBACK 1
-#ifdef PUTBACK
-void stop_pipeline(g_stream_t *stream)
-{
-	if (!stream) goto error;
-	GstBus *bus = NULL;
-
-	switch_mutex_lock(alloc_pipl_lock); //also locked at stream level 
-	dump_pipeline(stream->pipeline, "pipeline-stop");
-
-	gint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
-	if (timer_id > 0) {
-		g_source_remove(timer_id);
-		g_atomic_int_set(&stream->backup_sender_idle_timer, 0);
-	}
-
-	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(stream->pipeline));
-
-	// count leaked elements
-	GstIterator *iter = gst_bin_iterate_elements(GST_BIN(stream->pipeline));
-	GValue item = G_VALUE_INIT;
-	GstIteratorResult res;
-	int leaked_elements = 0;
-	while ((res = gst_iterator_next(iter, &item)) == GST_ITERATOR_OK) {
-		GstElement *element = g_value_get_object(&item);
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Leaked element: %s\n", GST_ELEMENT_NAME(element));
-		leaked_elements++;
-		g_value_unset(&item);
-		g_value_reset(&item);
-		if (element) gst_object_unref(element); // added in case
-	}
-	gst_iterator_free(iter);
-
-	if (leaked_elements > 0) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Found %d leaked elements in pipeline\n",
-						  leaked_elements);
-	}
-
-	/* cb_rx_stats_id will be non zero only when
-	Rx is operational and pipeline clock is not ptp*/
-	if (stream->cb_rx_stats_id) g_source_remove(stream->cb_rx_stats_id);
-	if (stream->deinterleave_signal_id > 0) {
-		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
-		if (deinterleave) {
-			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
-			DA_gst_object_unref(GST_OBJECT(deinterleave));
-		}
-		stream->deinterleave_signal_id = 0;
-	}
-
-
-
-	// Set to NULL state BEFORE disconnecting signals
-	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
-	account_pipeline_children(stream); // count
-
-	// Updated Wait for state change
-	//GstStateChangeReturn ret = gst_element_get_state(GST_ELEMENT(stream->pipeline), NULL, NULL, GST_CLOCK_TIME_NONE);
-
-
-	do {
-		GstState current, pending;
-		GstStateChangeReturn ret;
-		if (!stream->pipeline ) break;
-		ret = gst_element_get_state(GST_OBJECT(stream->pipeline), &current, &pending, 100 * GST_MSECOND);
-		if (ret == GST_STATE_CHANGE_FAILURE) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG ,"State change FAILED\n");
-			break;
-		}
-		if (ret == GST_STATE_CHANGE_SUCCESS) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG ,"State reached: \n");
-			break;
-		}
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG ,"Waiting for state change...\n");
-		g_usleep(10000); // 10ms
-	} while (TRUE);
-
-	if (!stream) goto error_unlock;
-
-	// Now safe to disconnect signals 
-	if (stream->bus_watch_id > 0)
-	{
-		g_source_remove(stream->bus_watch_id);
-		stream->bus_watch_id = 0;
-	}
-
-	if (stream->jitterbuf_signal_id > 0) {
-		GstElement *rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
-		if (rtpjitbuf) {
-			g_signal_handler_disconnect(rtpjitbuf, stream->jitterbuf_signal_id);
-			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
-		}
-		stream->jitterbuf_signal_id = 0;
-	}
-	DA_gst_object_unref(GST_OBJECT(bus));
-	DA_gst_object_unref(GST_OBJECT(stream->pipeline));
-	stream->pipeline = NULL;
-
-	if (stream->clock) {
-		DA_gst_object_unref(GST_OBJECT(stream->clock)); 
-		stream->clock = NULL;
-	} else {
-		DA_NoNulling_dec_objs(stream->clock); // accounting
-	}
-
-	teardown_mainloop(stream->mainloop);
-	if (stream->thread !=NULL) 
-		g_thread_join(stream->thread);
-
-	// added for channel multiple 
-	for (int i = 0; i < MAX_CHANNELS; i++) {
-		g_rec_mutex_lock(&stream->appsrc_mutexes[i]);
-		g_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
-		g_rec_mutex_clear(&stream->appsrc_mutexes[i]);
-	}
-	g_free(stream);	
-	DA_NoNulling_dec_objs(stream);  //accounting
-
-error_unlock:
-	switch_mutex_unlock(alloc_pipl_lock);		//also locked at stream level 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
-error:
-	;
-}
-#else
 void stop_pipeline(g_stream_t *stream)
 {
 	if (!stream) goto error;
@@ -1402,11 +1275,12 @@ void stop_pipeline(g_stream_t *stream)
 		stream->jitterbuf_signal_id = 0;
 	}
 
+	// ACCOUNT for linked pipeline objects
+	account_pipeline_children(stream); // count
+
 	// DUMP PIPELINE (still live)
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 
-	// ACCOUNT destroyed pipeline objects
-	account_pipeline_children(stream); // count
 
 	// NULL STATE - destroys ALL elements safely
 	//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Setting pipeline to NULL...\n");
@@ -1461,7 +1335,6 @@ error:
 	;
 }
 
-#endif 
 
 
 void teardown_mainloop(GMainLoop *mainloop)
@@ -1538,7 +1411,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	MU_memcpy(info.data, payload, len);
 	g_rec_mutex_lock(ch_mutex); 
 	gst_buffer_unmap(buf, &info);	
-	g_rec_mutex_unlock(ch_mutex); 
+
 
 	g_signal_emit_by_name(appsrc, "push-buffer", buf, &result);
 	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pushed buffer\n");
@@ -1546,6 +1419,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		DA_gst_buffer_unref(buf);
 		buf = NULL;
 	}
+	g_rec_mutex_unlock(ch_mutex); 
 
 	if (result == GST_FLOW_ERROR) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to do 'push-buffer' \n");
@@ -1624,8 +1498,10 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
+
+		g_rec_mutex_lock(ch_mutex);		
 		sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 10 * GST_MSECOND);		
-		
+		g_rec_mutex_unlock(ch_mutex);		
 		if (!sample) {
 			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Failed to pull sample\n");
 			switch_cond_next();
