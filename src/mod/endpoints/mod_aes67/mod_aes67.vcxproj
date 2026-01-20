@@ -192,6 +192,7 @@
   <ItemGroup>
     <ClCompile Include="aes67_api.c" />
     <ClCompile Include="mod_aes67.c" />
+    <ClCompile Include="TrimMem.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="aes67_alloc.h" />
