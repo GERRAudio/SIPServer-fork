@@ -228,7 +228,6 @@ struct private_object {
 };
 
 // added checks
-switch_mutex_t *alloc_pipl_lock2;
 switch_mutex_t *alloc_pipl_lock;
 switch_mutex_t *alloc_mcp_lock;
 switch_mutex_t *alloc_bkup_lock;
@@ -1543,13 +1542,13 @@ static void gst_logger(GstDebugCategory *category, GstDebugLevel level, const gc
 		switch_log_printf(SWITCH_CHANNEL_LOG, fs_log_level, "%s %p %s:%d:%s:%s %s\n", tag, (void *)g_thread_self(),
 						  file, line, function, obj, gst_debug_message_get(message));
 
-		g_free(obj); //not counted
+		DA_g_free(obj);
 		obj = NULL;
 	} else {
 		switch_log_printf(SWITCH_CHANNEL_LOG, fs_log_level, "%s %p %s:%d:%s %s\n", tag, (void *)g_thread_self(), file,
 						  line, function, gst_debug_message_get(message));
 	}
-	g_free(tag);		//not counted
+	DA_g_free(tag);
 }
 
 SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
@@ -1614,7 +1613,6 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_mutex_init(&globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
 
-	switch_mutex_init(&alloc_pipl_lock2, SWITCH_MUTEX_NESTED, module_pool); // added check
 	switch_mutex_init(&alloc_pipl_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
 	switch_mutex_init(&alloc_mcp_lock, SWITCH_MUTEX_NESTED, module_pool);  // added check
 	switch_mutex_init(&alloc_bkup_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
@@ -1903,7 +1901,7 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void *data)
 		} 
 		else {
 			// accounting
-			DA_NoNulling_dec_objs(globals.clock);
+			DANN_dec_objs(clock);
 		}
 		// No ref needed, we are taking over the reference from init_ptp()
 		globals.clock = ptp_clock;
@@ -2468,7 +2466,7 @@ static switch_status_t load_globals(switch_xml_t cfg)
 				globals.ptime_ms = strtod(val, NULL);
 			} else if (!strcasecmp(var, "ptp-domain")) {
 				char *iface;
-				globals.ptp_domain = (int8_t)atoi(val);
+				globals.ptp_domain = atoi(val);
 				iface = (char *)switch_xml_attr_soft(param, "iface");
 				if (!zstr(iface)) { strncpy(globals.ptp_iface, iface, NW_IFACE_LEN - 1); }
 			} else if (!strcasecmp(var, "ptp-interface")) {
@@ -2549,12 +2547,12 @@ static switch_status_t load_config(void)
 				globals.clock = NULL;
 			} else {
 				// accounting
-				DA_NoNulling_dec_objs(globals.clock);
+				DANN_dec_objs(globals.clock);
 			}
 			globals.clock = ptp_clock; // check
 		}
 	}else
-		DA_NoNulling_dec_objs(globals.clock);		//accounting only
+		DANN_dec_objs(globals.clock);		//accounting only
 
 	globals.enable_ptp_stats = FALSE;
 
@@ -2608,7 +2606,7 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 		globals.clock = NULL;
 	} else {
 		// accounting
-		DA_NoNulling_dec_objs(globals.clock);
+		DANN_dec_objs(clock);
 	}
 
 	switch_core_hash_destroy(&globals.call_hash);
@@ -2953,8 +2951,8 @@ void error_callback(char *msg, g_stream_t *stream)
 			channel = switch_core_session_get_channel(tp->session);
 			STREAM_READER_UNLOCK(tp->audio_endpoint->in_stream);
 			goto hangup;
-		}
 		STREAM_READER_UNLOCK(tp->audio_endpoint->in_stream);
+		}
 	}
 	//switch_mutex_unlock(globals.pvt_lock); // added check
 	return;
@@ -3131,7 +3129,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		}
 		if (rtp_stats) {
 			stream->write_function(stream, "%s\n", rtp_stats);
-			g_free(rtp_stats); // allocation occurs in get_rtp_stats
+			DA_g_free(rtp_stats); // counting of allocation occurs get_rtp_stats
 			rtp_stats = NULL;
 		}
 
