@@ -5,7 +5,7 @@
 #include <gst/net/net.h>
 
 #include "aes67_alloc.h"		// allocation trackerand mutex wrappers
-G_alloc_counts g_alloc_counts={0}; // debug counters for allocation
+volatile G_alloc_counts g_alloc_counts={0}; // debug counters for allocation
 
 #define ELEMENT_NAME_SIZE 30 + SESSION_ID_LEN
 #define STR_SIZE 15
@@ -1229,7 +1229,7 @@ void account_pipeline_children(g_stream_t *stream)
 					  "Accounted for %d elements, %d pads in pipeline destruction\n", elements, pads);
 }
 
-void stop_pipeline(g_stream_t *stream)
+void stop_pipeline(volatile g_stream_t *stream)
 {
 	if (!stream) goto error;
 

@@ -1,8 +1,12 @@
-﻿#include <windows.h>
+﻿#ifdef WIN32
+#include <windows.h>
 #include <psapi.h> // For GetProcessHeaps if needed
 
-
 /*
+Optional memory cleansing - call be called programmatically
+or alternately from CLI script in Freeswitch (preferable)
+"fsctl reclaim_mem"
+
 For heap-specific cleanup, enumerate your private heaps with GetProcessHeaps and call HeapCompact(hHeap, 0) on each
 during idle periods; it coalesces free blocks but rarely shrinks the committed virtual address space and is mainly for
 debugging as Windows auto-compacts on HeapFree
@@ -54,3 +58,9 @@ void TrimCurrentProcessWorkingSetIdle(void)
 		// handle error if desired: GetLastError();
 	}
 }
+#else
+void CompactHeapsIdle(void){;}
+void TrimCurrentProcessWorkingSetIdle(void) { ; }
+#endif
+
+

@@ -18,5 +18,5 @@ typedef struct {
 } G_alloc_counts;
 
 // -- need to define the following in c file --
-extern G_alloc_counts g_alloc_counts;	
+extern volatile G_alloc_counts g_alloc_counts;	
 #endif
