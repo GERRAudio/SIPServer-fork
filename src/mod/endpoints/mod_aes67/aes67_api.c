@@ -1229,7 +1229,7 @@ void account_pipeline_children(g_stream_t *stream)
 					  "Accounted for %d elements, %d pads in pipeline destruction\n", elements, pads);
 }
 
-void stop_pipeline(volatile g_stream_t *stream)
+void stop_pipeline(g_stream_t *stream)
 {
 	if (!stream) goto error;
 
@@ -1238,7 +1238,7 @@ void stop_pipeline(volatile g_stream_t *stream)
 	switch_mutex_lock(alloc_pipl_lock);
 
 	// STOP ALL TIMERS/SOURCES FIRST (atomic)
-	gint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
+	guint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
 	if (timer_id > 0) {
 		g_source_remove(timer_id);
 		g_atomic_int_set(&stream->backup_sender_idle_timer, 0);

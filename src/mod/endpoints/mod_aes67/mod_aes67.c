@@ -3063,6 +3063,8 @@ SWITCH_STANDARD_API(aes_cmd)
 							   "aes67 txflow <stream> <on|off>\n"
 							   "aes67 reloadconf\n"
 							   "aes67 dump <stream> <dotfile name>\n"
+							   "aes67 clrwrkset\n"
+							   "aes67 compactheap\n"
 							   "--------------------------------------------------------------------------------\n";
 	if (zstr(cmd)) {
 		stream->write_function(stream, "%s", usage_string);
@@ -3228,6 +3230,12 @@ SWITCH_STANDARD_API(aes_cmd)
 		stream->write_function(stream, "\tchars: %d\n", g_alloc_counts.chars);
 	} else if (!strcasecmp(argv[0], "version")) {
 		stream->write_function(stream, "mod_aes67 version date: %s\n", MOD_AES_VERSION_DATE);
+	} else if (!strcasecmp(argv[0], "clrwrkset")) {
+		TrimCurrentProcessWorkingSetIdle();
+		stream->write_function(stream, "Working st cleared\n");
+	}else if (!strcasecmp(argv[0], "compactheap")){
+		CompactHeapsIdle();
+		stream->write_function(stream, "Compacted idle heap\n");
 	}
 
 done:

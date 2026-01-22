@@ -159,7 +159,6 @@ inline void g_atomic_int_dec(int *i) { g_atomic_int_add(i, -1); }
 	inline void DA_##name(t p)  {                                                                                       \
 			if (p) {                                                                                                    \
 				accounting_decr(g_alloc_counts.counter);                                                              \
-			p = NULL;                                                                                                  \
 		}										 \
 	}
 

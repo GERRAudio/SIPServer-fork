@@ -48,7 +48,7 @@ typedef struct
   int backup_sender_idle_wait_ms;
 } pipeline_data_t;
 
-#define MAX_CHANNELS 24           // beyond that is crazy
+#define MAX_CHANNELS 48           // seen it go to 25 set to be safe
 struct g_stream
 {
   GstPipeline *pipeline;
@@ -64,7 +64,7 @@ struct g_stream
   char *ts_ctx;
   gboolean pause_backup_sender;
   gboolean txdrop;
-  guint backup_sender_idle_timer;
+  volatile guint backup_sender_idle_timer;
   int backup_sender_idle_wait_ms;
   guint bus_watch_id;                   //added
   gulong deinterleave_signal_id;        //added
@@ -90,5 +90,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session);
 void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock);
 void dump_pipeline (GstPipeline *pipe, const char *name);
 void account_pipeline_children(g_stream_t *stream);
+void CompactHeapsIdle(void);
+void TrimCurrentProcessWorkingSetIdle(void);
 
 #endif /*__GSTREAMER_API__*/
