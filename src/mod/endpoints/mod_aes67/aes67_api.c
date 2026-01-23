@@ -272,9 +272,9 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 #ifndef ENABLE_THREADSHARE
 	queue = AL_gst_element_factory_make("queue", name);
 #else
-	//switch_mutex_lock(alloc_pipl_lock);		///added check - caller locks stream
+	//switch_mutex_lock(general_pipl_lock);		///added check - caller locks stream
 	MAKE_TS_ELEMENT(queue, "ts-queue", name, stream->ts_ctx);
-	//switch_mutex_unlock(alloc_pipl_lock); /// added check
+	//switch_mutex_unlock(general_pipl_lock); /// added check
 #endif
 	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 	appsink = AL_gst_element_factory_make("appsink", name);
@@ -1170,13 +1170,13 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locaked by caller
 		DA_NoNulling_dec_objs(stream->clock); // accounting
 	}
 
-	//switch_mutex_lock(alloc_pipl_lock); //aGStreamer + GLib atomics handle everything. 
+	//switch_mutex_lock(general_pipl_lock); //aGStreamer + GLib atomics handle everything. 
 	gst_pipeline_use_clock(GST_PIPELINE(stream->pipeline), ptp_clock);		
 	gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);		
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);	
 	dump_pipeline(stream->pipeline, "ptp-clock-switch");
 	g_atomic_int_set(&stream->clock_sync, 1);
-	//switch_mutex_unlock(alloc_pipl_lock);  //added check
+	//switch_mutex_unlock(general_pipl_lock);  //added check
 
 error:
 	;
@@ -1235,7 +1235,7 @@ void stop_pipeline(g_stream_t *stream)
 
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
-	switch_mutex_lock(alloc_pipl_lock);
+	switch_mutex_lock(stop_pipl_lock);
 
 	// STOP ALL TIMERS/SOURCES FIRST (atomic)
 	guint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
@@ -1325,7 +1325,7 @@ void stop_pipeline(g_stream_t *stream)
 	//  FINAL FREE
 	g_free(stream);
 error_unlock:
-	switch_mutex_unlock(alloc_pipl_lock);
+	switch_mutex_unlock(stop_pipl_lock);
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 	return;

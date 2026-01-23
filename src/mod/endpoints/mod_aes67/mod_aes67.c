@@ -228,8 +228,8 @@ struct private_object {
 };
 
 // added checks
-switch_mutex_t *alloc_pipl_lock2;
-switch_mutex_t *alloc_pipl_lock;
+switch_mutex_t *stop_pipl_lock;
+switch_mutex_t *general_pipl_lock;
 switch_mutex_t *alloc_mcp_lock;
 switch_mutex_t *alloc_bkup_lock;
 
@@ -1614,8 +1614,8 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_mutex_init(&globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
 
-	switch_mutex_init(&alloc_pipl_lock2, SWITCH_MUTEX_NESTED, module_pool); // added check
-	switch_mutex_init(&alloc_pipl_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
+	switch_mutex_init(&stop_pipl_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
+	switch_mutex_init(&general_pipl_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
 	switch_mutex_init(&alloc_mcp_lock, SWITCH_MUTEX_NESTED, module_pool);  // added check
 	switch_mutex_init(&alloc_bkup_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
 
@@ -3076,7 +3076,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		goto done;
 	}
 
-	if (sizeof(argv[0]) <= 0) {
+	if (argv[0] <= 0) {
 		stream->write_function(stream, "Unknown Command\n");
 		goto done;
 	}
