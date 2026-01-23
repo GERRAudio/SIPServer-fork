@@ -349,7 +349,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	g_snprintf(dot_name, ELEMENT_NAME_SIZE + 10, "%s-add", name);
 	dump_pipeline(GST_PIPELINE(stream->pipeline), dot_name);
 
-exit:
+// fall thru
 	ret = TRUE;
 
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
@@ -1398,14 +1398,14 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	buf = AL_gst_buffer_new_allocate(NULL, len, NULL);			
 	if (!buf ) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
-		goto exit;
+		goto error_exit;
 	}
 
 	if (!gst_buffer_map(buf, &info, GST_MAP_WRITE)) {		//MU here kills audio from phone to BP
 		//DA_gst_buffer_unref(buf);//added
 		//buf = NULL;
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get buffer map\n");
-		goto exit;
+		goto error_exit;
 	}
 
 	MU_memcpy(info.data, payload, len);
@@ -1423,13 +1423,15 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	if (result == GST_FLOW_ERROR) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to do 'push-buffer' \n");
-		goto exit;
+		goto error_exit;
 	}
+	// fall thru, no error
 
-done:
 	retval = TRUE;
-//fall thru
-exit:
+	DA_gst_buffer_unref(buf);
+	DA_gst_object_unref(GST_OBJECT(appsrc));
+	return retval;
+error_exit:
 	DA_gst_buffer_unref(buf);
 	DA_gst_object_unref(GST_OBJECT(appsrc));				
 	return retval;
@@ -1555,12 +1557,13 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// needed_bytes, total_bytes); switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Leftover %lu\n",
 	// stream->leftover_bytes[ch_idx]);
 
-
-out:
+// fall thru
 	return (int) total_bytes;
+
 out_unlock:
 	g_rec_mutex_unlock(ch_mutex); // added
 	return (int) total_bytes;
+
 no_stream:
 	return 0;
 
