@@ -257,6 +257,7 @@ static struct {
 	// added to track clr mem
 	switch_time_t last_call_activity;		// Last time ANY calllist PVT was active
 	switch_time_t last_stream_activity;		// Last pullbuffer/pushbuffer time
+	guint64 clr_cnt;
 	#define IDLE_THRESHOLD_SEC 30			// 30s idle before trim
 	// added to track clr mem
 
@@ -852,12 +853,12 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "%s CHANNEL HANGUP\n",
 					  switch_channel_get_name(switch_core_session_get_channel(session)));
-	// try to clean mem
+	// to clean mem
 	globals.last_call_activity = switch_micro_time_now();
 	//
 	return SWITCH_STATUS_SUCCESS;
 error:
-	// try to clean mem
+	// to clean mem
 	globals.last_call_activity = switch_micro_time_now();
 	//
 	return SWITCH_STATUS_FALSE;
@@ -1708,7 +1709,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_console_set_complete("add aes67 reloadconf");
 	switch_console_set_complete("add aes67 dump");
 
-	// dela with mamanging memory periodically
+	// deal with mamanging memory periodically
 	globals.last_call_activity = switch_micro_time_now();
 	globals.last_stream_activity = switch_micro_time_now();
 
@@ -2649,7 +2650,7 @@ SWITCH_MODULE_RUNTIME_FUNCTION(mod_aes67_runtime)
 
 			TrimCurrentProcessWorkingSetIdle();
 			CompactHeapsIdle();
-
+			globals.clr_cnt++;
 			// Reset activity timer after cleanup
 			globals.last_call_activity = now;
 		}
@@ -3130,6 +3131,7 @@ SWITCH_STANDARD_API(aes_cmd)
 							   "aes67 dump <stream> <dotfile name>\n"
 							   "aes67 clrwrkset\n"
 							   "aes67 compactheap\n"
+							   "aes67 clrcount\n"
 							   "--------------------------------------------------------------------------------\n";
 	if (zstr(cmd)) {
 		stream->write_function(stream, "%s", usage_string);
@@ -3301,6 +3303,8 @@ SWITCH_STANDARD_API(aes_cmd)
 	}else if (!strcasecmp(argv[0], "compactheap")){
 		CompactHeapsIdle();
 		stream->write_function(stream, "Compacted idle heap\n");
+	} else if (!strcasecmp(argv[0], "clrcount")) {
+		stream->write_function(stream, "Mem cleanup count: %" G_GUINT64_FORMAT "\n", globals.clr_cnt);
 	}
 
 done:
