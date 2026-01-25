@@ -254,6 +254,13 @@ static struct {
 	switch_mutex_t *gst_mutex;
 	switch_mutex_t *sh_shtreams_lock;
 
+	// added to track clr mem
+	switch_time_t last_call_activity;		// Last time ANY calllist PVT was active
+	switch_time_t last_stream_activity;		// Last pullbuffer/pushbuffer time
+	#define IDLE_THRESHOLD_SEC 30			// 30s idle before trim
+	// added to track clr mem
+
+
 	int sample_rate;
 	int codec_ms;
 	char bit_depth[AUDIO_FMT_STR_LEN];
@@ -845,9 +852,14 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "%s CHANNEL HANGUP\n",
 					  switch_channel_get_name(switch_core_session_get_channel(session)));
-
+	// try to clean mem
+	globals.last_call_activity = switch_micro_time_now();
+	//
 	return SWITCH_STATUS_SUCCESS;
 error:
+	// try to clean mem
+	globals.last_call_activity = switch_micro_time_now();
+	//
 	return SWITCH_STATUS_FALSE;
 }
 
@@ -1108,6 +1120,14 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 
 	switch_mutex_lock(globals.device_lock);
 	STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);	//added
+
+	//Added check
+	if (g_atomic_int_get(&tech_pvt->audio_endpoint->in_stream->reloading) || tech_pvt->flags & TFLAG_HUP) {
+		STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
+		goto error; // Bail during teardown
+	}
+	//added check
+
 	bytes = pull_buffers(globals.main_stream->stream, (unsigned char *)globals.read_frame.data,
 						 globals.read_codec.implementation->samples_per_packet * 2 /* FIXME: S16LE-only */, 0,
 						 &globals.read_timer, session_id);
@@ -1115,6 +1135,10 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 	samples = bytes / sizeof(int16_t);
 	STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added
 	switch_mutex_unlock(globals.device_lock);
+	// clear mem
+	// After pullbuffers() or pushbuffer() succeeds
+	globals.last_call_activity = switch_micro_time_now();
+	//
 
 	if (samples) {
 		globals.read_frame.datalen = bytes;
@@ -1204,6 +1228,10 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 		}
 		status = SWITCH_STATUS_SUCCESS;
 	}
+	// After pullbuffers() or pushbuffer() succeeds
+	// try to clear mem
+	globals.last_call_activity = switch_micro_time_now();
+	//
 
 	return status;
 error:
@@ -1679,6 +1707,10 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_console_set_complete("add aes67 txflow");
 	switch_console_set_complete("add aes67 reloadconf");
 	switch_console_set_complete("add aes67 dump");
+
+	// dela with mamanging memory periodically
+	globals.last_call_activity = switch_micro_time_now();
+	globals.last_stream_activity = switch_micro_time_now();
 
 	/* indicate that the module should continue to be loaded */
 	return SWITCH_STATUS_SUCCESS;
@@ -2590,6 +2622,39 @@ static switch_status_t load_config(void)
 SWITCH_MODULE_RUNTIME_FUNCTION(mod_aes67_runtime)
 {
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Returning from runtime\n");
+
+	// IDLE DETECTION
+	// In the main runtime loop, after existing logic:
+	switch_time_t now = switch_micro_time_now();
+	switch_time_t idle_time = now - globals.last_call_activity;
+
+	if (idle_time > (IDLE_THRESHOLD_SEC * 1000000LL)) {
+		// Double-check no active calls
+		struct private_object *tp;  
+		switch_mutex_lock(globals.pvt_lock);
+		int active_calls = 0;
+		for (tp = globals.call_list; tp; tp = tp->next) {
+			if (switch_test_flag(tp, TFLAG_IO)) { // Active IO
+				active_calls++;
+				break;
+			}
+		}
+		switch_mutex_unlock(globals.pvt_lock);
+
+		// Check streams idle (no recent buffer activity)
+		if (active_calls == 0 && (now - globals.last_stream_activity) > (IDLE_THRESHOLD_SEC * 1000000LL)) {
+
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "AES67 idle detected (%lus), calling clrwrkset\n",
+							  idle_time / 1000000);
+
+			TrimCurrentProcessWorkingSetIdle();
+			CompactHeapsIdle();
+
+			// Reset activity timer after cleanup
+			globals.last_call_activity = now;
+		}
+	}
+
 	return SWITCH_STATUS_TERM;
 }
 
@@ -3076,7 +3141,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		goto done;
 	}
 
-	if (argv[0] <= 0) {
+	if (argc < 0) {
 		stream->write_function(stream, "Unknown Command\n");
 		goto done;
 	}

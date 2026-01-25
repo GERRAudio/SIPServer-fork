@@ -439,6 +439,33 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to unlink tee and queue ch: %d, session: %s",
 						  ch_idx, session);
 	}
+
+	// Added to close final holes
+	// Drain pending samples from appsink BEFORE bin_remove to avoid races
+	GstSample *sample = NULL;
+	GstClockTime timeout = 100 * GST_MSECOND; // 100ms total drain window
+	g_rec_mutex_lock(ch_mutex);
+	NAME_SESSION_ELEMENT(name, appsink, ch_idx, session);
+	appsink = gst_bin_get_by_name(GST_OBJECT(stream->pipeline), name);
+	g_rec_mutex_unlock(ch_mutex);
+
+	if (appsink) {
+		while (!gst_app_sink_is_eos(GST_APP_SINK(appsink))) {
+			sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), timeout);
+			if (sample) {
+				gst_sample_unref(sample);
+				sample = NULL;
+				DA_dec_samples(sample); // Track freed sample
+			} else {
+				break; // No more samples or timeout
+			}
+		}
+		// Force appsink to NULL state safely
+		gst_element_set_state(appsink, GST_STATE_NULL);
+		gst_object_unref(appsink);
+	}
+	// ADDED to close last holes
+
 	MUp_gst_element_release_request_pad(tee, tee_src_pad);
 
 	//DA_gst_object_unref(tee_src_pad);
@@ -467,8 +494,10 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	}
 	g_rec_mutex_unlock(ch_mutex);
 
-	if (queue) gst_element_set_state(queue, GST_STATE_NULL);
-	if (appsink) gst_element_set_state(appsink, GST_STATE_NULL);
+	if (queue) 
+		gst_element_set_state(queue, GST_STATE_NULL);
+	if (appsink) 
+		gst_element_set_state(appsink, GST_STATE_NULL);
 
 
 	g_rec_mutex_lock(ch_mutex);
@@ -1238,7 +1267,7 @@ void stop_pipeline(g_stream_t *stream)
 	switch_mutex_lock(stop_pipl_lock);
 
 	// STOP ALL TIMERS/SOURCES FIRST (atomic)
-	guint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
+	gint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
 	if (timer_id > 0) {
 		g_source_remove(timer_id);
 		g_atomic_int_set(&stream->backup_sender_idle_timer, 0);
@@ -1289,7 +1318,7 @@ void stop_pipeline(g_stream_t *stream)
 
 	GstState state, pending;
 	GstStateChangeReturn ret = gst_element_get_state(
-		stream->pipeline, &state, &pending, 5 * GST_SECOND); /* or GST_CLOCK_TIME_NONE */
+		GST_OBJECT(stream->pipeline), &state, &pending, 5 * GST_SECOND); /* or GST_CLOCK_TIME_NONE */
 
 	if (ret != GST_STATE_CHANGE_SUCCESS || state != GST_STATE_NULL) { 
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Unable to stop pipeline ..\n");
@@ -1348,6 +1377,7 @@ void start_mainloop(GMainLoop *mainloop)
 {
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Running mainloop\n");
 	g_main_loop_run(mainloop);
+
 }
 
 

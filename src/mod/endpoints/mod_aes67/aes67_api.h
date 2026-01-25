@@ -64,7 +64,7 @@ struct g_stream
   char *ts_ctx;
   gboolean pause_backup_sender;
   gboolean txdrop;
-  volatile guint backup_sender_idle_timer;
+  volatile gint backup_sender_idle_timer;
   int backup_sender_idle_wait_ms;
   guint bus_watch_id;                   //added
   gulong deinterleave_signal_id;        //added
