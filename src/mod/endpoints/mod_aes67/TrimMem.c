@@ -1,4 +1,4 @@
-﻿#ifdef WIN32
+﻿#ifdef _WIN32
 #include <windows.h>
 #include <psapi.h> // For GetProcessHeaps if needed
 
@@ -23,7 +23,7 @@ frequency; excessive calls hurt perf. HeapCompact adds minimal overhead but offe
 fragmented. ​
 */
 
-void CompactHeapsIdle(void)
+void CompactHeaps(void)
 {
 	HANDLE hHeap = GetProcessHeap();
 	HeapCompact(hHeap, 0);
@@ -49,7 +49,7 @@ Windows treats both parameters as special when set to(SIZE_T)− 1(SIZE_T)−1
 			 idle periods to reduce resident memory pressure.
 */
 
-void TrimCurrentProcessWorkingSetIdle(void)
+void TrimCurrentProcessWorkingSet(void)
 {
 	HANDLE hProcess = GetCurrentProcess();
 
@@ -59,8 +59,8 @@ void TrimCurrentProcessWorkingSetIdle(void)
 	}
 }
 #else
-void CompactHeapsIdle(void){;}
-void TrimCurrentProcessWorkingSetIdle(void) { ; }
+void CompactHeaps(void){;}
+void TrimCurrentProcessWorkingSet(void) { ; }
 #endif
 
 
