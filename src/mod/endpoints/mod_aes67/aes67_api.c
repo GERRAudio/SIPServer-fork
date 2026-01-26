@@ -1318,15 +1318,33 @@ void account_pipeline_children(g_stream_t *stream)
 
 void stop_pipeline(g_stream_t *stream)
 {
-	if (!stream) goto error;
+	if (!stream) goto error_no_unlock;
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
 	// CRITICAL: Set flag BEFORE acquiring lock - this immediately stops audio I/O
 	g_atomic_int_set(&stream->pipeline_active, 0);
 
-	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
-		goto done_no_unlock; 
+	// Try to acquire lock with retry logic
+	int retry_count = 0;
+	const int MAX_RETRIES = 50; // 50 * 10ms = 500ms max wait
+
+	while (retry_count < MAX_RETRIES) {
+		if (SWITCH_STATUS_SUCCESS == switch_mutex_trylock(stop_pipl_lock)) {
+			break; // Got the lock
+		}
+
+		// Didn't get lock, yield and retry
+		switch_yield(10000); // Sleep 10ms
+		retry_count++;
 	}
+
+	if (retry_count >= MAX_RETRIES) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+						  "Failed to acquire stop_pipl_lock after %d retries, forcing cleanup\n", MAX_RETRIES);
+		// Continue anyway - we MUST clean up
+		// The atomic flag prevents new operations, so this is safe
+	}
+
 
 	// STOP ALL TIMERS/SOURCES FIRST (atomic)
 	gint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
@@ -1419,14 +1437,13 @@ void stop_pipeline(g_stream_t *stream)
 	//periodic_mem_check();
 
 error_unlock:
-	switch_mutex_unlock(stop_pipl_lock);
-
+	// Only unlock if we actually acquired it
+	if (retry_count < MAX_RETRIES) { switch_mutex_unlock(stop_pipl_lock); }
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 	return;
 
-error:
+error_no_unlock:
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline stop error, no stream found\n");
-done_no_unlock:
 	return;
 }
 
