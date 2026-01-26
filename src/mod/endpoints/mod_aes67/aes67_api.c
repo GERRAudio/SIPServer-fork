@@ -150,10 +150,10 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 	gchar *pad_name = NULL;
 	guint ch_idx;
 
-	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)){
-		return G_SOURCE_CONTINUE; // Shutdown in progress
-	} else
-		switch_mutex_unlock(stop_pipl_lock);
+	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)){			//shutdown in progress
+		goto done;				  // Use goto to shared cleanup
+								 // Shutdown in progress
+	} 	//no shutdown, just go on
 
 	pad_name = AL_gst_pad_get_name(pad);
 	if(sscanf(pad_name, "src_%u", &ch_idx) != 1)
@@ -180,7 +180,11 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(tee));
 	// setting pipeline state to null here kills audio so just deref the pointer
 	DA_gst_object_unref(GST_OBJECT(pipeline));	
-	DA_g_free(pad_name);			//counted
+	DA_g_free(pad_name);						//counted
+	switch_mutex_unlock(stop_pipl_lock);
+	return;
+done:
+	DA_gst_object_unref(GST_OBJECT(pipeline));
 }
 
 gboolean update_clock(gpointer userdata)			//is this a (critical) section
@@ -462,6 +466,8 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	g_rec_mutex_unlock(ch_mutex);
 
 	if (appsink) {
+		gst_element_send_event(appsink, gst_event_new_flush_start());
+		gst_element_send_event(appsink, gst_event_new_flush_stop(TRUE));
 		while (!gst_app_sink_is_eos(GST_APP_SINK(appsink))) {
 			sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), timeout);
 			if (sample) {
@@ -785,8 +791,10 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			"retrieve-sender-address", FALSE, 
 			NULL);
 		g_object_set(udp_source, "caps", udp_caps, NULL);
-		DA_gst_caps_unref(udp_caps);
-		udp_caps = NULL;
+		stream->jitterbuf_signal_id = g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map),
+															udp_caps, // Don't ref here, destroy_caps will handle it
+															destroy_caps, 0);
+
 
                                                                                      
 
@@ -1258,12 +1266,14 @@ void account_pipeline_children(g_stream_t *stream)
 			elements++;
 			// Count pads on this element
 			GstIterator *pad_iter = gst_element_iterate_pads(GST_ELEMENT(obj));
-			GValue pad_item = G_VALUE_INIT;
-			while (pad_iter && gst_iterator_next(pad_iter, &pad_item) == GST_ITERATOR_OK) {
-				pads++;
-				g_value_reset(&pad_item);
+			if (pad_iter) {
+				GValue pad_item = G_VALUE_INIT;
+				while (pad_iter && gst_iterator_next(pad_iter, &pad_item) == GST_ITERATOR_OK) {
+					pads++;
+					g_value_reset(&pad_item);
+				}
+				gst_iterator_free(pad_iter);
 			}
-			gst_iterator_free(pad_iter);
 		}
 		g_value_reset(&item);
 	}
@@ -1304,6 +1314,7 @@ void stop_pipeline(g_stream_t *stream)
 	if (stream->deinterleave_signal_id > 0) {
 		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
 		if (deinterleave) {
+			g_signal_handler_block(deinterleave, stream->deinterleave_signal_id); // Block first
 			g_signal_handler_disconnect(deinterleave, stream->deinterleave_signal_id);
 			DA_gst_object_unref(GST_OBJECT(deinterleave));
 			deinterleave = NULL;
