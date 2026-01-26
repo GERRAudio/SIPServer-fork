@@ -1718,6 +1718,14 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 
 	switch_scheduler_task_t *task = NULL;
 
+	// set up time to call mem check
+	if (switch_event_bind("mod_aes67", SWITCH_EVENT_HEARTBEAT, SWITCH_EVENT_SUBCLASS_ANY, heartbeat_callback, NULL) !=
+		SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't bind to heartbeat event!\n");
+		return SWITCH_STATUS_TERM;
+	}
+
+
 	/* indicate that the module should continue to be loaded */
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -2622,15 +2630,6 @@ static switch_status_t load_config(void)
 }
 
 
-/*
-  If it exists, this is called in it's own thread when the module-load completes
-  If it returns anything but SWITCH_STATUS_TERM it will be called again automatically
-  Macro expands to: switch_status_t mod_aes67_runtime() */
-SWITCH_MODULE_RUNTIME_FUNCTION(mod_aes67_runtime)
-{
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Returning from runtime\n");
-	return SWITCH_STATUS_TERM;
-}
 
 
 // cleans memory on a periodic basis, called from call routines
@@ -2648,7 +2647,6 @@ void periodic_mem_check()
 	last_check = now;
 
 	switch_time_t idle_time = now - aes67_globals.last_call_activity;
-
 	if ((idle_time > (IDLE_THRESHOLD_SEC * 1000000LL))) {
 		switch_mutex_lock(aes67_globals.pvt_lock);
 		TrimCurrentProcessWorkingSet();
@@ -2657,13 +2655,33 @@ void periodic_mem_check()
 		aes67_globals.compact_heap_cnt++;
 		aes67_globals.last_call_activity = now;
 		switch_mutex_unlock(aes67_globals.pvt_lock);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Periodic mem clear firing\n");
 	}
 }
+
+static void heartbeat_callback(switch_event_t *event)
+{
+	periodic_mem_check();
+}
+
+
+/*
+  If it exists, this is called in it's own thread when the module-load completes
+  If it returns anything but SWITCH_STATUS_TERM it will be called again automatically
+  Macro expands to: switch_status_t mod_aes67_runtime() */
+SWITCH_MODULE_RUNTIME_FUNCTION(mod_aes67_runtime)
+{
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Returning from runtime\n");
+	return SWITCH_STATUS_TERM;
+}
+
 
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 {
 	if (aes67_globals.ptp_stats_cb_id != -1) gst_ptp_statistics_callback_remove(aes67_globals.ptp_stats_cb_id);
 
+	switch_event_unbind_callback(heartbeat_callback);
+	
 	destroy_audio_streams();
 	destroy_shared_audio_streams();
 	destroy_codecs();
@@ -2720,6 +2738,8 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 
 	return SWITCH_STATUS_SUCCESS;
 }
+
+
 
 static switch_status_t create_codecs(int restart)
 {

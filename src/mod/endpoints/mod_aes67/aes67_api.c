@@ -1370,7 +1370,7 @@ void stop_pipeline(g_stream_t *stream)
 
 	//  FINAL FREE
 	g_free(stream);
-	periodic_mem_check();
+	//periodic_mem_check();
 
 error_unlock:
 	switch_mutex_unlock(stop_pipl_lock);
@@ -1511,7 +1511,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 	if (!stream || ch_idx >= MAX_CHANNELS) goto no_stream; // added check
 
-	periodic_mem_check();
+	//periodic_mem_check();
 
 	if (session == NULL)
 		NAME_ELEMENT(name, "appsink", ch_idx);

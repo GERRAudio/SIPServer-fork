@@ -93,5 +93,6 @@ void account_pipeline_children(g_stream_t *stream);
 void CompactHeaps(void);
 void TrimCurrentProcessWorkingSet(void);
 void periodic_mem_check();
+static void heartbeat_callback(switch_event_t *event);
 
 #endif /*__GSTREAMER_API__*/
