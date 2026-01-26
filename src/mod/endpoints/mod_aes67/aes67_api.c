@@ -191,9 +191,11 @@ gboolean update_clock(gpointer userdata)			//is this a (critical) section
 {
 	g_stream_t *stream = (g_stream_t *)userdata;
 
-	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
-		goto done_no_unlock; 
+	if (!g_atomic_int_get(&stream->pipeline_active)) {
+		goto done_no_unlock;	// Fast path exit
 	}
+
+
 	GstStructure *stats = NULL;
 	guint32 rtp_timestamp;
 	GstElement *pipeline = NULL;
@@ -228,7 +230,6 @@ gboolean update_clock(gpointer userdata)			//is this a (critical) section
 	DA_gst_structure_free(stats);
 	DA_gst_object_unref(GST_OBJECT(rtpdepay));
 done:
-	switch_mutex_unlock(stop_pipl_lock);
 done_no_unlock:
 	return G_SOURCE_CONTINUE;
 }
@@ -251,7 +252,12 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
 		goto done_no_unlock; 
 	}
-
+	// Also check atomic flag
+	if (!g_atomic_int_get(&stream->pipeline_active)) {
+		switch_mutex_unlock(stop_pipl_lock);
+		goto done_no_unlock;
+		
+	}
 	gchar name[ELEMENT_NAME_SIZE];
 	gchar dot_name[ELEMENT_NAME_SIZE + 10];
 
@@ -711,6 +717,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create the pipeline\n");
 		goto error;
 	}
+	stream->pipeline_active = 0; // Start inactive
 
 	if (data->direction & DIRECTION_RX) {
 		GstElement *udp_source = NULL;
@@ -1220,7 +1227,7 @@ exit:
 	DA_NoNulling_dec_objs(udpsrc);
 	DA_NoNulling_dec_objs(fakesink);
 	// DA_NoNulling_dec_objs(GST_OBJECT(rtpdepay));		//done above
-
+	g_atomic_int_set(&stream->pipeline_active, 1); // Mark as active
 	return stream;
 }
 
@@ -1314,7 +1321,12 @@ void stop_pipeline(g_stream_t *stream)
 	if (!stream) goto error;
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
-	switch_mutex_lock(stop_pipl_lock);
+	// CRITICAL: Set flag BEFORE acquiring lock - this immediately stops audio I/O
+	g_atomic_int_set(&stream->pipeline_active, 0);
+
+	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+		goto done_no_unlock; 
+	}
 
 	// STOP ALL TIMERS/SOURCES FIRST (atomic)
 	gint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
@@ -1413,8 +1425,9 @@ error_unlock:
 	return;
 
 error:
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline stop erro, no stream found\n");
-	;
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline stop error, no stream found\n");
+done_no_unlock:
+	return;
 }
 
 
@@ -1437,9 +1450,7 @@ void start_mainloop(GMainLoop *mainloop)
 gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guint ch_idx, switch_timer_t *timer)
 {
 	gboolean retval = FALSE;
-	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
-		goto done_no_unlock;
-	}
+
 	GstState cur_state = GST_STATE_NULL;
 	GstState pending_state = GST_STATE_NULL;
 	GstBuffer *buf = NULL;
@@ -1451,11 +1462,20 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	GstElement *appsrc = NULL;
 	if (!stream || ch_idx >= MAX_CHANNELS) goto no_stream; // added check
 
+	// Fast atomic check - no mutex needed
+	if (!g_atomic_int_get(&stream->pipeline_active)) {
+		goto done_no_unlock;		// Pipeline stopping, bail immediately
+	}
+
 	// PER-CHANNEL lock (critical)
 	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 	g_rec_mutex_lock(ch_mutex);
+
 	GstPipeline *pipeline = stream->pipeline;
-	if (!pipeline) goto error_unlock;						//added check
+	if (!pipeline || !g_atomic_int_get(&stream->pipeline_active)){ // added check
+		g_rec_mutex_unlock(ch_mutex);
+		goto no_stream;
+	}
 
 	NAME_ELEMENT(name, "appsrc", ch_idx);
 	appsrc = AL_gst_bin_get_by_name(GST_BIN(pipeline), name);	//check 
@@ -1516,22 +1536,21 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	retval = TRUE;
 	DA_gst_buffer_unref(buf);
 	DA_gst_object_unref(GST_OBJECT(appsrc));
-	switch_mutex_unlock(stop_pipl_lock);
+
 	return retval;
 error_exit:
 	DA_gst_buffer_unref(buf);
 	DA_gst_object_unref(GST_OBJECT(appsrc));
-	switch_mutex_unlock(stop_pipl_lock);
+
 	return retval;
 error_unlock:
 	DA_gst_buffer_unref(buf);
 	DA_gst_object_unref(GST_OBJECT(appsrc));	
 	g_rec_mutex_unlock(ch_mutex); // added
-	switch_mutex_unlock(stop_pipl_lock);
+
 done_no_unlock:
 	return retval;
 no_stream:
-	switch_mutex_unlock(stop_pipl_lock);
 	return 0;
 }
 
@@ -1544,10 +1563,6 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	gsize total_bytes = 0;
 	GstState cur_state = GST_STATE_NULL, pending_state=GST_STATE_NULL;
 
-	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
-		goto done_no_unlock;
-	}
-
 	GstBuffer *buf = NULL;
 	GstSample *sample = NULL;
 
@@ -1557,6 +1572,10 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	GstElement *appsink = NULL;
 
 	if (!stream || ch_idx >= MAX_CHANNELS) goto no_stream; // added check
+														   // Fast atomic check - no mutex needed
+	if (!g_atomic_int_get(&stream->pipeline_active)) {
+		goto done_no_unlock;		 // Pipeline stopping, bail immediately
+	}
 
 	//periodic_mem_check();
 
@@ -1568,6 +1587,12 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// PER-CHANNEL lock (critical) 
 	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 	g_rec_mutex_lock(ch_mutex);
+	// Double-check after acquiring channel mutex
+	if (!g_atomic_int_get(&stream->pipeline_active)) { 
+		g_rec_mutex_unlock(ch_mutex);
+		goto done_no_unlock;
+	}
+
 
 	appsink = gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // threadsafe
 	if (!appsink) {
@@ -1661,17 +1686,14 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 out_unlock:
 	g_rec_mutex_unlock(ch_mutex); // added
-	switch_mutex_unlock(stop_pipl_lock);
 done_no_unlock:
 	return (int) total_bytes;
 
 no_stream:
-	switch_mutex_unlock(stop_pipl_lock);
 	return 0;
 
 error_unlock_noderef:
 	g_rec_mutex_unlock(ch_mutex); // added
-	switch_mutex_unlock(stop_pipl_lock);
 	return 0;
 }
 

@@ -65,6 +65,7 @@ struct g_stream
   gboolean pause_backup_sender;
   gboolean txdrop;
   volatile gint backup_sender_idle_timer;
+  volatile gint pipeline_active; // 0 = stopping/stopped, 1 = active
   int backup_sender_idle_wait_ms;
   guint bus_watch_id;                   //added
   gulong deinterleave_signal_id;        //added
