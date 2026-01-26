@@ -190,6 +190,10 @@ done:
 gboolean update_clock(gpointer userdata)			//is this a (critical) section
 {
 	g_stream_t *stream = (g_stream_t *)userdata;
+
+	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+		goto done_no_unlock; 
+	}
 	GstStructure *stats = NULL;
 	guint32 rtp_timestamp;
 	GstElement *pipeline = NULL;
@@ -201,7 +205,7 @@ gboolean update_clock(gpointer userdata)			//is this a (critical) section
 	rtpdepay = AL_gst_bin_get_by_name(GST_BIN(pipeline), RTP_DEPAY);
 	if (!rtpdepay) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "rtpdepay not found in pipeline");
-		return G_SOURCE_CONTINUE;
+		goto done;
 	}
 
 	g_object_get(G_OBJECT(rtpdepay), "stats", &stats, NULL);		//allocates
@@ -223,6 +227,9 @@ gboolean update_clock(gpointer userdata)			//is this a (critical) section
 
 	DA_gst_structure_free(stats);
 	DA_gst_object_unref(GST_OBJECT(rtpdepay));
+done:
+	switch_mutex_unlock(stop_pipl_lock);
+done_no_unlock:
 	return G_SOURCE_CONTINUE;
 }
 
@@ -240,6 +247,11 @@ gboolean update_clock(gpointer userdata)			//is this a (critical) section
 
 gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 {
+	gboolean ret = FALSE;
+	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+		goto done_no_unlock; 
+	}
+
 	gchar name[ELEMENT_NAME_SIZE];
 	gchar dot_name[ELEMENT_NAME_SIZE + 10];
 
@@ -249,7 +261,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GstElement *queue = NULL;
 	GstElement *appsink = NULL;
 
-	gboolean ret = FALSE;
+
 	if (!stream || ch_idx >= MAX_CHANNELS) goto error; //added check
 
 	NAME_ELEMENT(name, "tee", ch_idx);
@@ -371,7 +383,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	DA_NoNulling_dec_objs(GST_OBJECT(tee)); 
 	DA_NoNulling_dec_objs(GST_OBJECT(queue));
 	DA_NoNulling_dec_objs(GST_OBJECT(appsink));
-
+	switch_mutex_unlock(stop_pipl_lock);
 	return ret;
 
 error: // TODO: check if we should deallocate other things here
@@ -380,6 +392,8 @@ error: // TODO: check if we should deallocate other things here
 	DA_gst_object_unref(GST_OBJECT(appsink));			//check
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
+	switch_mutex_unlock(stop_pipl_lock);
+done_no_unlock:
 	return ret;
 }
 
@@ -395,6 +409,10 @@ error: // TODO: check if we should deallocate other things here
 
 gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 {
+	gboolean ret = FALSE;
+	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+		goto done_no_unlock; 
+	}
 	gchar name[ELEMENT_NAME_SIZE];
 	gchar dot_name[ELEMENT_NAME_SIZE + 10];
 
@@ -404,7 +422,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GstPad *tee_src_pad = NULL;
 	GstPad *queue_sink_pad = NULL;
 
-	gboolean ret = FALSE;
+
 	if (!stream || ch_idx >= MAX_CHANNELS) goto exit; // added check
 	/*
 	 * tee -> queue -> appsink
@@ -536,7 +554,8 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(appsink));
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
-
+	switch_mutex_unlock(stop_pipl_lock);
+done_no_unlock:
 	return ret;
 }
 
@@ -546,13 +565,12 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 	g_stream_t *stream = (g_stream_t *)userdata;
 
     if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) {
-		return G_SOURCE_CONTINUE; // Shutdown in progress
-	} else
-		switch_mutex_unlock(stop_pipl_lock);
-
+		retval = G_SOURCE_CONTINUE; // Shutdown in progress
+		goto done_no_unlock;
+		
+	}
 
 	GstElement *fakesink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-monitor-fakesink");
-
 	GstClock *clock = NULL;
 	GstBuffer *buffer = NULL;
 	GstSample *last_sample = NULL;
@@ -563,11 +581,11 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 
 	if (fakesink) {
 		clock = AL_gst_element_get_clock(fakesink);
-
 		if (!clock) {
 			//switch_log_printf(...);
 			DA_gst_object_unref(GST_OBJECT(GST_OBJECT(fakesink))); // added
-			return G_SOURCE_CONTINUE;
+			retval = G_SOURCE_CONTINUE;
+	   	    goto done;
 		} 
 
 		if (clock) {
@@ -581,7 +599,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			switch_mutex_unlock(alloc_bkup_lock);
 
 			g_object_get(G_OBJECT(fakesink), "last-sample", &last_sample, NULL);	//allocates!
-							 /// added check
+							
 			if (!last_sample) goto exit;
 			AL_cnt_samples(last_sample); // accounting
 
@@ -649,7 +667,9 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(clock));
 	DA_gst_object_unref(GST_OBJECT(fakesink));
 	g_free(host);			//not counted
-		
+done:
+	switch_mutex_unlock(stop_pipl_lock);
+done_no_unlock:
 	return retval;
 }
 
@@ -1208,6 +1228,9 @@ exit:
 void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locaked by caller
 {
 	if (!stream) goto error; //added check
+	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+		goto error;
+	}
 	g_atomic_int_set(&stream->clock_sync, 0);
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_READY);
 
@@ -1232,9 +1255,9 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locaked by caller
 	dump_pipeline(stream->pipeline, "ptp-clock-switch");
 	g_atomic_int_set(&stream->clock_sync, 1);
 	//switch_mutex_unlock(general_pipl_lock);  //added check
-
+	switch_mutex_unlock(stop_pipl_lock);
 error:
-	;
+	return;
 }
 
 
@@ -1413,12 +1436,15 @@ void start_mainloop(GMainLoop *mainloop)
 
 gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guint ch_idx, switch_timer_t *timer)
 {
+	gboolean retval = FALSE;
+	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+		goto done_no_unlock;
+	}
 	GstState cur_state = GST_STATE_NULL;
 	GstState pending_state = GST_STATE_NULL;
 	GstBuffer *buf = NULL;
 	GstMapInfo info;
 
-	gboolean retval = FALSE;
 	GstFlowReturn result;
 
 	gchar name[ELEMENT_NAME_SIZE];
@@ -1490,17 +1516,22 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	retval = TRUE;
 	DA_gst_buffer_unref(buf);
 	DA_gst_object_unref(GST_OBJECT(appsrc));
+	switch_mutex_unlock(stop_pipl_lock);
 	return retval;
 error_exit:
 	DA_gst_buffer_unref(buf);
-	DA_gst_object_unref(GST_OBJECT(appsrc));				
+	DA_gst_object_unref(GST_OBJECT(appsrc));
+	switch_mutex_unlock(stop_pipl_lock);
 	return retval;
 error_unlock:
 	DA_gst_buffer_unref(buf);
 	DA_gst_object_unref(GST_OBJECT(appsrc));	
 	g_rec_mutex_unlock(ch_mutex); // added
+	switch_mutex_unlock(stop_pipl_lock);
+done_no_unlock:
 	return retval;
 no_stream:
+	switch_mutex_unlock(stop_pipl_lock);
 	return 0;
 }
 
@@ -1510,13 +1541,18 @@ no_stream:
 int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes, guint ch_idx, switch_timer_t *timer,
 				 gchar *session)
 {
+	gsize total_bytes = 0;
 	GstState cur_state = GST_STATE_NULL, pending_state=GST_STATE_NULL;
+
+	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+		goto done_no_unlock;
+	}
 
 	GstBuffer *buf = NULL;
 	GstSample *sample = NULL;
 
 	GstMapInfo info;
-	gsize total_bytes = 0;
+
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *appsink = NULL;
 
@@ -1620,24 +1656,31 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// stream->leftover_bytes[ch_idx]);
 
 // fall thru
+	switch_mutex_unlock(stop_pipl_lock);
 	return (int) total_bytes;
 
 out_unlock:
 	g_rec_mutex_unlock(ch_mutex); // added
+	switch_mutex_unlock(stop_pipl_lock);
+done_no_unlock:
 	return (int) total_bytes;
 
 no_stream:
+	switch_mutex_unlock(stop_pipl_lock);
 	return 0;
 
-error_unlock:
-	//DA_gst_object_unref(GST_OBJECT(appsink)); // check
 error_unlock_noderef:
 	g_rec_mutex_unlock(ch_mutex); // added
+	switch_mutex_unlock(stop_pipl_lock);
 	return 0;
 }
 
 void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 {
+	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+		goto done_no_unlock; 
+	}
+
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *valve = NULL;
 	if (!stream || ch_idx >= MAX_CHANNELS) goto exit; // added check
@@ -1664,6 +1707,8 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	//fall thru
 exit: 
 	DA_gst_object_unref(GST_OBJECT(valve));		//check 
+	switch_mutex_unlock(stop_pipl_lock);
+done_no_unlock:
 	return;
 }
 
@@ -1672,6 +1717,9 @@ gchar *get_rtp_stats(g_stream_t *stream)
 {
 	GstElement *rtpjitbuf = NULL;
 	gchar *stats_str = NULL;		//fixed: dynamic allocation required since this is NOT on the stack
+	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+		goto done_no_unlock; 
+	}
 	if (!stream) goto exit; //added check
 
 	rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
@@ -1688,11 +1736,16 @@ gchar *get_rtp_stats(g_stream_t *stream)
 		stats_str = g_strdup_printf(""); // must be heap
 	}
 exit:
+	switch_mutex_unlock(stop_pipl_lock);
+done_no_unlock:
 	return stats_str;			//deallocated by caller
 }
 
 void drop_output_buffers(gboolean drop, g_stream_t *stream)
 {
+	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+		goto done_no_unlock; 
+	}
 	GstElement *tx_valve = NULL;
 	gchar name[ELEMENT_NAME_SIZE];
 	if (!stream) goto exit;
@@ -1710,4 +1763,7 @@ void drop_output_buffers(gboolean drop, g_stream_t *stream)
 	//fall thru
 exit:
 	DA_gst_object_unref(GST_OBJECT(tx_valve));
+	switch_mutex_unlock(stop_pipl_lock);
+done_no_unlock:
+	return;
 }
