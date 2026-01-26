@@ -150,6 +150,11 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 	gchar *pad_name = NULL;
 	guint ch_idx;
 
+	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)){
+		return G_SOURCE_CONTINUE; // Shutdown in progress
+	} else
+		switch_mutex_unlock(stop_pipl_lock);
+
 	pad_name = AL_gst_pad_get_name(pad);
 	if(sscanf(pad_name, "src_%u", &ch_idx) != 1)
 	{
@@ -256,19 +261,20 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	}
 
 	g_rec_mutex_lock(ch_mutex);
+
 	NAME_SESSION_ELEMENT(name, "queue", ch_idx, session);
 	queue =  AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
-	g_rec_mutex_unlock(ch_mutex);
 
 	if (queue) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "%s already exists in the pipeline ch: %d, session %s",
 						  name, ch_idx, session);
 		DA_gst_object_unref(GST_OBJECT(queue));
 		queue = NULL;
+		g_rec_mutex_unlock(ch_mutex);
 		goto error;
 	}
 
-	g_rec_mutex_lock(ch_mutex);
+
 #ifndef ENABLE_THREADSHARE
 	queue = AL_gst_element_factory_make("queue", name);
 #else
@@ -361,6 +367,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	DA_NoNulling_dec_objs(GST_OBJECT(tee)); 
 	DA_NoNulling_dec_objs(GST_OBJECT(queue));
 	DA_NoNulling_dec_objs(GST_OBJECT(appsink));
+
 	return ret;
 
 error: // TODO: check if we should deallocate other things here
@@ -423,7 +430,9 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		goto exit;
 	}
 
+	g_rec_mutex_lock(ch_mutex);
 	if (!(queue_sink_pad = AL_gst_element_get_static_pad(queue, "sink"))) {
+		g_rec_mutex_unlock(ch_mutex);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to get sink pad from the queue element ch: %d, session: %s", ch_idx, session);
 		goto exit;
@@ -432,8 +441,10 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	if (!(tee_src_pad = AL_gst_pad_get_peer(queue_sink_pad))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to get src pad from the tee element ch: %d, session: %s", ch_idx, session);
+		g_rec_mutex_unlock(ch_mutex);
 		goto exit;
 	}
+	g_rec_mutex_unlock(ch_mutex);
 
 	if (!gst_pad_unlink(tee_src_pad, queue_sink_pad)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to unlink tee and queue ch: %d, session: %s",
@@ -444,6 +455,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	// Drain pending samples from appsink BEFORE bin_remove to avoid races
 	GstSample *sample = NULL;
 	GstClockTime timeout = 100 * GST_MSECOND; // 100ms total drain window
+
 	g_rec_mutex_lock(ch_mutex);
 	NAME_SESSION_ELEMENT(name, appsink, ch_idx, session);
 	appsink = gst_bin_get_by_name(GST_OBJECT(stream->pipeline), name);
@@ -525,8 +537,14 @@ exit:
 static gboolean backup_sender_timeout_cb(gpointer userdata)
 {
 	gboolean retval = TRUE;
-
 	g_stream_t *stream = (g_stream_t *)userdata;
+
+    if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) {
+		return G_SOURCE_CONTINUE; // Shutdown in progress
+	} else
+		switch_mutex_unlock(stop_pipl_lock);
+
+
 	GstElement *fakesink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-monitor-fakesink");
 
 	GstClock *clock = NULL;
@@ -1262,7 +1280,6 @@ void stop_pipeline(g_stream_t *stream)
 {
 	if (!stream) goto error;
 
-
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
 	switch_mutex_lock(stop_pipl_lock);
 
@@ -1353,6 +1370,8 @@ void stop_pipeline(g_stream_t *stream)
 
 	//  FINAL FREE
 	g_free(stream);
+	periodic_mem_check();
+
 error_unlock:
 	switch_mutex_unlock(stop_pipl_lock);
 
@@ -1491,6 +1510,8 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	GstElement *appsink = NULL;
 
 	if (!stream || ch_idx >= MAX_CHANNELS) goto no_stream; // added check
+
+	periodic_mem_check();
 
 	if (session == NULL)
 		NAME_ELEMENT(name, "appsink", ch_idx);

@@ -259,7 +259,8 @@ static struct {
 	switch_time_t last_stream_activity;		// Last pullbuffer/pushbuffer time
 	guint64 trim_cnt;
 	guint64 compact_heap_cnt;
-	#define IDLE_THRESHOLD_SEC 30			// 30s idle before trim
+	#define IDLE_THRESHOLD_SEC 60			// necessary idle time (no calling) before trim
+	#define IDLE_POLLING_SEC 5				// to reduce polling overhead
 	// added to track clr mem
 
 
@@ -276,7 +277,7 @@ static struct {
 	switch_frame_t cng_frame;
 	unsigned char databuf[SWITCH_RECOMMENDED_BUFFER_SIZE];
 	unsigned char cngbuf[SWITCH_RECOMMENDED_BUFFER_SIZE];
-	private_t *call_list;
+	volatile private_t *call_list;
 	audio_stream_t *stream_list;
 	/*! Streams that can be used by multiple endpoints at the same time */
 	switch_hash_t *sh_streams;
@@ -854,12 +855,12 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "%s CHANNEL HANGUP\n",
 					  switch_channel_get_name(switch_core_session_get_channel(session)));
-	// to clean mem
+	// poll used by clean mem
 	aes67_globals.last_call_activity = switch_micro_time_now();
 	//
 	return SWITCH_STATUS_SUCCESS;
 error:
-	// to clean mem
+	// poll used by clean mem
 	aes67_globals.last_call_activity = switch_micro_time_now();
 	//
 	return SWITCH_STATUS_FALSE;
@@ -1137,7 +1138,7 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 	samples = bytes / sizeof(int16_t);
 	STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added
 	switch_mutex_unlock(aes67_globals.device_lock);
-	// clear mem
+	// poll for clear mem
 	// After pullbuffers() or pushbuffer() succeeds
 	aes67_globals.last_call_activity = switch_micro_time_now();
 	//
@@ -1231,7 +1232,7 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 		status = SWITCH_STATUS_SUCCESS;
 	}
 	// After pullbuffers() or pushbuffer() succeeds
-	// try to clear mem
+	// poll for clear mem
 	aes67_globals.last_call_activity = switch_micro_time_now();
 	//
 
@@ -1713,6 +1714,9 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	// deal with mamanging memory periodically
 	aes67_globals.last_call_activity = switch_micro_time_now();
 	aes67_globals.last_stream_activity = switch_micro_time_now();
+
+
+	switch_scheduler_task_t *task = NULL;
 
 	/* indicate that the module should continue to be loaded */
 	return SWITCH_STATUS_SUCCESS;
@@ -2617,6 +2621,7 @@ static switch_status_t load_config(void)
 	return status;
 }
 
+
 /*
   If it exists, this is called in it's own thread when the module-load completes
   If it returns anything but SWITCH_STATUS_TERM it will be called again automatically
@@ -2624,47 +2629,39 @@ static switch_status_t load_config(void)
 SWITCH_MODULE_RUNTIME_FUNCTION(mod_aes67_runtime)
 {
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Returning from runtime\n");
+	return SWITCH_STATUS_TERM;
+}
 
-	// IDLE DETECTION
-	// In the main runtime loop, after existing logic:
+
+// cleans memory on a periodic basis, called from call routines
+void periodic_mem_check()
+{
+	// IDLE DETECTION and mem clr
 	switch_time_t now = switch_micro_time_now();
+	static switch_time_t last_check = 0; // persists
+	
+	if (last_check == 0) last_check = now;
+
+	if ((now - last_check) < IDLE_POLLING_SEC * 1000000LL) { 
+		return;							  // Skip - too soon
+	}
+	last_check = now;
+
 	switch_time_t idle_time = now - aes67_globals.last_call_activity;
 
-	if (idle_time > (IDLE_THRESHOLD_SEC * 1000000LL)) {
-		// Double-check no active calls
-		struct private_object *tp;  
+	if ((idle_time > (IDLE_THRESHOLD_SEC * 1000000LL))) {
 		switch_mutex_lock(aes67_globals.pvt_lock);
-		int active_calls = 0;
-		for (tp = aes67_globals.call_list; tp; tp = tp->next) {
-			if (switch_test_flag(tp, TFLAG_IO)) { // Active IO
-				active_calls++;
-				break;
-			}
-		}
+		TrimCurrentProcessWorkingSet();
+		aes67_globals.trim_cnt++;
+		CompactHeaps();
+		aes67_globals.compact_heap_cnt++;
+		aes67_globals.last_call_activity = now;
 		switch_mutex_unlock(aes67_globals.pvt_lock);
-
-		// Check streams idle (no recent buffer activity)
-		if (active_calls == 0 && (now - aes67_globals.last_stream_activity) > (IDLE_THRESHOLD_SEC * 1000000LL)) {
-
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "AES67 idle detected (%lus), calling clrwrkset\n",
-							  idle_time / 1000000);
-
-			TrimCurrentProcessWorkingSet();
-			aes67_globals.trim_cnt++;
-			CompactHeaps();
-			aes67_globals.compact_heap_cnt++;
-
-			// Reset activity timer after cleanup
-			aes67_globals.last_call_activity = now;
-		}
 	}
-
-	return SWITCH_STATUS_TERM;
 }
 
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 {
-
 	if (aes67_globals.ptp_stats_cb_id != -1) gst_ptp_statistics_callback_remove(aes67_globals.ptp_stats_cb_id);
 
 	destroy_audio_streams();
@@ -3116,7 +3113,6 @@ static switch_status_t reload_config()
 
 SWITCH_STANDARD_API(aes_cmd)
 {
-
 	char *argv[10] = {0};
 	int argc = 0;
 	char *mycmd = NULL;
@@ -3303,13 +3299,13 @@ SWITCH_STANDARD_API(aes_cmd)
 	} else if (!strcasecmp(argv[0], "clrwrkset")) {
 		TrimCurrentProcessWorkingSet();
 		aes67_globals.trim_cnt++;
-		stream->write_function(stream, "Working st cleared\n");
+		stream->write_function(stream, "Working set cleared\n");
 	}else if (!strcasecmp(argv[0], "compactheap")){
 		CompactHeaps();
 		aes67_globals.compact_heap_cnt++;
 		stream->write_function(stream, "Compacted idle heap\n");
 	} else if (!strcasecmp(argv[0], "clrcount")) {
-		stream->write_function(stream, "Mem cleanup counts: trim: %" G_GUINT64_FORMAT " heap: %" G_GUINT64_FORMAT "\n"
+		stream->write_function(stream, "Mem cleanup counts: trim:%" G_GUINT64_FORMAT " heap:%" G_GUINT64_FORMAT "\n"
 			, aes67_globals.trim_cnt, aes67_globals.compact_heap_cnt);
 	}
 

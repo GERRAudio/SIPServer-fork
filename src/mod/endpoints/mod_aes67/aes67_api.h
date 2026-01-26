@@ -92,5 +92,6 @@ void dump_pipeline (GstPipeline *pipe, const char *name);
 void account_pipeline_children(g_stream_t *stream);
 void CompactHeaps(void);
 void TrimCurrentProcessWorkingSet(void);
+void periodic_mem_check();
 
 #endif /*__GSTREAMER_API__*/
