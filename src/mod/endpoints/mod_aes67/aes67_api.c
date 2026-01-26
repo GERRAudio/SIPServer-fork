@@ -143,18 +143,19 @@ static void destroy_caps(void *data, GClosure G_GNUC_UNUSED *closure)
 
 static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpointer userdata)
 {
-	GstElement *pipeline = GST_ELEMENT(AL_gst_element_get_parent(deinterleave));		
+	GstElement *pipeline = NULL; 
+
 	GstElement *tee = NULL;
 	GstPad *tee_sink_pad = NULL;
 	gchar name[ELEMENT_NAME_SIZE];
 	gchar *pad_name = NULL;
 	guint ch_idx;
 
-	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)){			//shutdown in progress
-		goto done;				  // Use goto to shared cleanup
-								 // Shutdown in progress
-	} 	//no shutdown, just go on
-
+	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)){	
+		goto done;															 // Shutdown in progress
+	} 	
+	// no shutdown, just go on
+	pipeline = GST_ELEMENT(AL_gst_element_get_parent(deinterleave));		
 	pad_name = AL_gst_pad_get_name(pad);
 	if(sscanf(pad_name, "src_%u", &ch_idx) != 1)
 	{
@@ -182,9 +183,8 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(pipeline));	
 	DA_g_free(pad_name);						//counted
 	switch_mutex_unlock(stop_pipl_lock);
-	return;
 done:
-	DA_gst_object_unref(GST_OBJECT(pipeline));
+	return;
 }
 
 gboolean update_clock(gpointer userdata)			//is this a (critical) section
@@ -462,7 +462,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 	g_rec_mutex_lock(ch_mutex);
 	NAME_SESSION_ELEMENT(name, appsink, ch_idx, session);
-	appsink = gst_bin_get_by_name(GST_OBJECT(stream->pipeline), name);
+	appsink = gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
 	g_rec_mutex_unlock(ch_mutex);
 
 	if (appsink) {
@@ -1181,7 +1181,7 @@ error:
 			DA_gst_object_unref(GST_OBJECT(stream->clock)); // added - check
 			stream->clock = NULL;
 		} else {
-			DA_NoNulling_dec_objs(stream->clock); // accounting
+			DA_NoNulling_dec_objs(GST_OBJECT(stream->clock)); // accounting
 		}
 		teardown_mainloop(stream->mainloop);							   // added - check
 		if (stream->mainloop != NULL) g_main_loop_unref(stream->mainloop); // added - check
@@ -1222,7 +1222,7 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locaked by caller
 		DA_gst_object_unref(GST_OBJECT(stream->clock)); // added check
 		stream->clock = NULL;
 	} else {
-		DA_NoNulling_dec_objs(stream->clock); // accounting
+		DA_NoNulling_dec_objs(GST_OBJECT(stream->clock)); // accounting
 	}
 
 	//switch_mutex_lock(general_pipl_lock); //aGStreamer + GLib atomics handle everything. 
@@ -1362,7 +1362,7 @@ void stop_pipeline(g_stream_t *stream)
 		DA_gst_object_unref(GST_OBJECT(stream->clock));
 		stream->clock = NULL;
 	} else {
-		DA_NoNulling_dec_objs(stream->clock); // accounting
+		DA_NoNulling_dec_objs(GST_OBJECT(stream->clock)); // accounting
 	}
 
 	// MAINLOOP + THREADS
