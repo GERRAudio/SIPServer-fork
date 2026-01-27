@@ -143,6 +143,14 @@ static void destroy_caps(void *data, GClosure G_GNUC_UNUSED *closure)
 
 static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpointer userdata)
 {
+	g_stream_t *stream = (g_stream_t *)userdata;
+
+	// Check if shutdown is in progress BEFORE any allocations
+	if (!stream || !g_atomic_int_get(&stream->pipeline_active)) {
+		goto done; // Bail immediately, no allocations
+	}
+
+
 	GstElement *pipeline = NULL; 
 
 	GstElement *tee = NULL;
@@ -490,8 +498,9 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 			sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), timeout);
 			if (sample) {
 				gst_sample_unref(sample);
-				sample = NULL;
 				DA_dec_samples(sample); // Track freed sample
+				sample = NULL;
+
 			} else {
 				break; // No more samples or timeout
 			}
@@ -757,9 +766,11 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		}
 
 		rtpjitbuf = AL_gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
+
+		#ifdef PUTBACKTHISERROR
 		stream->jitterbuf_signal_id = g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map), 
 			gst_caps_ref(udp_caps),  destroy_caps, 0);
-
+		#endif
 
 		g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency,
 		 "mode", 0 /* none */, 
@@ -805,8 +816,11 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			// The deinterleave will be linked to the tee dynamically
 		}
 
-		stream->deinterleave_signal_id = g_signal_connect(deinterleave, "pad-added", 
-			G_CALLBACK(deinterleave_pad_added), NULL);
+		//stream->deinterleave_signal_id = g_signal_connect(deinterleave, "pad-added", 
+			//G_CALLBACK(deinterleave_pad_added), NULL);
+		stream->deinterleave_signal_id =
+			g_signal_connect(deinterleave, "pad-added",
+			G_CALLBACK(deinterleave_pad_added), stream); 
 
 		g_object_set(udp_source, "address", data->rx_ip_addr, "port", data->rx_port, 
 			"multicast-iface", data->rtp_iface,
@@ -1358,7 +1372,7 @@ void stop_pipeline(g_stream_t *stream)
 	}
 
 	// ACCOUNT for linked pipeline objects
-	account_pipeline_children(stream); // count
+	//account_pipeline_children(stream); // count
 
 	// DUMP PIPELINE (still live)
 	dump_pipeline(stream->pipeline, "pipeline-stop");
@@ -1532,10 +1546,10 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	g_signal_emit_by_name(appsrc, "push-buffer", buf, &result);
 	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pushed buffer\n");
-	if (buf) {
-		DA_gst_buffer_unref(buf);
-		buf = NULL;
-	}
+	//if (buf) {
+		//DA_gst_buffer_unref(buf); ownership taken by gs
+		//buf = NULL;
+	//}
 	g_rec_mutex_unlock(ch_mutex); 
 
 	if (result == GST_FLOW_ERROR) {
