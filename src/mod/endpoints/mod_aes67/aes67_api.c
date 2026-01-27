@@ -151,10 +151,9 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 	gchar *pad_name = NULL;
 	guint ch_idx;
 
-	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)){	
-		goto done;															 // Shutdown in progress
-	} 	
-	// no shutdown, just go on
+
+	// no check for shutdown in progress here
+
 	pipeline = GST_ELEMENT(AL_gst_element_get_parent(deinterleave));		
 	pad_name = AL_gst_pad_get_name(pad);
 	if(sscanf(pad_name, "src_%u", &ch_idx) != 1)
@@ -182,7 +181,6 @@ exit:
 	// setting pipeline state to null here kills audio so just deref the pointer
 	DA_gst_object_unref(GST_OBJECT(pipeline));	
 	DA_g_free(pad_name);						//counted
-	switch_mutex_unlock(stop_pipl_lock);
 done:
 	return;
 }
@@ -249,14 +247,11 @@ done_no_unlock:
 gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 {
 	gboolean ret = FALSE;
-	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
-		goto done_no_unlock; 
-	}
+
 	// Also check atomic flag
 	if (!g_atomic_int_get(&stream->pipeline_active)) {
-		switch_mutex_unlock(stop_pipl_lock);
 		goto done_no_unlock;
-		
+	
 	}
 	gchar name[ELEMENT_NAME_SIZE];
 	gchar dot_name[ELEMENT_NAME_SIZE + 10];
@@ -389,7 +384,6 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	DA_NoNulling_dec_objs(GST_OBJECT(tee)); 
 	DA_NoNulling_dec_objs(GST_OBJECT(queue));
 	DA_NoNulling_dec_objs(GST_OBJECT(appsink));
-	switch_mutex_unlock(stop_pipl_lock);
 	return ret;
 
 error: // TODO: check if we should deallocate other things here
@@ -398,7 +392,6 @@ error: // TODO: check if we should deallocate other things here
 	DA_gst_object_unref(GST_OBJECT(appsink));			//check
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
-	switch_mutex_unlock(stop_pipl_lock);
 done_no_unlock:
 	return ret;
 }
@@ -416,9 +409,10 @@ done_no_unlock:
 gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 {
 	gboolean ret = FALSE;
-	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+	if (!g_atomic_int_get(&stream->pipeline_active)) { 
 		goto done_no_unlock; 
 	}
+
 	gchar name[ELEMENT_NAME_SIZE];
 	gchar dot_name[ELEMENT_NAME_SIZE + 10];
 
@@ -560,7 +554,6 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(appsink));
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
-	switch_mutex_unlock(stop_pipl_lock);
 done_no_unlock:
 	return ret;
 }
@@ -570,7 +563,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 	gboolean retval = TRUE;
 	g_stream_t *stream = (g_stream_t *)userdata;
 
-    if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) {
+    if (!g_atomic_int_get(&stream->pipeline_active)) {
 		retval = G_SOURCE_CONTINUE; // Shutdown in progress
 		goto done_no_unlock;
 		
@@ -674,7 +667,6 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(fakesink));
 	g_free(host);			//not counted
 done:
-	switch_mutex_unlock(stop_pipl_lock);
 done_no_unlock:
 	return retval;
 }
@@ -1235,7 +1227,7 @@ exit:
 void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locaked by caller
 {
 	if (!stream) goto error; //added check
-	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+	if (!g_atomic_int_get(&stream->pipeline_active)) { 
 		goto error;
 	}
 	g_atomic_int_set(&stream->clock_sync, 0);
@@ -1262,7 +1254,6 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locaked by caller
 	dump_pipeline(stream->pipeline, "ptp-clock-switch");
 	g_atomic_int_set(&stream->clock_sync, 1);
 	//switch_mutex_unlock(general_pipl_lock);  //added check
-	switch_mutex_unlock(stop_pipl_lock);
 error:
 	return;
 }
@@ -1323,28 +1314,6 @@ void stop_pipeline(g_stream_t *stream)
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
 	// CRITICAL: Set flag BEFORE acquiring lock - this immediately stops audio I/O
 	g_atomic_int_set(&stream->pipeline_active, 0);
-
-	// Try to acquire lock with retry logic
-	int retry_count = 0;
-	const int MAX_RETRIES = 50; // 50 * 10ms = 500ms max wait
-
-	while (retry_count < MAX_RETRIES) {
-		if (SWITCH_STATUS_SUCCESS == switch_mutex_trylock(stop_pipl_lock)) {
-			break; // Got the lock
-		}
-
-		// Didn't get lock, yield and retry
-		switch_yield(10000); // Sleep 10ms
-		retry_count++;
-	}
-
-	if (retry_count >= MAX_RETRIES) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-						  "Failed to acquire stop_pipl_lock after %d retries, forcing cleanup\n", MAX_RETRIES);
-		// Continue anyway - we MUST clean up
-		// The atomic flag prevents new operations, so this is safe
-	}
-
 
 	// STOP ALL TIMERS/SOURCES FIRST (atomic)
 	gint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
@@ -1437,8 +1406,10 @@ void stop_pipeline(g_stream_t *stream)
 	//periodic_mem_check();
 
 error_unlock:
-	// Only unlock if we actually acquired it
-	if (retry_count < MAX_RETRIES) { switch_mutex_unlock(stop_pipl_lock); }
+	if (timer_id > 0) {
+		g_source_remove(timer_id);
+		g_atomic_int_set(&stream->backup_sender_idle_timer, 0);
+	}
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 	return;
 
@@ -1698,7 +1669,6 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// stream->leftover_bytes[ch_idx]);
 
 // fall thru
-	switch_mutex_unlock(stop_pipl_lock);
 	return (int) total_bytes;
 
 out_unlock:
@@ -1716,7 +1686,7 @@ error_unlock_noderef:
 
 void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 {
-	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+	if (!g_atomic_int_get(&stream->pipeline_active)) { 
 		goto done_no_unlock; 
 	}
 
@@ -1746,7 +1716,6 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	//fall thru
 exit: 
 	DA_gst_object_unref(GST_OBJECT(valve));		//check 
-	switch_mutex_unlock(stop_pipl_lock);
 done_no_unlock:
 	return;
 }
@@ -1756,7 +1725,7 @@ gchar *get_rtp_stats(g_stream_t *stream)
 {
 	GstElement *rtpjitbuf = NULL;
 	gchar *stats_str = NULL;		//fixed: dynamic allocation required since this is NOT on the stack
-	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+	if (!g_atomic_int_get(&stream->pipeline_active)) { 
 		goto done_no_unlock; 
 	}
 	if (!stream) goto exit; //added check
@@ -1775,14 +1744,13 @@ gchar *get_rtp_stats(g_stream_t *stream)
 		stats_str = g_strdup_printf(""); // must be heap
 	}
 exit:
-	switch_mutex_unlock(stop_pipl_lock);
 done_no_unlock:
 	return stats_str;			//deallocated by caller
 }
 
 void drop_output_buffers(gboolean drop, g_stream_t *stream)
 {
-	if (SWITCH_STATUS_SUCCESS != switch_mutex_trylock(stop_pipl_lock)) { 
+	if (!g_atomic_int_get(&stream->pipeline_active)) { 
 		goto done_no_unlock; 
 	}
 	GstElement *tx_valve = NULL;
@@ -1802,7 +1770,6 @@ void drop_output_buffers(gboolean drop, g_stream_t *stream)
 	//fall thru
 exit:
 	DA_gst_object_unref(GST_OBJECT(tx_valve));
-	switch_mutex_unlock(stop_pipl_lock);
 done_no_unlock:
 	return;
 }

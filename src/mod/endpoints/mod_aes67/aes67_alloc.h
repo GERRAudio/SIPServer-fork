@@ -27,7 +27,7 @@
 // specialized mutexes, must be declared and initialized in c module where MU_ functions are used
 
 extern switch_mutex_t *general_pipl_lock;
-extern switch_mutex_t *stop_pipl_lock;
+
 extern switch_mutex_t *alloc_mcp_lock;
 extern switch_mutex_t *alloc_bkup_lock;
 
