@@ -316,6 +316,16 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 						  "Failed to create appsink or queue element for ch: %d, session %s", ch_idx, session);
 		goto error;
 	}
+	//check if pipeline is still active
+	if (!g_atomic_int_get(&stream->pipeline_active)) {
+		// Clean up all allocated objects
+		DA_gst_object_unref(GST_OBJECT(tee_src_pad));
+		DA_gst_object_unref(queue_sink_pad);
+		DA_gst_object_unref(GST_OBJECT(appsink));
+		DA_gst_object_unref(GST_OBJECT(queue));
+		DA_gst_object_unref(GST_OBJECT(tee));
+		goto done_no_unlock;
+	}
 
 	g_rec_mutex_lock(ch_mutex);
 	g_object_set(appsink, "emit-signals", FALSE, "sync", FALSE, "async", FALSE, "drop", TRUE, "max-buffers", 1,
@@ -1648,7 +1658,9 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
-
+		if (!g_atomic_int_get(&stream->pipeline_active)) {
+			break; // Stop pulling samples if pipeline is stopping
+		}
 		g_rec_mutex_lock(ch_mutex);		
 		sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 10 * GST_MSECOND);		
 		g_rec_mutex_unlock(ch_mutex);		
