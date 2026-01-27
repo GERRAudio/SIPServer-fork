@@ -502,7 +502,8 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	}
 	// ADDED to close last holes
 
-	MUp_gst_element_release_request_pad(tee, tee_src_pad);
+	//MUp_gst_element_release_request_pad(tee, tee_src_pad);
+	gst_element_release_request_pad(tee, tee_src_pad);
 
 	//DA_gst_object_unref(tee_src_pad);
 	//DA_dec_objs(tee_src_pad);							//deref by gst_bin_remove
@@ -524,7 +525,8 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 	gst_element_unlink(queue, appsink);
 	g_rec_mutex_lock(ch_mutex);
-	if (!MU_gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
+	//if (!MU_gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
+	if (!gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
         "Failed to remove queue from the pipeline ch: %d, session: %s", ch_idx, session);
 	}
@@ -537,7 +539,8 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 
 	g_rec_mutex_lock(ch_mutex);
-	if (!MU_gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {		//non fatal //check mutex
+	//if (!MU_gst_bin_remove(GST_BIN(stream->pipeline), appsink)) {
+	if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) { // non fatal //check mutex
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to remove appsink from the pipeline ch: %d, session: %s", ch_idx, session);
 	}
@@ -593,9 +596,9 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			GstClockTime delta;
 			GstClockTime timestamp;
 
-			switch_mutex_lock(alloc_bkup_lock);			///added check
+			//switch_mutex_lock(alloc_bkup_lock);			///added check
 			GstClockTime max_delta = stream->backup_sender_idle_wait_ms * GST_MSECOND;
-			switch_mutex_unlock(alloc_bkup_lock);
+			//switch_mutex_unlock(alloc_bkup_lock);
 
 			g_object_get(G_OBJECT(fakesink), "last-sample", &last_sample, NULL);	//allocates!
 							
@@ -613,7 +616,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			  we know that new buffers are arriving and so pause our Tx */
 			delta = timestamp < current_time ? current_time - timestamp : timestamp - current_time;
 			
-			switch_mutex_lock(alloc_bkup_lock); /// added check
+			//switch_mutex_lock(alloc_bkup_lock); /// added check
 			if (delta < max_delta && FALSE == stream->pause_backup_sender) {
 				stream->pause_backup_sender = TRUE;
 
@@ -648,7 +651,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			DA_gst_object_unref(GST_OBJECT(clock));
 			clock = NULL;
 
-			switch_mutex_unlock(alloc_bkup_lock); /// added check
+			//switch_mutex_unlock(alloc_bkup_lock); /// added check
 
 		} else {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Clock not available, pipeline is not PLAYING\n");
@@ -1360,6 +1363,26 @@ void stop_pipeline(g_stream_t *stream)
 	// DUMP PIPELINE (still live)
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 
+	// Drain all appsinks BEFORE setting pipeline to NULL
+	for (int ch = 0; ch < MAX_CHANNELS; ch++) {
+		gchar name[ELEMENT_NAME_SIZE];
+		GstElement *appsink;
+		GstSample *sample;
+
+		NAME_ELEMENT(name, "appsink", ch);
+		appsink = gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
+		if (!appsink) continue;
+
+		// Pull and discard all pending samples
+		while ((sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 0))) {
+			DA_gst_sample_unref(sample); // Properly accounted
+		}
+
+		gst_object_unref(appsink);
+	}
+
+
+
 
 	// NULL STATE - destroys ALL elements safely
 	//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Setting pipeline to NULL...\n");
@@ -1502,7 +1525,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 		goto error_exit;
 	}
 
-	MU_memcpy(info.data, payload, len);
+	memcpy(info.data, payload, len);
 	g_rec_mutex_lock(ch_mutex); 
 	gst_buffer_unmap(buf, &info);	
 
@@ -1602,7 +1625,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 	if (stream->leftover_bytes[ch_idx]) {
 		size_t copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
-		MU_memcpy(payload, stream->leftover[ch_idx], copy); // check
+		memcpy(payload, stream->leftover[ch_idx], copy); // check
 		total_bytes += copy;
 		stream->leftover_bytes[ch_idx] -= copy;
 	}
@@ -1636,10 +1659,10 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			if (total_bytes + info.size > needed_bytes) {
 				gsize want = needed_bytes - total_bytes;
 				stream->leftover_bytes[ch_idx] = info.size - want;
-				MU_memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
+				memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
 				info.size = want;
 			}
-			MU_memcpy(payload + total_bytes, info.data, info.size); // check
+			memcpy(payload + total_bytes, info.data, info.size); // check
 			total_bytes += info.size;
 		}
 		gst_buffer_unmap(buf, &info); //check

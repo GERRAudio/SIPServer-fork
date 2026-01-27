@@ -229,7 +229,7 @@ struct private_object {
 
 // added checks
 //switch_mutex_t *stop_pipl_lock;
-switch_mutex_t *general_pipl_lock;
+//switch_mutex_t *general_pipl_lock;
 switch_mutex_t *alloc_mcp_lock;
 switch_mutex_t *alloc_bkup_lock;
 
@@ -1646,9 +1646,9 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_mutex_init(&aes67_globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
 
 	//switch_mutex_init(&stop_pipl_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
-	switch_mutex_init(&general_pipl_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
-	switch_mutex_init(&alloc_mcp_lock, SWITCH_MUTEX_NESTED, module_pool);  // added check
-	switch_mutex_init(&alloc_bkup_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
+	//switch_mutex_init(&general_pipl_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
+	//switch_mutex_init(&alloc_mcp_lock, SWITCH_MUTEX_NESTED, module_pool);  // added check
+	//switch_mutex_init(&alloc_bkup_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
 
 	aes67_globals.codecs_inited = 0;
 	aes67_globals.read_frame.data = aes67_globals.databuf;
