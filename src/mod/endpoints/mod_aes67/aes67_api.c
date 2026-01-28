@@ -356,6 +356,9 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 						  ch_idx, session);
 		goto error;
 	}
+	// Both queue and appsink were successfully added to pipeline
+	// These were allocated via AL_ wrappers, so increment counter:
+	g_atomic_int_add(&stream->pipeline_elements_count, 2);
 
 	if (!(tee_src_pad = AL_gst_element_request_pad_simple(tee, "src_%u"))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -564,6 +567,9 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 						  "Failed to remove appsink from the pipeline ch: %d, session: %s", ch_idx, session);
 	}
 	g_rec_mutex_unlock(ch_mutex);		//added
+	// Both queue and appsink were removed from pipeline (even if one failed, attempt was made)
+	// Decrement the counter to match the increments in add_appsink():
+	g_atomic_int_add(&stream->pipeline_elements_count, -2);
 
 	g_snprintf(dot_name, ELEMENT_NAME_SIZE + 10, "%s-del", name);
 	dump_pipeline(GST_PIPELINE(stream->pipeline), dot_name);			//for info only
@@ -703,7 +709,8 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	char *pipeline_name = NULL;
 
 	g_stream_t *stream = g_new0(g_stream_t, 1);			//note the 0
-
+	// Initialize the counter:
+	g_atomic_int_set(&stream->pipeline_elements_count, 0);
 	/*
 	stream->bus_watch_id = 0;				
 	stream->deinterleave_signal_id = 0;
@@ -777,6 +784,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		rtpjitbuf = AL_gst_element_factory_make("rtpjitterbuffer", "rx-jitbuf");
 
+		// TODO: remove after testing
 		#ifdef PUTBACKTHISERROR
 		stream->jitterbuf_signal_id = g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map), 
 			gst_caps_ref(udp_caps),  destroy_caps, 0);
@@ -850,7 +858,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		}
 
 		gst_bin_add_many(GST_BIN(pipeline), udp_source, rtpdepay, rtpjitbuf, rx_audioconv, capsfilter, split, deinterleave, NULL);
-
+		g_atomic_int_add(&stream->pipeline_elements_count, 7);
 
 		if (!gst_element_link_many(udp_source, rtpjitbuf, rtpdepay, split, rx_audioconv, capsfilter, deinterleave, NULL)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements in the rx pipeline");
@@ -924,6 +932,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		audiointerleave = AL_gst_element_factory_make("audiointerleave", "audiointerleave"); // allocates memory!
 		gst_bin_add(GST_BIN(pipeline), audiointerleave);
+		g_atomic_int_inc(&stream->pipeline_elements_count); // audiointerleave
 		g_object_set(audiointerleave, "start-time-selection", GST_AGGREGATOR_START_TIME_SELECTION_FIRST, NULL);
 		g_object_set(audiointerleave, "output-buffer-duration", data->codec_ms * GST_MSECOND, NULL);
 
@@ -1025,7 +1034,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		}
 
 		gst_bin_add_many(GST_BIN(pipeline), tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL);
-
+		g_atomic_int_add(&stream->pipeline_elements_count, 5);
 
 		if (!gst_element_link_many(audiointerleave, tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements");
@@ -1119,7 +1128,9 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			g_object_set(fakesink, "async", FALSE, NULL);
 
 			gst_bin_add_many(GST_BIN(pipeline), udpsrc, fakesink, NULL);
-
+			// Count backup sender elements that were allocated via AL_ wrappers:
+			// udpsrc, fakesink = 2 elements
+			g_atomic_int_add(&stream->pipeline_elements_count, 2);
 
 			if (!gst_element_link_many(udpsrc, fakesink, NULL)) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -1296,6 +1307,8 @@ void *start_pipeline(void *data)
 	return NULL;
 }
 
+//TODO: remove aftger testing
+#ifdef ACCOUNTFORCHILDREN
 /// <summary>
 ///  added to account for object added to pipeline
 /// // not sure if we need critical section here
@@ -1333,6 +1346,7 @@ void account_pipeline_children(g_stream_t *stream)
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
 					  "Accounted for %d elements, %d pads in pipeline destruction\n", elements, pads);
 }
+#endif
 
 void stop_pipeline(g_stream_t *stream)
 {
@@ -1382,8 +1396,18 @@ void stop_pipeline(g_stream_t *stream)
 	}
 
 	// ACCOUNT for linked pipeline objects
-	//account_pipeline_children(stream); // count
-
+	//account_pipeline_children(stream); // rethought - see below
+	// NEW CODE - Account for elements that will be freed when pipeline is destroyed:
+	int remaining = g_atomic_int_get(&stream->pipeline_elements_count);
+	if (remaining > 0) {
+		g_alloc_counts.objs -= remaining;
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+						  "Accounted for %d elements that will be destroyed with pipeline\n", remaining);
+	} else if (remaining < 0) {
+		// This indicates a bug: more removes than adds
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+						  "ERROR: pipeline_elements_count is negative (%d) - accounting mismatch!\n", remaining);
+	}
 	// DUMP PIPELINE (still live)
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 
@@ -1539,14 +1563,14 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	buf = AL_gst_buffer_new_allocate(NULL, len, NULL);			
 	if (!buf ) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
-		goto error_exit;
+		goto error_no_buffer; 
 	}
 
 	if (!gst_buffer_map(buf, &info, GST_MAP_WRITE)) {		//MU here kills audio from phone to BP
 		//DA_gst_buffer_unref(buf);//added
 		//buf = NULL;
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get buffer map\n");
-		goto error_exit;
+		goto error_with_buffer; 
 	}
 
 	memcpy(info.data, payload, len);
@@ -1573,11 +1597,23 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	DA_gst_object_unref(GST_OBJECT(appsrc));
 
 	return retval;
+error_with_buffer:
+	// Buffer allocated but not given to appsrc - we must unref
+	DA_gst_buffer_unref(buf);
+	DA_gst_object_unref(GST_OBJECT(appsrc));
+	return retval;
+
+error_no_buffer:
+	// Buffer not allocated
+	DA_gst_object_unref(GST_OBJECT(appsrc));
+	return retval;
+
 error_exit:
 	DA_gst_buffer_unref(buf);
 	DA_gst_object_unref(GST_OBJECT(appsrc));
 
 	return retval;
+
 error_unlock:
 	DA_gst_buffer_unref(buf);
 	DA_gst_object_unref(GST_OBJECT(appsrc));	
@@ -1667,6 +1703,14 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		if (!sample) {
 			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Failed to pull sample\n");
 			switch_cond_next();
+			break;
+		}
+
+		 //check added to avoid bad counts
+		if (!g_atomic_int_get(&stream->pipeline_active)) {
+			// Pipeline stopped while we were pulling - discard this sample without counting
+			gst_sample_unref(sample); // Direct unref, no counting
+			sample = NULL;
 			break;
 		}
 
