@@ -3,7 +3,7 @@
 
 #include <gst/gst.h>
 #include <switch.h>
-#define MOD_AES_VERSION_DATE "2026-01-18"
+#define MOD_AES_VERSION_DATE "2026-01-23"
 #define DIRECTION_TX 1 << 0
 #define DIRECTION_RX 1 << 1
 
@@ -48,7 +48,7 @@ typedef struct
   int backup_sender_idle_wait_ms;
 } pipeline_data_t;
 
-#define MAX_CHANNELS 24           // beyond that is crazy
+#define MAX_CHANNELS 48           // set to be safe
 struct g_stream
 {
   GstPipeline *pipeline;
@@ -64,12 +64,14 @@ struct g_stream
   char *ts_ctx;
   gboolean pause_backup_sender;
   gboolean txdrop;
-  guint backup_sender_idle_timer;
+  volatile gint backup_sender_idle_timer;
+  volatile gint pipeline_active; // 0 = stopping/stopped, 1 = active
   int backup_sender_idle_wait_ms;
   guint bus_watch_id;                   //added
   gulong deinterleave_signal_id;        //added
   guint jitterbuf_signal_id;
   GRecMutex appsrc_mutexes[MAX_CHANNELS];  // One per channel added - self init
+  volatile gint pipeline_elements_count;  // Track elements added to pipeline
 };
 
 g_stream_t *create_pipeline (pipeline_data_t *data, event_callback_t * error_cb);
@@ -89,5 +91,10 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session);
 gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session);
 void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock);
 void dump_pipeline (GstPipeline *pipe, const char *name);
+void account_pipeline_children(g_stream_t *stream);
+void CompactHeaps(void);
+void TrimCurrentProcessWorkingSet(void);
+void periodic_mem_check();
+static void heartbeat_callback(switch_event_t *event);
 
 #endif /*__GSTREAMER_API__*/
