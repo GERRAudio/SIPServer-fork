@@ -1708,8 +1708,8 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 		 //check added to avoid bad counts
 		if (!g_atomic_int_get(&stream->pipeline_active)) {
-			// Pipeline stopped while we were pulling - discard this sample without counting
-			gst_sample_unref(sample); // Direct unref, no counting
+			// Pipeline stopped while we were pulling 
+			DA_gst_sample_unref(sample); 
 			sample = NULL;
 			break;
 		}
