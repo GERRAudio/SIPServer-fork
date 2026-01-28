@@ -503,7 +503,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	g_rec_mutex_lock(ch_mutex);
 	NAME_SESSION_ELEMENT(name, appsink, ch_idx, session);
 	appsink = gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
-	//g_rec_mutex_unlock(ch_mutex);
+
 
 	if (appsink) {
 		gst_element_send_event(appsink, gst_event_new_flush_start());
@@ -526,7 +526,6 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	//MUp_gst_element_release_request_pad(tee, tee_src_pad);
 	gst_element_release_request_pad(tee, tee_src_pad);
 
-	//g_rec_mutex_lock(ch_mutex);
 	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
 	g_rec_mutex_unlock(ch_mutex);
@@ -611,13 +610,12 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			GstClockTime delta;
 			GstClockTime timestamp;
 
-			//switch_mutex_lock(alloc_bkup_lock);			///added check
 			GstClockTime max_delta = stream->backup_sender_idle_wait_ms * GST_MSECOND;
-			//switch_mutex_unlock(alloc_bkup_lock);
 
 			g_object_get(G_OBJECT(fakesink), "last-sample", &last_sample, NULL);	//allocates!
 							
-			if (!last_sample) goto exit;
+			if (!last_sample) 
+				goto exit;
 			AL_cnt_samples(last_sample); // accounting
 
 			buffer = gst_sample_get_buffer(last_sample);	//no alloc 
@@ -1391,7 +1389,7 @@ void stop_pipeline(g_stream_t *stream)
 	// DUMP PIPELINE (still live)
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 
-	// Drain all appsinks BEFORE setting pipeline to NULL
+	// Drain all appsinks and unref samples BEFORE setting pipeline to NULL
 	for (int ch = 0; ch < MAX_CHANNELS; ch++) {
 		gchar name[ELEMENT_NAME_SIZE];
 		GstElement *appsink;
@@ -1736,10 +1734,11 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// stream->leftover_bytes[ch_idx]);
 
 // fall thru
+	DA_gst_sample_unref(sample);		//nop if sample is NULL - just a precaution
 	return (int) total_bytes;
 
 out_unlock:
-	g_rec_mutex_unlock(ch_mutex); // added
+	g_rec_mutex_unlock(ch_mutex); 
 done_no_unlock:
 	return (int) total_bytes;
 
@@ -1747,7 +1746,7 @@ no_stream:
 	return 0;
 
 error_unlock_noderef:
-	g_rec_mutex_unlock(ch_mutex); // added
+	g_rec_mutex_unlock(ch_mutex); 
 	return 0;
 }
 

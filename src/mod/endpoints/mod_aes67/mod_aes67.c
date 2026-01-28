@@ -544,7 +544,7 @@ static void destroy_audio_streams()
 	g_atomic_int_set(&aes67_globals.destroying_streams, 0); // added
 }
 
-static int clear_shared_audio_stream(shared_audio_stream_t *stream);
+
 
 static void free_shared_audio_stream(shared_audio_stream_t *stream)
 {
@@ -2186,6 +2186,7 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 
 				// Signal intent-to-reload to prevent writer starvation
 				g_atomic_int_set(&curr_stream->reloading, 1);
+
 				STREAM_WRITER_LOCK(curr_stream);
 				clear_shared_audio_stream(curr_stream);
 				create_shared_audio_stream(curr_stream);
@@ -2656,6 +2657,7 @@ void periodic_mem_check()
 	}
 }
 
+// FreeSwitch calls this every few seconds
 static void heartbeat_callback(switch_event_t *event)
 {
 	periodic_mem_check();
@@ -2929,10 +2931,11 @@ static int create_shared_audio_stream(shared_audio_stream_t *shstream) /// check
 static int clear_shared_audio_stream(shared_audio_stream_t *shstream)
 {
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Destroying shared audio stream %s\n", shstream->name);
-	if (shstream->stream) { stop_pipeline(shstream->stream); }
+	if (shstream->stream) { 
+		stop_pipeline(shstream->stream); 
+	}
 
 	shstream->stream = NULL; // deallocated in stop pipeline
-
 	return 0;
 }
 
