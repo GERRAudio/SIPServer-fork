@@ -228,8 +228,8 @@ struct private_object {
 };
 
 // added checks
-switch_mutex_t *alloc_pipl_lock2;
-switch_mutex_t *alloc_pipl_lock;
+//switch_mutex_t *stop_pipl_lock;
+//switch_mutex_t *general_pipl_lock;
 switch_mutex_t *alloc_mcp_lock;
 switch_mutex_t *alloc_bkup_lock;
 
@@ -247,12 +247,22 @@ static struct {
 	int call_id;
 	int unload_device_fail;
 	switch_hash_t *call_hash;
-	switch_mutex_t *device_lock;
+	//switch_mutex_t *device_lock;
 	switch_mutex_t *pvt_lock;
 	switch_mutex_t *streams_lock;
 	switch_mutex_t *flag_mutex;
-	switch_mutex_t *gst_mutex;
+	//switch_mutex_t *gst_mutex;
 	switch_mutex_t *sh_shtreams_lock;
+
+	// added to track clr mem
+	switch_time_t last_call_activity;		// Last time ANY calllist PVT was active
+	switch_time_t last_stream_activity;		// Last pullbuffer/pushbuffer time
+	guint64 trim_cnt;
+	guint64 compact_heap_cnt;
+	#define IDLE_THRESHOLD_SEC 60			// necessary idle time (no calling) before trim
+	#define IDLE_POLLING_SEC 5				// to reduce polling overhead
+	// added to track clr mem
+
 
 	int sample_rate;
 	int codec_ms;
@@ -267,7 +277,7 @@ static struct {
 	switch_frame_t cng_frame;
 	unsigned char databuf[SWITCH_RECOMMENDED_BUFFER_SIZE];
 	unsigned char cngbuf[SWITCH_RECOMMENDED_BUFFER_SIZE];
-	private_t *call_list;
+	volatile private_t *call_list;
 	audio_stream_t *stream_list;
 	/*! Streams that can be used by multiple endpoints at the same time */
 	switch_hash_t *sh_streams;
@@ -299,17 +309,17 @@ static struct {
 	int8_t ptp_domain;
 	/* Network interface to be used for PTP */
 	char ptp_iface[NW_IFACE_LEN];
-} globals;
+} aes67_globals;
 
 #define PA_MASTER 1
 #define PA_SLAVE 0
 
-SWITCH_DECLARE_GLOBAL_STRING_FUNC(set_global_dialplan, globals.dialplan);
-SWITCH_DECLARE_GLOBAL_STRING_FUNC(set_global_context, globals.context);
-SWITCH_DECLARE_GLOBAL_STRING_FUNC(set_global_cid_name, globals.cid_name);
-SWITCH_DECLARE_GLOBAL_STRING_FUNC(set_global_cid_num, globals.cid_num);
-SWITCH_DECLARE_GLOBAL_STRING_FUNC(set_global_hold_file, globals.hold_file);
-SWITCH_DECLARE_GLOBAL_STRING_FUNC(set_global_timer_name, globals.timer_name);
+SWITCH_DECLARE_GLOBAL_STRING_FUNC(set_global_dialplan, aes67_globals.dialplan);
+SWITCH_DECLARE_GLOBAL_STRING_FUNC(set_global_context, aes67_globals.context);
+SWITCH_DECLARE_GLOBAL_STRING_FUNC(set_global_cid_name, aes67_globals.cid_name);
+SWITCH_DECLARE_GLOBAL_STRING_FUNC(set_global_cid_num, aes67_globals.cid_num);
+SWITCH_DECLARE_GLOBAL_STRING_FUNC(set_global_hold_file, aes67_globals.hold_file);
+SWITCH_DECLARE_GLOBAL_STRING_FUNC(set_global_timer_name, aes67_globals.timer_name);
 #define is_master(t) switch_test_flag(t, TFLAG_MASTER)
 
 static void add_pvt(private_t *tech_pvt, int master);
@@ -372,7 +382,7 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	private_t *tech_pvt = switch_core_session_get_private(session);
 	switch_time_t last;
-	switch_time_t waitsec = globals.ring_interval * 1000000; // not int (check)
+	switch_time_t waitsec = aes67_globals.ring_interval * 1000000; // not int (check)
 	switch_file_handle_t fh = {0};
 	const char *val = NULL;
 	const char *ring_file = NULL;
@@ -387,7 +397,7 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 	if ((val = switch_channel_get_variable(channel, "gst_hold_file"))) {
 		hold_file = val;
 	} else {
-		hold_file = globals.hold_file;
+		hold_file = aes67_globals.hold_file;
 	}
 
 	if (hold_file) { tech_pvt->hold_file = switch_core_session_strdup(session, hold_file); }
@@ -404,13 +414,13 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 		}
 
 		if (tech_pvt->audio_endpoint || switch_test_flag(tech_pvt, TFLAG_AUTO_ANSWER)) {
-			switch_mutex_lock(globals.pvt_lock);
+			switch_mutex_lock(aes67_globals.pvt_lock);
 			add_pvt(tech_pvt, PA_MASTER);
 			if (switch_test_flag(tech_pvt, TFLAG_AUTO_ANSWER)) {
 				switch_channel_mark_answered(channel);
 				switch_set_flag(tech_pvt, TFLAG_ANSWER);
 			}
-			switch_mutex_unlock(globals.pvt_lock);
+			switch_mutex_unlock(aes67_globals.pvt_lock);
 
 			if (tech_pvt->audio_endpoint && tech_pvt->audio_endpoint->in_stream) {
 				char session_id[SESSION_ID_LEN];
@@ -435,7 +445,7 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 
 		while (switch_channel_get_state(channel) == CS_ROUTING && !switch_channel_test_flag(channel, CF_ANSWERED) &&
 			   !switch_test_flag(tech_pvt, TFLAG_ANSWER)) {
-			switch_size_t olen = globals.readfile_timer.samples;
+			switch_size_t olen = aes67_globals.readfile_timer.samples;
 
 			if (switch_micro_time_now() - last >= waitsec) {
 				char buf[512];
@@ -457,7 +467,7 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 			}
 
 			if (ring_file) {
-				if (switch_core_timer_next(&globals.readfile_timer) != SWITCH_STATUS_SUCCESS) {
+				if (switch_core_timer_next(&aes67_globals.readfile_timer) != SWITCH_STATUS_SUCCESS) {
 					switch_core_file_close(&fh);
 					break;
 				}
@@ -471,7 +481,7 @@ static switch_status_t channel_on_routing(switch_core_session_t *session)
 				switch_yield(10000);
 			}
 		}
-		switch_clear_flag_locked((&globals), GFLAG_RING);
+		switch_clear_flag_locked((&aes67_globals), GFLAG_RING);
 	}
 
 	if (ring_file) { switch_core_file_close(&fh); }
@@ -504,37 +514,37 @@ static audio_stream_t *find_audio_stream(udp_sock_t *indev, udp_sock_t *outdev, 
 {
 	audio_stream_t *cur_stream;
 
-	if (!globals.stream_list) { return NULL; }
+	if (!aes67_globals.stream_list) { return NULL; }
 
-	if (!already_locked) { switch_mutex_lock(globals.streams_lock); }
-	cur_stream = globals.stream_list;
+	if (!already_locked) { switch_mutex_lock(aes67_globals.streams_lock); }
+	cur_stream = aes67_globals.stream_list;
 
 	while (cur_stream != NULL) {
 		if (is_sock_equal(cur_stream->outdev, outdev)) {
 			if (indev == NULL || is_sock_equal(cur_stream->indev, indev)) {
-				if (!already_locked) { switch_mutex_unlock(globals.streams_lock); }
+				if (!already_locked) { switch_mutex_unlock(aes67_globals.streams_lock); }
 				return cur_stream;
 			}
 		}
 		cur_stream = cur_stream->next;
 	}
-	if (!already_locked) { switch_mutex_unlock(globals.streams_lock); }
+	if (!already_locked) { switch_mutex_unlock(aes67_globals.streams_lock); }
 	return NULL;
 }
 
 static void destroy_audio_streams()
 {
-	// globals.destroying_streams = 1;
-	g_atomic_int_set(&globals.destroying_streams, 1); // added
+	// aes67_globals.destroying_streams = 1;
+	g_atomic_int_set(&aes67_globals.destroying_streams, 1); // added
 
-	while (globals.stream_list != NULL) {
-		destroy_audio_stream(globals.stream_list->indev, globals.stream_list->outdev);
+	while (aes67_globals.stream_list != NULL) {
+		destroy_audio_stream(aes67_globals.stream_list->indev, aes67_globals.stream_list->outdev);
 	}
-	// globals.destroying_streams = 0;
-	g_atomic_int_set(&globals.destroying_streams, 0); // added
+	// aes67_globals.destroying_streams = 0;
+	g_atomic_int_set(&aes67_globals.destroying_streams, 0); // added
 }
 
-static int clear_shared_audio_stream(shared_audio_stream_t *stream);
+
 
 static void free_shared_audio_stream(shared_audio_stream_t *stream)
 {
@@ -554,42 +564,42 @@ static void destroy_shared_audio_streams()
 	switch_hash_index_t *hi;
 	shared_audio_stream_t *stream;
 
-	// globals.destroying_streams = 1;
-	g_atomic_int_set(&globals.destroying_streams, 1); // added
+	// aes67_globals.destroying_streams = 1;
+	g_atomic_int_set(&aes67_globals.destroying_streams, 1); // added
 
-	switch_mutex_lock(globals.sh_shtreams_lock);
+	switch_mutex_lock(aes67_globals.sh_shtreams_lock);
 
 	const void *key;
-	for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
+	for (hi = switch_core_hash_first(aes67_globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 		switch_core_hash_this(hi, &key, NULL, (void **)&stream);
 		STREAM_WRITER_LOCK(stream);
 		free_shared_audio_stream(stream);
 		STREAM_WRITER_UNLOCK(stream);
-		// switch_core_hash_delete(globals.sh_streams, key); // reference counted, so not needed (check)
+		// switch_core_hash_delete(aes67_globals.sh_streams, key); // reference counted, so not needed (check)
 	}
 
-	switch_mutex_unlock(globals.sh_shtreams_lock);
-	g_atomic_int_set(&globals.destroying_streams, 0); // added
-													  // globals.destroying_streams = 0;
+	switch_mutex_unlock(aes67_globals.sh_shtreams_lock);
+	g_atomic_int_set(&aes67_globals.destroying_streams, 0); // added
+													  // aes67_globals.destroying_streams = 0;
 }
 
 static switch_status_t validate_main_audio_stream()
 {
-	if (globals.read_timer.timer_interface) { switch_core_timer_sync(&globals.read_timer); }
+	if (aes67_globals.read_timer.timer_interface) { switch_core_timer_sync(&aes67_globals.read_timer); }
 
-	if (globals.main_stream) {
-		if (globals.main_stream->write_timer.timer_interface) { /// check need for mutex
-			switch_core_timer_sync(&(globals.main_stream->write_timer));
+	if (aes67_globals.main_stream) {
+		if (aes67_globals.main_stream->write_timer.timer_interface) { /// check need for mutex
+			switch_core_timer_sync(&(aes67_globals.main_stream->write_timer));
 		}
 
 		return SWITCH_STATUS_SUCCESS;
 	}
-	switch_mutex_lock(globals.streams_lock); /// check need for mutex
-	switch_mutex_lock(globals.device_lock);	 /// check need for mutex
-	globals.main_stream = get_audio_stream(globals.indev, globals.outdev);
-	switch_mutex_unlock(globals.device_lock);  /// check need for mutex
-	switch_mutex_unlock(globals.streams_lock); /// check need for mutex
-	if (globals.main_stream) { return SWITCH_STATUS_SUCCESS; }
+	switch_mutex_lock(aes67_globals.streams_lock); /// check need for mutex
+	//switch_mutex_lock(aes67_globals.device_lock);	 /// check need for mutex
+	aes67_globals.main_stream = get_audio_stream(aes67_globals.indev, aes67_globals.outdev);
+	//switch_mutex_unlock(aes67_globals.device_lock);  /// check need for mutex
+	switch_mutex_unlock(aes67_globals.streams_lock); /// check need for mutex
+	if (aes67_globals.main_stream) { return SWITCH_STATUS_SUCCESS; }
 
 	return SWITCH_STATUS_FALSE;
 }
@@ -598,8 +608,8 @@ static switch_status_t destroy_actual_stream(audio_stream_t *stream)
 {
 	if (stream == NULL) { return SWITCH_STATUS_FALSE; }
 
-	if (globals.main_stream == stream) { // locked at caller
-		globals.main_stream = NULL;
+	if (aes67_globals.main_stream == stream) { // locked at caller
+		aes67_globals.main_stream = NULL;
 	}
 
 	stop_pipeline(stream->stream);
@@ -618,34 +628,34 @@ static switch_status_t destroy_audio_stream(udp_sock_t *indev, udp_sock_t *outde
 {
 	audio_stream_t *stream;
 
-	switch_mutex_lock(globals.streams_lock);
+	switch_mutex_lock(aes67_globals.streams_lock);
 	stream = find_audio_stream(indev, outdev, 1); // last parm: already locked=1
 	if (stream == NULL) {
-		switch_mutex_unlock(globals.streams_lock);
+		switch_mutex_unlock(aes67_globals.streams_lock);
 		return SWITCH_STATUS_FALSE;
 	}
 
 	remove_stream(stream, 1); // parm already locked=1
 
 	destroy_actual_stream(stream);
-	switch_mutex_unlock(globals.streams_lock);
+	switch_mutex_unlock(aes67_globals.streams_lock);
 	return SWITCH_STATUS_SUCCESS; /// could return result from destroy (did not) check
 }
 
 static void destroy_codecs(void)
 {
 
-	if (switch_core_codec_ready(&globals.read_codec)) { switch_core_codec_destroy(&globals.read_codec); }
+	if (switch_core_codec_ready(&aes67_globals.read_codec)) { switch_core_codec_destroy(&aes67_globals.read_codec); }
 
-	if (switch_core_codec_ready(&globals.write_codec)) { switch_core_codec_destroy(&globals.write_codec); }
+	if (switch_core_codec_ready(&aes67_globals.write_codec)) { switch_core_codec_destroy(&aes67_globals.write_codec); }
 
-	if (globals.read_timer.timer_interface) { switch_core_timer_destroy(&globals.read_timer); }
+	if (aes67_globals.read_timer.timer_interface) { switch_core_timer_destroy(&aes67_globals.read_timer); }
 
-	if (globals.readfile_timer.timer_interface) { switch_core_timer_destroy(&globals.readfile_timer); }
+	if (aes67_globals.readfile_timer.timer_interface) { switch_core_timer_destroy(&aes67_globals.readfile_timer); }
 
-	if (globals.hold_timer.timer_interface) { switch_core_timer_destroy(&globals.hold_timer); }
+	if (aes67_globals.hold_timer.timer_interface) { switch_core_timer_destroy(&aes67_globals.hold_timer); }
 
-	globals.codecs_inited = 0;
+	aes67_globals.codecs_inited = 0;
 }
 
 static void create_hold_event(private_t *tech_pvt, int unhold)
@@ -669,31 +679,31 @@ static void add_stream(audio_stream_t *stream, int already_locked)
 {
 	audio_stream_t *last;
 
-	if (!already_locked) { switch_mutex_lock(globals.streams_lock); }
-	for (last = globals.stream_list; last && last->next; last = last->next)
+	if (!already_locked) { switch_mutex_lock(aes67_globals.streams_lock); }
+	for (last = aes67_globals.stream_list; last && last->next; last = last->next)
 		;
 	if (last == NULL) {
-		globals.stream_list = stream;
+		aes67_globals.stream_list = stream;
 	} else {
 		last->next = stream;
 	}
-	if (!already_locked) { switch_mutex_unlock(globals.streams_lock); }
+	if (!already_locked) { switch_mutex_unlock(aes67_globals.streams_lock); }
 }
 
 static void remove_stream(audio_stream_t *stream, int already_locked)
 {
 	audio_stream_t *previous;
-	if (!already_locked) { switch_mutex_lock(globals.streams_lock); }
-	if (globals.stream_list == stream) {
-		globals.stream_list = stream->next;
+	if (!already_locked) { switch_mutex_lock(aes67_globals.streams_lock); }
+	if (aes67_globals.stream_list == stream) {
+		aes67_globals.stream_list = stream->next;
 	} else {
-		for (previous = globals.stream_list; previous && previous->next && previous->next != stream;
+		for (previous = aes67_globals.stream_list; previous && previous->next && previous->next != stream;
 			 previous = previous->next) {
 			;
 		}
 		if (previous) { previous->next = stream->next; }
 	}
-	if (!already_locked) { switch_mutex_unlock(globals.streams_lock); }
+	if (!already_locked) { switch_mutex_unlock(aes67_globals.streams_lock); }
 }
 
 static void add_pvt(private_t *tech_pvt, int master)
@@ -701,24 +711,23 @@ static void add_pvt(private_t *tech_pvt, int master)
 	private_t *tp;
 	uint8_t in_list = 0;
 
-	switch_mutex_lock(globals.pvt_lock);
+	switch_mutex_lock(aes67_globals.pvt_lock);
 
 	if (*tech_pvt->call_id == '\0') {
-		switch_mutex_lock(globals.gst_mutex); /// check should this be pvt mutex?
-		switch_snprintf(tech_pvt->call_id, sizeof(tech_pvt->call_id), "%d", ++globals.call_id);
+
+		switch_snprintf(tech_pvt->call_id, sizeof(tech_pvt->call_id), "%d", ++aes67_globals.call_id);
 		switch_channel_set_variable(switch_core_session_get_channel(tech_pvt->session), SWITCH_PA_CALL_ID_VARIABLE,
 									tech_pvt->call_id);
-		switch_core_hash_insert(globals.call_hash, tech_pvt->call_id, tech_pvt);
+		switch_core_hash_insert(aes67_globals.call_hash, tech_pvt->call_id, tech_pvt);
 		if (!tech_pvt->audio_endpoint) {
-			switch_core_session_set_read_codec(tech_pvt->session, &globals.read_codec);
-			switch_core_session_set_write_codec(tech_pvt->session, &globals.write_codec);
+			switch_core_session_set_read_codec(tech_pvt->session, &aes67_globals.read_codec);
+			switch_core_session_set_write_codec(tech_pvt->session, &aes67_globals.write_codec);
 		}
-		switch_mutex_unlock(globals.gst_mutex);
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(tech_pvt->session), SWITCH_LOG_DEBUG, "Added call %s\n",
 						  tech_pvt->call_id);
 	}
 
-	for (tp = globals.call_list; tp; tp = tp->next) {
+	for (tp = aes67_globals.call_list; tp; tp = tp->next) {
 		if (tp == tech_pvt) { in_list = 1; }
 		if (master && switch_test_flag(tp, TFLAG_MASTER)) {
 			switch_clear_flag_locked(tp, TFLAG_MASTER);
@@ -728,22 +737,22 @@ static void add_pvt(private_t *tech_pvt, int master)
 
 	if (master) {
 		if (!in_list) {
-			tech_pvt->next = globals.call_list;
-			globals.call_list = tech_pvt;
+			tech_pvt->next = aes67_globals.call_list;
+			aes67_globals.call_list = tech_pvt;
 		}
 		switch_set_flag_locked(tech_pvt, TFLAG_MASTER);
 
 	} else if (!in_list) {
-		for (tp = globals.call_list; tp && tp->next; tp = tp->next)
+		for (tp = aes67_globals.call_list; tp && tp->next; tp = tp->next)
 			;
 		if (tp) {
 			tp->next = tech_pvt;
 		} else {
-			globals.call_list = tech_pvt;
+			aes67_globals.call_list = tech_pvt;
 		}
 	}
 
-	switch_mutex_unlock(globals.pvt_lock);
+	switch_mutex_unlock(aes67_globals.pvt_lock);
 }
 
 static void remove_pvt(private_t *tech_pvt)
@@ -751,8 +760,8 @@ static void remove_pvt(private_t *tech_pvt)
 	private_t *tp, *last = NULL;
 	int was_master = 0;
 
-	switch_mutex_lock(globals.pvt_lock);
-	for (tp = globals.call_list; tp; tp = tp->next) {
+	switch_mutex_lock(aes67_globals.pvt_lock);
+	for (tp = aes67_globals.call_list; tp; tp = tp->next) {
 
 		if (tp == tech_pvt) {
 			if (switch_test_flag(tp, TFLAG_MASTER)) {
@@ -762,20 +771,20 @@ static void remove_pvt(private_t *tech_pvt)
 			if (last) {
 				last->next = tp->next;
 			} else {
-				globals.call_list = tp->next;
+				aes67_globals.call_list = tp->next;
 			}
 		}
 		last = tp;
 	}
 
-	if (globals.call_list) {
-		if (was_master && !globals.no_auto_resume_call) {
-			switch_set_flag_locked(globals.call_list, TFLAG_MASTER);
-			create_hold_event(globals.call_list, 1);
+	if (aes67_globals.call_list) {
+		if (was_master && !aes67_globals.no_auto_resume_call) {
+			switch_set_flag_locked(aes67_globals.call_list, TFLAG_MASTER);
+			create_hold_event(aes67_globals.call_list, 1);
 		}
 	}
 
-	switch_mutex_unlock(globals.pvt_lock);
+	switch_mutex_unlock(aes67_globals.pvt_lock);
 }
 
 static void tech_close_file(private_t *tech_pvt)
@@ -832,9 +841,8 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 		switch_mutex_unlock(endpoint->mutex);
 	}
 
-	switch_mutex_lock(globals.gst_mutex); /// added
-	switch_core_hash_delete(globals.call_hash, tech_pvt->call_id);
-	switch_mutex_unlock(globals.gst_mutex); /// added
+	switch_core_hash_delete(aes67_globals.call_hash, tech_pvt->call_id);
+
 
 	switch_clear_flag_locked(tech_pvt, TFLAG_IO);
 	switch_set_flag_locked(tech_pvt, TFLAG_HUP);
@@ -845,9 +853,14 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "%s CHANNEL HANGUP\n",
 					  switch_channel_get_name(switch_core_session_get_channel(session)));
-
+	// poll used by clean mem
+	aes67_globals.last_call_activity = switch_micro_time_now();
+	//
 	return SWITCH_STATUS_SUCCESS;
 error:
+	// poll used by clean mem
+	aes67_globals.last_call_activity = switch_micro_time_now();
+	//
 	return SWITCH_STATUS_FALSE;
 }
 
@@ -932,7 +945,7 @@ static switch_status_t channel_endpoint_read(private_t *tech_pvt, switch_frame_t
 
 	if (!endpoint->in_stream) {
 		switch_core_timer_next(&tech_pvt->read_timer);
-		*frame = &globals.cng_frame;
+		*frame = &aes67_globals.cng_frame;
 		return SWITCH_STATUS_SUCCESS;
 	}
 
@@ -959,7 +972,7 @@ static switch_status_t channel_endpoint_read(private_t *tech_pvt, switch_frame_t
 	samples = bytes / sizeof(int16_t);
 	if (!bytes) {
 		switch_core_timer_next(&tech_pvt->read_timer);
-		*frame = &globals.cng_frame;
+		*frame = &aes67_globals.cng_frame;
 		return SWITCH_STATUS_SUCCESS;
 	}
 
@@ -977,7 +990,7 @@ static void update_level(private_t *tech_pvt, switch_frame_t *frame, uint8_t rx)
 	float level = rx ? tech_pvt->average_level_rx : tech_pvt->average_level_tx;
 	uint32_t scount = rx ? tech_pvt->scount_rx : tech_pvt->scount_tx;
 
-	if (globals.level_report == SWITCH_FALSE) { return; }
+	if (aes67_globals.level_report == SWITCH_FALSE) { return; }
 
 	// calculate signal level
 	for (i = 0; i < frame->samples; i++, scount++) {
@@ -993,7 +1006,7 @@ static void update_level(private_t *tech_pvt, switch_frame_t *frame, uint8_t rx)
 	// Fire an event when hitting the per-second rate
 	// we only fire a single event for both rx/tx and do it on the rx cycle for simplicity
 	samples = tech_pvt ? tech_pvt->read_codec.implementation->actual_samples_per_second
-					   : globals.read_codec.implementation->actual_samples_per_second;
+					   : aes67_globals.read_codec.implementation->actual_samples_per_second;
 
 	if (scount >= samples) {
 		if (rx) {
@@ -1005,7 +1018,7 @@ static void update_level(private_t *tech_pvt, switch_frame_t *frame, uint8_t rx)
 				float avg_rx;
 				float avg_tx;
 
-				switch_mutex_t *mutex = tech_pvt->audio_endpoint ? tech_pvt->audio_endpoint->mutex : globals.pvt_lock;
+				switch_mutex_t *mutex = tech_pvt->audio_endpoint ? tech_pvt->audio_endpoint->mutex : aes67_globals.pvt_lock;
 
 				switch_mutex_lock(mutex);
 				avg_rx = tech_pvt->average_level_rx;
@@ -1041,7 +1054,7 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 	int samples = 0;
 	int bytes = 0;
 	switch_status_t status = SWITCH_STATUS_FALSE;
-	// switch_assert (tech_pvt != NULL);	changed to below
+
 	if (tech_pvt == NULL) goto error;
 
 	char session_id[SESSION_ID_LEN];
@@ -1052,9 +1065,9 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 		goto normal_return;
 	}
 
-	if (!globals.main_stream) { goto normal_return; }
+	if (!aes67_globals.main_stream) { goto normal_return; }
 
-	if (!globals.main_stream->stream) { goto normal_return; }
+	if (!aes67_globals.main_stream->stream) { goto normal_return; }
 
 	if (switch_test_flag(tech_pvt, TFLAG_HUP)) { goto normal_return; }
 
@@ -1062,13 +1075,13 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 
 	if (!is_master(tech_pvt)) {
 		if (tech_pvt->hold_file) {
-			switch_size_t olen = globals.read_codec.implementation->samples_per_packet;
+			switch_size_t olen = aes67_globals.read_codec.implementation->samples_per_packet;
 
 			if (!tech_pvt->hfh) {
-				int sample_rate = globals.sample_rate;
+				int sample_rate = aes67_globals.sample_rate;
 				if (switch_core_file_open(
-						&tech_pvt->fh, tech_pvt->hold_file, globals.read_codec.implementation->number_of_channels,
-						globals.read_codec.implementation->actual_samples_per_second,
+						&tech_pvt->fh, tech_pvt->hold_file, aes67_globals.read_codec.implementation->number_of_channels,
+						aes67_globals.read_codec.implementation->actual_samples_per_second,
 						SWITCH_FILE_FLAG_READ | SWITCH_FILE_DATA_SHORT, NULL) != SWITCH_STATUS_SUCCESS) {
 					tech_pvt->hold_file = NULL;
 					goto cng_wait;
@@ -1078,10 +1091,10 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 				tech_pvt->hold_frame.data = tech_pvt->holdbuf;
 				tech_pvt->hold_frame.buflen = sizeof(tech_pvt->holdbuf);
 				tech_pvt->hold_frame.rate = sample_rate;
-				tech_pvt->hold_frame.codec = &globals.write_codec;
+				tech_pvt->hold_frame.codec = &aes67_globals.write_codec;
 			}
 
-			if (switch_core_timer_next(&globals.hold_timer) != SWITCH_STATUS_SUCCESS) {
+			if (switch_core_timer_next(&aes67_globals.hold_timer) != SWITCH_STATUS_SUCCESS) {
 				switch_core_file_close(&tech_pvt->fh);
 				goto cng_nowait;
 			}
@@ -1106,24 +1119,36 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 
 	if (tech_pvt->hfh) { tech_close_file(tech_pvt); }
 
-	switch_mutex_lock(globals.device_lock);
+	//switch_mutex_lock(aes67_globals.device_lock);
 	STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);	//added
-	bytes = pull_buffers(globals.main_stream->stream, (unsigned char *)globals.read_frame.data,
-						 globals.read_codec.implementation->samples_per_packet * 2 /* FIXME: S16LE-only */, 0,
-						 &globals.read_timer, session_id);
+
+	//Added check
+	if (g_atomic_int_get(&tech_pvt->audio_endpoint->in_stream->reloading) || tech_pvt->flags & TFLAG_HUP) {
+		STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
+		goto error; // Bail during teardown
+	}
+	//added check
+
+	bytes = pull_buffers(aes67_globals.main_stream->stream, (unsigned char *)aes67_globals.read_frame.data,
+						 aes67_globals.read_codec.implementation->samples_per_packet * 2 /* FIXME: S16LE-only */, 0,
+						 &aes67_globals.read_timer, session_id);
 	// FIXME: won't work for L24/L32
 	samples = bytes / sizeof(int16_t);
 	STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added
-	switch_mutex_unlock(globals.device_lock);
+
+	// poll for clear mem
+	// After pullbuffers() or pushbuffer() succeeds
+	aes67_globals.last_call_activity = switch_micro_time_now();
+	//
 
 	if (samples) {
-		globals.read_frame.datalen = bytes;
-		globals.read_frame.samples = samples;
+		aes67_globals.read_frame.datalen = bytes;
+		aes67_globals.read_frame.samples = samples;
 
-		*frame = &globals.read_frame;
+		*frame = &aes67_globals.read_frame;
 
-		if (!switch_test_flag((&globals), GFLAG_MOUTH)) {
-			memset(globals.read_frame.data, 255, globals.read_frame.datalen);
+		if (!switch_test_flag((&aes67_globals), GFLAG_MOUTH)) {
+			memset(aes67_globals.read_frame.data, 255, aes67_globals.read_frame.datalen);
 		}
 		status = SWITCH_STATUS_SUCCESS;
 	} else {
@@ -1135,12 +1160,12 @@ normal_return:
 	return status;
 
 cng_nowait:
-	*frame = &globals.cng_frame;
+	*frame = &aes67_globals.cng_frame;
 	return SWITCH_STATUS_SUCCESS;
 
 cng_wait:
-	switch_core_timer_next(&globals.hold_timer);
-	*frame = &globals.cng_frame;
+	switch_core_timer_next(&aes67_globals.hold_timer);
+	*frame = &aes67_globals.cng_frame;
 	return SWITCH_STATUS_SUCCESS;
 error:
 	return SWITCH_STATUS_FALSE;
@@ -1185,25 +1210,29 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 
 	if (tech_pvt->audio_endpoint) { return channel_endpoint_write(tech_pvt, frame); }
 
-	if (!globals.main_stream) { return SWITCH_STATUS_FALSE; }
+	if (!aes67_globals.main_stream) { return SWITCH_STATUS_FALSE; }
 
-	if (!globals.main_stream->stream) { return SWITCH_STATUS_FALSE; }
+	if (!aes67_globals.main_stream->stream) { return SWITCH_STATUS_FALSE; }
 
 	if (switch_test_flag(tech_pvt, TFLAG_HUP)) { return SWITCH_STATUS_FALSE; }
 
 	if (!is_master(tech_pvt) || !switch_test_flag(tech_pvt, TFLAG_IO)) { return SWITCH_STATUS_SUCCESS; }
 
-	if (globals.main_stream) {
-		if (switch_test_flag((&globals), GFLAG_EAR)) {
+	if (aes67_globals.main_stream) {
+		if (switch_test_flag((&aes67_globals), GFLAG_EAR)) {
 			// Note: 0 is passed as the channel index because main stream can have only one out channel
-			switch_mutex_lock(globals.streams_lock); /// check added to avoid contention on globals stream - should it
+			switch_mutex_lock(aes67_globals.streams_lock); /// check added to avoid contention on globals stream - should it
 													 /// be device_lock as in pull for similar parms?
-			push_buffer(globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
-						&(globals.main_stream->write_timer));
-			switch_mutex_unlock(globals.streams_lock); /// check added
+			push_buffer(aes67_globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
+						&(aes67_globals.main_stream->write_timer));
+			switch_mutex_unlock(aes67_globals.streams_lock); /// check added
 		}
 		status = SWITCH_STATUS_SUCCESS;
 	}
+	// After pullbuffers() or pushbuffer() succeeds
+	// poll for clear mem
+	aes67_globals.last_call_activity = switch_micro_time_now();
+	//
 
 	return status;
 error:
@@ -1312,7 +1341,7 @@ static void init_pvt_level(private_t *tech_pvt)
 	// FIXME: Have to adjust this if we decide on a different avg window
 	float window = 1000.0f; // window in ms
 	uint32_t samples = tech_pvt ? tech_pvt->read_codec.implementation->actual_samples_per_second
-								: globals.read_codec.implementation->actual_samples_per_second;
+								: aes67_globals.read_codec.implementation->actual_samples_per_second;
 	if (tech_pvt == NULL) return;
 	tech_pvt->new_value_weight = 1.0f / ((float)samples * (window / 1000.0f));
 	tech_pvt->old_value_weight = 1.0f - tech_pvt->new_value_weight;
@@ -1378,7 +1407,7 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 			goto error;
 		}
 		endpoint_name++;
-		endpoint = switch_core_hash_find(globals.endpoints, endpoint_name);
+		endpoint = switch_core_hash_find(aes67_globals.endpoints, endpoint_name);
 		if (!endpoint) {
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(*new_session), SWITCH_LOG_CRIT, "Invalid aes67 endpoint %s\n",
 							  endpoint_name);
@@ -1415,7 +1444,7 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 												 : STREAM_SAMPLES_PER_PACKET(endpoint->out_stream);
 		sample_rate = endpoint->in_stream ? endpoint->in_stream->sample_rate : endpoint->out_stream->sample_rate;
 
-		if (switch_core_timer_init(&tech_pvt->read_timer, globals.timer_name, codec_ms, samples_per_packet,
+		if (switch_core_timer_init(&tech_pvt->read_timer, aes67_globals.timer_name, codec_ms, samples_per_packet,
 								   module_pool) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "failed to setup read timer for endpoint '%s'!\n",
 							  endpoint->name);
@@ -1423,7 +1452,7 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 		}
 
 		/* The write timer must be setup regardless */
-		if (switch_core_timer_init(&tech_pvt->write_timer, globals.timer_name, codec_ms, samples_per_packet,
+		if (switch_core_timer_init(&tech_pvt->write_timer, aes67_globals.timer_name, codec_ms, samples_per_packet,
 								   module_pool) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "failed to setup write timer for endpoint '%s'!\n",
 							  endpoint->name);
@@ -1561,7 +1590,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	char media_dir[MAX_PATH_LEN];
 	module_pool = pool;
 
-	memset(&globals, 0, sizeof(globals));
+	memset(&aes67_globals, 0, sizeof(aes67_globals));
 
 	mod_dir = SWITCH_GLOBAL_dirs.mod_dir;
 
@@ -1603,42 +1632,41 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	// gst_debug_remove_log_function (NULL);
 	// gst_debug_set_default_threshold (GST_LEVEL_WARNING);
 	gst_debug_add_log_function((GstLogFunction)gst_logger, NULL, NULL);
-	switch_core_hash_init(&globals.call_hash);
-	switch_core_hash_init(&globals.sh_streams);
-	switch_core_hash_init(&globals.endpoints);
-	switch_mutex_init(&globals.device_lock, SWITCH_MUTEX_NESTED,
-					  module_pool); /// check proper use of all of these - compate to mod_audio
-	switch_mutex_init(&globals.pvt_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&globals.streams_lock, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&globals.flag_mutex, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
-	switch_mutex_init(&globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_core_hash_init(&aes67_globals.call_hash);
+	switch_core_hash_init(&aes67_globals.sh_streams);
+	switch_core_hash_init(&aes67_globals.endpoints);
+	//switch_mutex_init(&aes67_globals.device_lock, SWITCH_MUTEX_NESTED, module_pool); /// check proper use of all of these - compare to mod_audio
+	switch_mutex_init(&aes67_globals.pvt_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&aes67_globals.streams_lock, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&aes67_globals.flag_mutex, SWITCH_MUTEX_NESTED, module_pool);
+	//switch_mutex_init(&aes67_globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
+	switch_mutex_init(&aes67_globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
 
-	switch_mutex_init(&alloc_pipl_lock2, SWITCH_MUTEX_NESTED, module_pool); // added check
-	switch_mutex_init(&alloc_pipl_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
-	switch_mutex_init(&alloc_mcp_lock, SWITCH_MUTEX_NESTED, module_pool);  // added check
-	switch_mutex_init(&alloc_bkup_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
+	//switch_mutex_init(&stop_pipl_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
+	//switch_mutex_init(&general_pipl_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
+	//switch_mutex_init(&alloc_mcp_lock, SWITCH_MUTEX_NESTED, module_pool);  // added check
+	//switch_mutex_init(&alloc_bkup_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
 
-	globals.codecs_inited = 0;
-	globals.read_frame.data = globals.databuf;
-	globals.read_frame.buflen = sizeof(globals.databuf);
-	globals.cng_frame.data = globals.cngbuf;
-	globals.cng_frame.buflen = sizeof(globals.cngbuf);
-	switch_set_flag((&globals.cng_frame), SFF_CNG);
-	switch_malloc(globals.cng_frame.codec, sizeof(switch_codec_t));
+	aes67_globals.codecs_inited = 0;
+	aes67_globals.read_frame.data = aes67_globals.databuf;
+	aes67_globals.read_frame.buflen = sizeof(aes67_globals.databuf);
+	aes67_globals.cng_frame.data = aes67_globals.cngbuf;
+	aes67_globals.cng_frame.buflen = sizeof(aes67_globals.cngbuf);
+	switch_set_flag((&aes67_globals.cng_frame), SFF_CNG);
+	switch_malloc(aes67_globals.cng_frame.codec, sizeof(switch_codec_t));
 	// hardcode to Raw 16bit
-	if (switch_core_codec_init(globals.cng_frame.codec, "L16", NULL, NULL, globals.sample_rate, globals.codec_ms, 1,
+	if (switch_core_codec_init(aes67_globals.cng_frame.codec, "L16", NULL, NULL, aes67_globals.sample_rate, aes67_globals.codec_ms, 1,
 							   SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE, NULL,
 							   NULL) != SWITCH_STATUS_SUCCESS) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Can't load codec for cng frame\n");
 	}
-	globals.flags = GFLAG_EAR | GFLAG_MOUTH;
+	aes67_globals.flags = GFLAG_EAR | GFLAG_MOUTH;
 
 	if ((status = load_config()) != SWITCH_STATUS_SUCCESS) { return status; }
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Input : %s:%d, Output : %s:%d, Sample Rate: %d MS: %d\n",
-					  globals.indev->ip_addr, globals.indev->port, globals.outdev->ip_addr, globals.outdev->port,
-					  globals.sample_rate, globals.codec_ms);
+					  aes67_globals.indev->ip_addr, aes67_globals.indev->port, aes67_globals.outdev->ip_addr, aes67_globals.outdev->port,
+					  aes67_globals.sample_rate, aes67_globals.codec_ms);
 
 	if (switch_event_reserve_subclass(MY_EVENT_RINGING) != SWITCH_STATUS_SUCCESS) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register subclass!\n");
@@ -1680,6 +1708,21 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_console_set_complete("add aes67 reloadconf");
 	switch_console_set_complete("add aes67 dump");
 
+	// deal with mamanging memory periodically
+	aes67_globals.last_call_activity = switch_micro_time_now();
+	aes67_globals.last_stream_activity = switch_micro_time_now();
+
+
+	switch_scheduler_task_t *task = NULL;
+
+	// set up time to call mem check
+	if (switch_event_bind("mod_aes67", SWITCH_EVENT_HEARTBEAT, SWITCH_EVENT_SUBCLASS_ANY, heartbeat_callback, NULL) !=
+		SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't bind to heartbeat event!\n");
+		return SWITCH_STATUS_TERM;
+	}
+
+
 	/* indicate that the module should continue to be loaded */
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -1691,21 +1734,21 @@ static void emit_ptp_gm_change(gboolean synced)
 	// Clock ID formed from the MAC address
 	// if the MAC address is A1-B2-C3-D4-E5-F6, the clock id would be A1-B2-C3-FF-FE-D4-E5-F6
 	// strip byte 4 and 5 to retrieve MAC address from the Clock ID
-	globals.ptp_gm_mac_addr = ((0xFFFFFF0000000000 & globals.ptp_gm_id) >> 16) | (0xFFFFFF & globals.ptp_gm_id);
+	aes67_globals.ptp_gm_mac_addr = ((0xFFFFFF0000000000 & aes67_globals.ptp_gm_id) >> 16) | (0xFFFFFF & aes67_globals.ptp_gm_id);
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
 					  MY_EVENT_PTP_GM_CHANGE " "
 											 "sync-status=%s, "
 											 "grandmaster-clock-id=0x%016" G_GINT64_MODIFIER "x, "
 											 "grandmaster-mac-addr=0x%012" G_GINT64_MODIFIER "x \n",
-					  synced ? "TRUE" : "FALSE", globals.ptp_gm_id, globals.ptp_gm_mac_addr);
+					  synced ? "TRUE" : "FALSE", aes67_globals.ptp_gm_id, aes67_globals.ptp_gm_mac_addr);
 
 	if (switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, MY_EVENT_PTP_GM_CHANGE) == SWITCH_STATUS_SUCCESS) {
 		switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-SYNC-STATUS", "%s", synced ? "TRUE" : "FALSE");
 		switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-ID", "%016" G_GINT64_MODIFIER "X",
-								globals.ptp_gm_id);
+								aes67_globals.ptp_gm_id);
 		switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-MAC", "%012" G_GINT64_MODIFIER "X",
-								globals.ptp_gm_mac_addr);
+								aes67_globals.ptp_gm_mac_addr);
 
 		switch_event_fire(&event);
 	}
@@ -1717,10 +1760,10 @@ static gboolean ptp_stats_cb(guint8 d, const GstStructure *stats, gpointer user_
 	const gchar *st_name = gst_structure_get_name(stats); // no need to deallocate
 
 	if (0 == strncasecmp(st_name, master_clock_stats, strlen(master_clock_stats))) {
-		if (gst_structure_get_uint64(stats, "grandmaster-clock-id", &globals.ptp_gm_id)) {
-			emit_ptp_gm_change(globals.ptp_synced);
+		if (gst_structure_get_uint64(stats, "grandmaster-clock-id", &aes67_globals.ptp_gm_id)) {
+			emit_ptp_gm_change(aes67_globals.ptp_synced);
 		}
-	} else if (globals.enable_ptp_stats) {
+	} else if (aes67_globals.enable_ptp_stats) {
 		switch_event_t *event;
 		gchar *stats_str = gst_structure_to_string(stats);
 		if (stats_str == NULL) goto cleanup;
@@ -1729,14 +1772,14 @@ static gboolean ptp_stats_cb(guint8 d, const GstStructure *stats, gpointer user_
 						  "PTP Stats: %s "
 						  "grandmaster-clock-id=0x%016" G_GINT64_MODIFIER "x, "
 						  "grandmaster-mac-addr=0x%012" G_GINT64_MODIFIER "x \n",
-						  stats_str, globals.ptp_gm_id, globals.ptp_gm_mac_addr);
+						  stats_str, aes67_globals.ptp_gm_id, aes67_globals.ptp_gm_mac_addr);
 
 		if (switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, MY_EVENT_PTP_STATS) == SWITCH_STATUS_SUCCESS) {
 			switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "PTP-STATS", stats_str);
 			switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-ID", "%016" G_GINT64_MODIFIER "X",
-									globals.ptp_gm_id);
+									aes67_globals.ptp_gm_id);
 			switch_event_add_header(event, SWITCH_STACK_BOTTOM, "PTP-GRANDMASTER-MAC", "%012" G_GINT64_MODIFIER "X",
-									globals.ptp_gm_mac_addr);
+									aes67_globals.ptp_gm_mac_addr);
 
 			switch_event_fire(&event);
 		}
@@ -1750,8 +1793,8 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 {
 	switch_hash_index_t *hi;
 	STREAM_WRITER_LOCK(stream);
-	switch_mutex_lock(globals.gst_mutex); // added check
-	for (hi = switch_core_hash_first(globals.call_hash); hi; hi = switch_core_hash_next(&hi)) {
+
+	for (hi = switch_core_hash_first(aes67_globals.call_hash); hi; hi = switch_core_hash_next(&hi)) {
 		const void *var;
 		void *val;
 		private_t *tech_pvt;
@@ -1778,7 +1821,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 			switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 		}
 	}
-	switch_mutex_unlock(globals.gst_mutex); // added check
+
 	STREAM_WRITER_UNLOCK(stream);
 }
 
@@ -1889,30 +1932,30 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void *data)
 {
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "PTP clock sync status: %d\n", synced);
 
-	globals.ptp_synced = synced;
+	aes67_globals.ptp_synced = synced;
 	// Update the global for event emission
-	g_object_get(ptp_clock, "grandmaster-clock-id", &globals.ptp_gm_id, NULL);
+	g_object_get(ptp_clock, "grandmaster-clock-id", &aes67_globals.ptp_gm_id, NULL);
 	emit_ptp_gm_change(synced);
 
 	if (!synced) return;
 
-	if (globals.clock != ptp_clock) {
-		if (globals.clock) {
-			DA_gst_object_unref(GST_OBJECT(globals.clock));
-			globals.clock = NULL;
+	if (aes67_globals.clock != ptp_clock) {
+		if (aes67_globals.clock) {
+			DA_gst_object_unref(GST_OBJECT(aes67_globals.clock));
+			aes67_globals.clock = NULL;
 		} 
 		else {
 			// accounting
-			DA_NoNulling_dec_objs(globals.clock);
+			DA_NoNulling_dec_objs(aes67_globals.clock);
 		}
 		// No ref needed, we are taking over the reference from init_ptp()
-		globals.clock = ptp_clock;
+		aes67_globals.clock = ptp_clock;
 	}
-	globals.synthetic_ptp = 0;
+	aes67_globals.synthetic_ptp = 0;
 
 	switch_hash_index_t *hi;
-	switch_mutex_lock(globals.sh_shtreams_lock);
-	for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
+	switch_mutex_lock(aes67_globals.sh_shtreams_lock);
+	for (hi = switch_core_hash_first(aes67_globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 		const void *var;
 		void *val;
 		shared_audio_stream_t *s = NULL;
@@ -1924,7 +1967,7 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void *data)
 		STREAM_WRITER_UNLOCK(s);
 	}
 
-	switch_mutex_unlock(globals.sh_shtreams_lock);
+	switch_mutex_unlock(aes67_globals.sh_shtreams_lock);
 }
 
 static void *init_ptp(int domain, char *iface)
@@ -1938,8 +1981,8 @@ static void *init_ptp(int domain, char *iface)
 	}
 
 	/* if id is -1, no callback hooked yet */
-	if (globals.ptp_stats_cb_id == -1) {
-		globals.ptp_stats_cb_id = gst_ptp_statistics_callback_add(ptp_stats_cb, NULL, NULL);
+	if (aes67_globals.ptp_stats_cb_id == -1) {
+		aes67_globals.ptp_stats_cb_id = gst_ptp_statistics_callback_add(ptp_stats_cb, NULL, NULL);
 	}
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Creating ptp clock client\n");
@@ -1951,8 +1994,8 @@ static void *init_ptp(int domain, char *iface)
 		return NULL;
 	}
 
-	globals.ptp_synced = TRUE;
-	g_object_get(clock, "grandmaster-clock-id", &globals.ptp_gm_id, NULL);
+	aes67_globals.ptp_synced = TRUE;
+	g_object_get(clock, "grandmaster-clock-id", &aes67_globals.ptp_gm_id, NULL);
 	emit_ptp_gm_change(TRUE);
 
 	return clock;
@@ -1970,11 +2013,11 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 		switch_hash_index_t *hi;
 		shared_audio_stream_t *stream;
 
-		switch_mutex_lock(globals.sh_shtreams_lock);	  // moved out of the again - check
-		g_atomic_int_set(&globals.destroying_streams, 1); // added
-														  // globals.destroying_streams = 1;
+		switch_mutex_lock(aes67_globals.sh_shtreams_lock);	  // moved out of the again - check
+		g_atomic_int_set(&aes67_globals.destroying_streams, 1); // added
+														  // aes67_globals.destroying_streams = 1;
 	again:
-		for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
+		for (hi = switch_core_hash_first(aes67_globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 
 			switch_core_hash_this(hi, NULL, NULL, (void **)&stream);
 
@@ -1982,16 +2025,16 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 				// FIXME: Prevent crash due to removal of stream currently used in active call/session
 				// if (endpoint_in_use())  /// FIXME to prevent stream in use -add if (enpoint_in_use - need to get
 				// endpoint for that stream)
-				switch_core_hash_delete(globals.sh_streams, stream->name);
+				switch_core_hash_delete(aes67_globals.sh_streams, stream->name);
 				free_shared_audio_stream(stream);
 				// FIXME: this is a bit ugly, but if we delete, the iterator is invalidated, so we restart
 				goto again;
 			}
 		}
 
-		// globals.destroying_streams = 0;
-		g_atomic_int_set(&globals.destroying_streams, 0); // added
-		switch_mutex_unlock(globals.sh_shtreams_lock);
+		// aes67_globals.destroying_streams = 0;
+		g_atomic_int_set(&aes67_globals.destroying_streams, 0); // added
+		switch_mutex_unlock(aes67_globals.sh_shtreams_lock);
 	}
 
 	for (mystream = switch_xml_child(streams, "stream"); mystream; mystream = mystream->next) {
@@ -2006,7 +2049,7 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 		}
 
 		/* check if that stream name is not already used */
-		stream = switch_core_hash_find_locked(globals.sh_streams, stream_name, globals.sh_shtreams_lock);
+		stream = switch_core_hash_find_locked(aes67_globals.sh_streams, stream_name, aes67_globals.sh_shtreams_lock);
 		if (stream) {
 			if (!reload) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "A stream with name '%s' already exists\n",
@@ -2024,18 +2067,18 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 
 		stream->indev = NULL;
 		stream->outdev = NULL;
-		stream->sample_rate = globals.sample_rate;
-		stream->codec_ms = globals.codec_ms;
-		stream->channels = globals.channels;
-		stream->tx_codec = globals.tx_codec;
-		stream->rx_codec = globals.rx_codec;
-		stream->ptime_ms = globals.ptime_ms;
-		stream->clock = globals.clock;
-		stream->synthetic_ptp = globals.synthetic_ptp;
-		stream->rtp_ts_offset = globals.rtp_ts_offset;
-		strncpy(stream->rtp_iface, globals.rtp_iface, NW_IFACE_LEN);
-		stream->rtp_payload_type = globals.rtp_payload_type;
-		stream->rtp_jitbuf_latency = globals.rtp_jitbuf_latency;
+		stream->sample_rate = aes67_globals.sample_rate;
+		stream->codec_ms = aes67_globals.codec_ms;
+		stream->channels = aes67_globals.channels;
+		stream->tx_codec = aes67_globals.tx_codec;
+		stream->rx_codec = aes67_globals.rx_codec;
+		stream->ptime_ms = aes67_globals.ptime_ms;
+		stream->clock = aes67_globals.clock;
+		stream->synthetic_ptp = aes67_globals.synthetic_ptp;
+		stream->rtp_ts_offset = aes67_globals.rtp_ts_offset;
+		strncpy(stream->rtp_iface, aes67_globals.rtp_iface, NW_IFACE_LEN);
+		stream->rtp_payload_type = aes67_globals.rtp_payload_type;
+		stream->rtp_jitbuf_latency = aes67_globals.rtp_jitbuf_latency;
 		stream->txflow = TRUE;
 		stream->multiple_listen = FALSE;
 		stream->is_backup_sender = FALSE;
@@ -2051,7 +2094,7 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 			if (!strcmp(var, "tx-address")) {
 				if (stream->outdev == NULL) {
 					switch_malloc(stream->outdev, sizeof(udp_sock_t));
-					stream->outdev->port = globals.outdev ? globals.outdev->port : 0;
+					stream->outdev->port = aes67_globals.outdev ? aes67_globals.outdev->port : 0;
 				}
 				strncpy(stream->outdev->ip_addr, val, IP_ADDR_MAX_LEN - 1);
 			} else if (!strcmp(var, "tx-port")) {
@@ -2060,7 +2103,7 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 			} else if (!strcmp(var, "rx-address")) {
 				if (stream->indev == NULL) {
 					switch_malloc(stream->indev, sizeof(udp_sock_t));
-					stream->indev->port = globals.indev->port ? globals.indev->port : 0;
+					stream->indev->port = aes67_globals.indev->port ? aes67_globals.indev->port : 0;
 				}
 				strncpy(stream->indev->ip_addr, val, IP_ADDR_MAX_LEN - 1);
 			} else if (!strcmp(var, "rx-port")) {
@@ -2143,6 +2186,7 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 
 				// Signal intent-to-reload to prevent writer starvation
 				g_atomic_int_set(&curr_stream->reloading, 1);
+
 				STREAM_WRITER_LOCK(curr_stream);
 				clear_shared_audio_stream(curr_stream);
 				create_shared_audio_stream(curr_stream);
@@ -2159,7 +2203,7 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
 							  "Created stream '%s', sample-rate = %d, codec-ms = %d\n", stream->name,
 							  stream->sample_rate, stream->codec_ms);
-			switch_core_hash_insert_locked(globals.sh_streams, stream->name, stream, globals.sh_shtreams_lock);
+			switch_core_hash_insert_locked(aes67_globals.sh_streams, stream->name, stream, aes67_globals.sh_shtreams_lock);
 
 			/* Create ahead-of-time to start clock sync, etc. */
 			STREAM_WRITER_LOCK(stream);
@@ -2168,7 +2212,7 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 				STREAM_WRITER_UNLOCK(stream);
 
 				// Clean hash entry atomically
-				switch_core_hash_delete_locked(globals.sh_streams, stream->name, globals.sh_shtreams_lock);
+				switch_core_hash_delete_locked(aes67_globals.sh_streams, stream->name, aes67_globals.sh_shtreams_lock);
 				// Free stream resources
 				free_shared_audio_stream(stream);
 				return SWITCH_STATUS_FALSE;
@@ -2207,7 +2251,7 @@ static shared_audio_stream_t *check_stream(char *streamstr, int check_input, int
 	chan++;
 	cnum = atoi(chan);
 
-	stream = switch_core_hash_find_locked(globals.sh_streams, stream_name, globals.sh_shtreams_lock);
+	stream = switch_core_hash_find_locked(aes67_globals.sh_streams, stream_name, aes67_globals.sh_shtreams_lock);
 	if (!stream) { return NULL; }
 
 	if (cnum < 0 || cnum > stream->channels) { return NULL; }
@@ -2224,7 +2268,7 @@ static shared_audio_stream_t *check_stream(char *streamstr, int check_input, int
 static switch_bool_t endpoint_in_use(audio_endpoint_t *endp)
 {
 	switch_hash_index_t *hi;
-	for (hi = switch_core_hash_first(globals.call_hash); hi; hi = switch_core_hash_next(&hi)) {
+	for (hi = switch_core_hash_first(aes67_globals.call_hash); hi; hi = switch_core_hash_next(&hi)) {
 		const void *var;
 		void *val;
 		private_t *tech_pvt;
@@ -2285,7 +2329,7 @@ static switch_status_t load_endpoints(switch_xml_t endpoints, switch_bool_t relo
 		audio_endpoint_t *endpoint;
 
 	again:
-		for (hi = switch_core_hash_first(globals.endpoints); hi;
+		for (hi = switch_core_hash_first(aes67_globals.endpoints); hi;
 			 hi = switch_core_hash_next(&hi)) { /// check need for mutex
 
 			switch_core_hash_this(hi, NULL, NULL, (void **)&endpoint);
@@ -2293,7 +2337,7 @@ static switch_status_t load_endpoints(switch_xml_t endpoints, switch_bool_t relo
 			if ((NULL == switch_xml_find_child(endpoints, "endpoint", "name", endpoint->name)) &&
 				(FALSE == endpoint_in_use(endpoint))) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "removing endpoint %s\n", endpoint->name);
-				switch_core_hash_delete(globals.endpoints, endpoint->name);
+				switch_core_hash_delete(aes67_globals.endpoints, endpoint->name);
 				switch_safe_free(endpoint);
 				// FIXME: this is a bit ugly, but if we delete, the iterator is invalidated, so we restart
 				goto again;
@@ -2313,7 +2357,7 @@ static switch_status_t load_endpoints(switch_xml_t endpoints, switch_bool_t relo
 		}
 
 		/* check if that endpoint name is not already used */
-		endpoint = switch_core_hash_find(globals.endpoints, endpoint_name);
+		endpoint = switch_core_hash_find(aes67_globals.endpoints, endpoint_name);
 		if (endpoint) {
 			if (!reload) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "An endpoint with name '%s' already exists\n",
@@ -2363,7 +2407,7 @@ static switch_status_t load_endpoints(switch_xml_t endpoints, switch_bool_t relo
 
 		if (!endpoint->in_stream && !endpoint->out_stream) {
 			if (reload && curr_endp) {
-				switch_core_hash_delete(globals.endpoints, curr_endp->name);
+				switch_core_hash_delete(aes67_globals.endpoints, curr_endp->name);
 				switch_safe_free(curr_endp);
 			}
 
@@ -2374,7 +2418,7 @@ static switch_status_t load_endpoints(switch_xml_t endpoints, switch_bool_t relo
 
 		if (check_stream_compat(endpoint->in_stream, endpoint->out_stream)) {
 			if (reload && curr_endp) {
-				switch_core_hash_delete(globals.endpoints, curr_endp->name);
+				switch_core_hash_delete(aes67_globals.endpoints, curr_endp->name);
 				switch_safe_free(curr_endp);
 			}
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -2394,7 +2438,7 @@ static switch_status_t load_endpoints(switch_xml_t endpoints, switch_bool_t relo
 							  "Created endpoint '%s', instream = %s, outstream = %s\n", endpoint->name,
 							  endpoint->in_stream ? endpoint->in_stream->name : "(none)",
 							  endpoint->out_stream ? endpoint->out_stream->name : "(none)");
-			switch_core_hash_insert(globals.endpoints, endpoint->name, endpoint);
+			switch_core_hash_insert(aes67_globals.endpoints, endpoint->name, endpoint);
 		}
 	}
 	return status;
@@ -2413,20 +2457,20 @@ static switch_status_t load_globals(switch_xml_t cfg)
 				set_global_hold_file(val);
 			} else if (!strcmp(var, "dual-streams")) {
 				if (switch_true(val)) {
-					globals.dual_streams = 1;
+					aes67_globals.dual_streams = 1;
 				} else {
-					globals.dual_streams = 0;
+					aes67_globals.dual_streams = 0;
 				}
 			} else if (!strcmp(var, "timer-name")) {
 				set_global_timer_name(val);
 			} else if (!strcmp(var, "sample-rate")) {
-				globals.sample_rate = atoi(val);
+				aes67_globals.sample_rate = atoi(val);
 			} else if (!strcmp(var, "channels")) {
-				globals.channels = atoi(val);
+				aes67_globals.channels = atoi(val);
 			} else if (!strcmp(var, "codec-ms")) {
 				int tmp = atoi(val);
-				if (switch_check_interval(globals.sample_rate, tmp)) {
-					globals.codec_ms = tmp;
+				if (switch_check_interval(aes67_globals.sample_rate, tmp)) {
+					aes67_globals.codec_ms = tmp;
 				} else {
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
 									  "codec-ms must be multiple of 10 and less than %d, Using default of 20\n",
@@ -2441,53 +2485,53 @@ static switch_status_t load_globals(switch_xml_t cfg)
 			} else if (!strcmp(var, "cid-num")) {
 				set_global_cid_num(val);
 			} else if (!strcmp(var, "tx-address")) {
-				if (globals.outdev == NULL) {
-					switch_malloc(globals.outdev, sizeof(udp_sock_t));
-					globals.outdev->port = 0;
+				if (aes67_globals.outdev == NULL) {
+					switch_malloc(aes67_globals.outdev, sizeof(udp_sock_t));
+					aes67_globals.outdev->port = 0;
 				}
-				strncpy(globals.outdev->ip_addr, val, IP_ADDR_MAX_LEN - 1);
+				strncpy(aes67_globals.outdev->ip_addr, val, IP_ADDR_MAX_LEN - 1);
 			} else if (!strcmp(var, "tx-port")) {
-				if (globals.outdev == NULL) switch_malloc(globals.outdev, sizeof(udp_sock_t));
-				globals.outdev->port = atoi(val);
+				if (aes67_globals.outdev == NULL) switch_malloc(aes67_globals.outdev, sizeof(udp_sock_t));
+				aes67_globals.outdev->port = atoi(val);
 			} else if (!strcmp(var, "rx-address")) {
-				if (globals.indev == NULL) {
-					switch_malloc(globals.indev, sizeof(udp_sock_t));
-					globals.indev->port = 0;
+				if (aes67_globals.indev == NULL) {
+					switch_malloc(aes67_globals.indev, sizeof(udp_sock_t));
+					aes67_globals.indev->port = 0;
 				}
-				strncpy(globals.indev->ip_addr, val, IP_ADDR_MAX_LEN - 1);
+				strncpy(aes67_globals.indev->ip_addr, val, IP_ADDR_MAX_LEN - 1);
 			} else if (!strcmp(var, "rx-port")) {
-				if (globals.indev == NULL) switch_malloc(globals.indev, sizeof(udp_sock_t));
-				globals.indev->port = atoi(val);
+				if (aes67_globals.indev == NULL) switch_malloc(aes67_globals.indev, sizeof(udp_sock_t));
+				aes67_globals.indev->port = atoi(val);
 			} else if (!strcasecmp(var, "unload-on-device-fail")) {
-				globals.unload_device_fail = switch_true(val);
+				aes67_globals.unload_device_fail = switch_true(val);
 			} else if (!strcasecmp(var, "tx-codec")) {
-				if (!strcasecmp(val, "L24")) { globals.tx_codec = L24; }
+				if (!strcasecmp(val, "L24")) { aes67_globals.tx_codec = L24; }
 			} else if (!strcasecmp(var, "rx-codec")) {
-				if (!strcasecmp(val, "L24")) { globals.rx_codec = L24; }
+				if (!strcasecmp(val, "L24")) { aes67_globals.rx_codec = L24; }
 			} else if (!strcasecmp(var, "ptime-ms")) {
-				globals.ptime_ms = strtod(val, NULL);
+				aes67_globals.ptime_ms = strtod(val, NULL);
 			} else if (!strcasecmp(var, "ptp-domain")) {
 				char *iface;
-				globals.ptp_domain = (int8_t)atoi(val);
+				aes67_globals.ptp_domain = (int8_t)atoi(val);
 				iface = (char *)switch_xml_attr_soft(param, "iface");
-				if (!zstr(iface)) { strncpy(globals.ptp_iface, iface, NW_IFACE_LEN - 1); }
+				if (!zstr(iface)) { strncpy(aes67_globals.ptp_iface, iface, NW_IFACE_LEN - 1); }
 			} else if (!strcasecmp(var, "ptp-interface")) {
-				globals.ptp_domain = 0;
+				aes67_globals.ptp_domain = 0;
 				// hacky fix to prevent failing to get ptp from crashing FreeSWITCH
 
-				strncpy(globals.ptp_iface, val, NW_IFACE_LEN - 1);
+				strncpy(aes67_globals.ptp_iface, val, NW_IFACE_LEN - 1);
 			} else if (!strcasecmp(var, "synthetic-ptp")) {
-				globals.synthetic_ptp = atoi(val);
+				aes67_globals.synthetic_ptp = atoi(val);
 			} else if (!strcasecmp(var, "rtp-ts-offset")) {
-				globals.rtp_ts_offset = strtod(val, NULL);
+				aes67_globals.rtp_ts_offset = strtod(val, NULL);
 			} else if (!strcasecmp(var, "rtp-iface")) {
-				strncpy(globals.rtp_iface, val, NW_IFACE_LEN - 1);
+				strncpy(aes67_globals.rtp_iface, val, NW_IFACE_LEN - 1);
 			} else if (!strcasecmp(var, "rtp-payload-type")) {
-				globals.rtp_payload_type = atoi(val);
+				aes67_globals.rtp_payload_type = atoi(val);
 			} else if (!strcasecmp(var, "rtp-jitbuf-latency")) {
-				globals.rtp_jitbuf_latency = atoi(val);
+				aes67_globals.rtp_jitbuf_latency = atoi(val);
 			} else if (!strcmp(var, "level-report")) {
-				globals.level_report = switch_true(val);
+				aes67_globals.level_report = switch_true(val);
 			}
 		}
 	}
@@ -2508,16 +2552,16 @@ static switch_status_t load_config(void)
 	destroy_audio_streams();
 	destroy_shared_audio_streams();
 	destroy_codecs();
-	globals.dual_streams = 0;
-	globals.no_auto_resume_call = 0;
-	globals.indev = globals.outdev = NULL;
-	globals.sample_rate = 8000;
-	globals.unload_device_fail = 0;
+	aes67_globals.dual_streams = 0;
+	aes67_globals.no_auto_resume_call = 0;
+	aes67_globals.indev = aes67_globals.outdev = NULL;
+	aes67_globals.sample_rate = 8000;
+	aes67_globals.unload_device_fail = 0;
 	// default codec to Raw 16bit.
-	globals.tx_codec = L16;
-	globals.rx_codec = L16;
-	globals.ptime_ms = -1.0;
-	globals.ptp_domain = -1;
+	aes67_globals.tx_codec = L16;
+	aes67_globals.rx_codec = L16;
+	aes67_globals.ptime_ms = -1.0;
+	aes67_globals.ptp_domain = -1;
 
 	/* Setting the clock to REALTIME as default */
 	/* Note: Although using MONOTONIC clock is better usually, we use
@@ -2525,52 +2569,52 @@ static switch_status_t load_config(void)
 	with PTP, we could use same clock on the pipeline, hence using the PTP
 	indirectly */
 
-	globals.clock = AL_g_object_new_clock(GST_TYPE_SYSTEM_CLOCK, "clock-type", GST_CLOCK_TYPE_REALTIME, NULL);
+	aes67_globals.clock = AL_g_object_new_clock(GST_TYPE_SYSTEM_CLOCK, "clock-type", GST_CLOCK_TYPE_REALTIME, NULL);
 
-	globals.synthetic_ptp = 0;
-	globals.rtp_ts_offset = 0.0;
-	memset(globals.rtp_iface, 0, NW_IFACE_LEN);
-	globals.rtp_payload_type = 96; /* gstreamer default value*/
-	globals.ptp_stats_cb_id = -1;  /* default to -1 */
-	globals.rtp_jitbuf_latency = 10;
-	memset(globals.ptp_iface, 0, NW_IFACE_LEN);
+	aes67_globals.synthetic_ptp = 0;
+	aes67_globals.rtp_ts_offset = 0.0;
+	memset(aes67_globals.rtp_iface, 0, NW_IFACE_LEN);
+	aes67_globals.rtp_payload_type = 96; /* gstreamer default value*/
+	aes67_globals.ptp_stats_cb_id = -1;  /* default to -1 */
+	aes67_globals.rtp_jitbuf_latency = 10;
+	memset(aes67_globals.ptp_iface, 0, NW_IFACE_LEN);
 
 	if (SWITCH_STATUS_SUCCESS != (status = load_globals(cfg))) { return status; }
 
-	if (globals.ptp_domain >= 0) {
-		void *ptp_clock = init_ptp(globals.ptp_domain, globals.ptp_iface);
+	if (aes67_globals.ptp_domain >= 0) {
+		void *ptp_clock = init_ptp(aes67_globals.ptp_domain, aes67_globals.ptp_iface);
 		if (NULL == ptp_clock) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Switching to Synthetic PTP \n");
-			globals.synthetic_ptp = 1;
+			aes67_globals.synthetic_ptp = 1;
 		} else {
 			/* using PTP clock, clean up the default GST_CLOCK_TYPE_REALTIME clock */
-			if (globals.clock != NULL) {
-				DA_gst_object_unref(GST_OBJECT(globals.clock));
-				globals.clock = NULL;
+			if (aes67_globals.clock != NULL) {
+				DA_gst_object_unref(GST_OBJECT(aes67_globals.clock));
+				aes67_globals.clock = NULL;
 			} else {
 				// accounting
-				DA_NoNulling_dec_objs(globals.clock);
+				DA_NoNulling_dec_objs(aes67_globals.clock);
 			}
-			globals.clock = ptp_clock; // check
+			aes67_globals.clock = ptp_clock; // check
 		}
 	}else
-		DA_NoNulling_dec_objs(globals.clock);		//accounting only
+		DA_NoNulling_dec_objs(aes67_globals.clock);		//accounting only
 
-	globals.enable_ptp_stats = FALSE;
+	aes67_globals.enable_ptp_stats = FALSE;
 
-	if (!globals.dialplan) { set_global_dialplan("XML"); }
+	if (!aes67_globals.dialplan) { set_global_dialplan("XML"); }
 
-	if (!globals.context) { set_global_context("default"); }
+	if (!aes67_globals.context) { set_global_context("default"); }
 
-	if (!globals.sample_rate) { globals.sample_rate = 8000; }
+	if (!aes67_globals.sample_rate) { aes67_globals.sample_rate = 8000; }
 
-	if (!globals.codec_ms) { globals.codec_ms = 20; }
+	if (!aes67_globals.codec_ms) { aes67_globals.codec_ms = 20; }
 
-	globals.cng_frame.datalen = switch_samples_per_packet(globals.sample_rate, globals.codec_ms) * 2;
+	aes67_globals.cng_frame.datalen = switch_samples_per_packet(aes67_globals.sample_rate, aes67_globals.codec_ms) * 2;
 
-	if (!globals.ring_interval) { globals.ring_interval = 5; }
+	if (!aes67_globals.ring_interval) { aes67_globals.ring_interval = 5; }
 
-	if (!globals.timer_name) { set_global_timer_name("soft"); }
+	if (!aes67_globals.timer_name) { set_global_timer_name("soft"); }
 	// FIXME can we have default values of indev and outdev?
 
 	/* streams and endpoints must be last, some initialization depend on globals defaults */
@@ -2583,6 +2627,43 @@ static switch_status_t load_config(void)
 	return status;
 }
 
+
+
+
+// cleans memory on a periodic basis, called from call routines
+void periodic_mem_check()
+{
+	// IDLE DETECTION and mem clr
+	switch_time_t now = switch_micro_time_now();
+	static switch_time_t last_check = 0; // persists
+	
+	if (last_check == 0) last_check = now;
+
+	if ((now - last_check) < IDLE_POLLING_SEC * 1000000LL) { 
+		return;							  // Skip - too soon
+	}
+	last_check = now;
+
+	switch_time_t idle_time = now - aes67_globals.last_call_activity;
+	if ((idle_time > (IDLE_THRESHOLD_SEC * 1000000LL))) {
+		switch_mutex_lock(aes67_globals.pvt_lock);
+		TrimCurrentProcessWorkingSet();
+		aes67_globals.trim_cnt++;
+		CompactHeaps();
+		aes67_globals.compact_heap_cnt++;
+		aes67_globals.last_call_activity = now;
+		switch_mutex_unlock(aes67_globals.pvt_lock);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Periodic mem clear firing\n");
+	}
+}
+
+// FreeSwitch calls this every few seconds
+static void heartbeat_callback(switch_event_t *event)
+{
+	periodic_mem_check();
+}
+
+
 /*
   If it exists, this is called in it's own thread when the module-load completes
   If it returns anything but SWITCH_STATUS_TERM it will be called again automatically
@@ -2593,27 +2674,29 @@ SWITCH_MODULE_RUNTIME_FUNCTION(mod_aes67_runtime)
 	return SWITCH_STATUS_TERM;
 }
 
+
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 {
+	if (aes67_globals.ptp_stats_cb_id != -1) gst_ptp_statistics_callback_remove(aes67_globals.ptp_stats_cb_id);
 
-	if (globals.ptp_stats_cb_id != -1) gst_ptp_statistics_callback_remove(globals.ptp_stats_cb_id);
-
+	switch_event_unbind_callback(heartbeat_callback);
+	
 	destroy_audio_streams();
 	destroy_shared_audio_streams();
 	destroy_codecs();
 	gst_ptp_deinit();
 
-	if (globals.clock) {
-		DA_gst_object_unref(GST_OBJECT(globals.clock));
-		globals.clock = NULL;
+	if (aes67_globals.clock) {
+		DA_gst_object_unref(GST_OBJECT(aes67_globals.clock));
+		aes67_globals.clock = NULL;
 	} else {
 		// accounting
-		DA_NoNulling_dec_objs(globals.clock);
+		DA_NoNulling_dec_objs(aes67_globals.clock);
 	}
 
-	switch_core_hash_destroy(&globals.call_hash);
-	switch_core_hash_destroy(&globals.sh_streams);
-	switch_core_hash_destroy(&globals.endpoints);
+	switch_core_hash_destroy(&aes67_globals.call_hash);
+	switch_core_hash_destroy(&aes67_globals.sh_streams);
+	switch_core_hash_destroy(&aes67_globals.endpoints);
 
 	switch_event_free_subclass(MY_EVENT_RINGING);
 	switch_event_free_subclass(MY_EVENT_MAKE_CALL);
@@ -2621,17 +2704,17 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 	switch_event_free_subclass(MY_EVENT_CALL_HELD);
 	switch_event_free_subclass(MY_EVENT_CALL_RESUMED);
 
-	switch_safe_free(globals.dialplan);
-	switch_safe_free(globals.context);
-	switch_safe_free(globals.cid_name);
-	switch_safe_free(globals.cid_num);
-	switch_safe_free(globals.hold_file);
-	switch_safe_free(globals.timer_name);
+	switch_safe_free(aes67_globals.dialplan);
+	switch_safe_free(aes67_globals.context);
+	switch_safe_free(aes67_globals.cid_name);
+	switch_safe_free(aes67_globals.cid_num);
+	switch_safe_free(aes67_globals.hold_file);
+	switch_safe_free(aes67_globals.timer_name);
 
 	// todo clean cng_frame.codec
 
-	switch_core_codec_destroy(globals.cng_frame.codec); /// FIXME: check if initialized
-	free(globals.cng_frame.codec);
+	switch_core_codec_destroy(aes67_globals.cng_frame.codec); /// FIXME: check if initialized
+	free(aes67_globals.cng_frame.codec);
 
 	// check for leaks
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
@@ -2655,16 +2738,18 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 	return SWITCH_STATUS_SUCCESS;
 }
 
+
+
 static switch_status_t create_codecs(int restart)
 {
-	int sample_rate = globals.sample_rate;
-	int codec_ms = globals.codec_ms;
+	int sample_rate = aes67_globals.sample_rate;
+	int codec_ms = aes67_globals.codec_ms;
 
 	if (restart) { destroy_codecs(); }
-	if (globals.codecs_inited) { return SWITCH_STATUS_SUCCESS; }
+	if (aes67_globals.codecs_inited) { return SWITCH_STATUS_SUCCESS; }
 	// hardcode to Raw 16bit
-	if (!switch_core_codec_ready(&globals.read_codec)) {
-		if (switch_core_codec_init(&globals.read_codec, "L16", NULL, NULL, sample_rate, codec_ms, 1,
+	if (!switch_core_codec_ready(&aes67_globals.read_codec)) {
+		if (switch_core_codec_init(&aes67_globals.read_codec, "L16", NULL, NULL, sample_rate, codec_ms, 1,
 								   SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE, NULL,
 								   NULL) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Can't load codec?\n");
@@ -2672,58 +2757,58 @@ static switch_status_t create_codecs(int restart)
 		}
 	}
 
-	switch_assert(globals.read_codec.implementation);
+	switch_assert(aes67_globals.read_codec.implementation);
 
 	// hardcode to Raw 16bit
-	if (!switch_core_codec_ready(&globals.write_codec)) {
-		if (switch_core_codec_init(&globals.write_codec, "L16", NULL, NULL, sample_rate, codec_ms, 1,
+	if (!switch_core_codec_ready(&aes67_globals.write_codec)) {
+		if (switch_core_codec_init(&aes67_globals.write_codec, "L16", NULL, NULL, sample_rate, codec_ms, 1,
 								   SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE, NULL,
 								   NULL) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Can't load codec?\n");
-			switch_core_codec_destroy(&globals.read_codec);
+			switch_core_codec_destroy(&aes67_globals.read_codec);
 			return SWITCH_STATUS_FALSE;
 		}
 	}
 
-	if (!globals.read_timer.timer_interface) {
-		if (switch_core_timer_init(&globals.read_timer, globals.timer_name, codec_ms,
-								   globals.read_codec.implementation->samples_per_packet,
+	if (!aes67_globals.read_timer.timer_interface) {
+		if (switch_core_timer_init(&aes67_globals.read_timer, aes67_globals.timer_name, codec_ms,
+								   aes67_globals.read_codec.implementation->samples_per_packet,
 								   module_pool) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "setup timer failed!\n");
-			switch_core_codec_destroy(&globals.read_codec);
-			switch_core_codec_destroy(&globals.write_codec);
+			switch_core_codec_destroy(&aes67_globals.read_codec);
+			switch_core_codec_destroy(&aes67_globals.write_codec);
 			return SWITCH_STATUS_FALSE;
 		}
 	}
-	if (!globals.readfile_timer.timer_interface) {
-		if (switch_core_timer_init(&globals.readfile_timer, globals.timer_name, codec_ms,
-								   globals.read_codec.implementation->samples_per_packet,
+	if (!aes67_globals.readfile_timer.timer_interface) {
+		if (switch_core_timer_init(&aes67_globals.readfile_timer, aes67_globals.timer_name, codec_ms,
+								   aes67_globals.read_codec.implementation->samples_per_packet,
 								   module_pool) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "setup timer failed!\n");
-			switch_core_codec_destroy(&globals.read_codec);
-			switch_core_codec_destroy(&globals.write_codec);
+			switch_core_codec_destroy(&aes67_globals.read_codec);
+			switch_core_codec_destroy(&aes67_globals.write_codec);
 			return SWITCH_STATUS_FALSE;
 		}
 	}
 
-	if (!globals.hold_timer.timer_interface) {
-		if (switch_core_timer_init(&globals.hold_timer, globals.timer_name, codec_ms,
-								   globals.read_codec.implementation->samples_per_packet,
+	if (!aes67_globals.hold_timer.timer_interface) {
+		if (switch_core_timer_init(&aes67_globals.hold_timer, aes67_globals.timer_name, codec_ms,
+								   aes67_globals.read_codec.implementation->samples_per_packet,
 								   module_pool) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "setup hold timer failed!\n");
-			switch_core_codec_destroy(&globals.read_codec);
-			switch_core_codec_destroy(&globals.write_codec);
-			switch_core_timer_destroy(&globals.read_timer);
-			switch_core_timer_destroy(&globals.readfile_timer);
+			switch_core_codec_destroy(&aes67_globals.read_codec);
+			switch_core_codec_destroy(&aes67_globals.write_codec);
+			switch_core_timer_destroy(&aes67_globals.read_timer);
+			switch_core_timer_destroy(&aes67_globals.readfile_timer);
 
 			return SWITCH_STATUS_FALSE;
 		}
 	}
 
-	globals.cng_frame.rate = globals.read_frame.rate = sample_rate;
-	globals.cng_frame.codec = globals.read_frame.codec = &globals.read_codec;
+	aes67_globals.cng_frame.rate = aes67_globals.read_frame.rate = sample_rate;
+	aes67_globals.cng_frame.codec = aes67_globals.read_frame.codec = &aes67_globals.read_codec;
 
-	globals.codecs_inited = 1;
+	aes67_globals.codecs_inited = 1;
 	return SWITCH_STATUS_SUCCESS;
 }
 
@@ -2748,20 +2833,20 @@ int open_audio_stream(g_stream_t **stream, udp_sock_t *indev, udp_sock_t *outdev
 
 		data.tx_port = outdev->port;
 	}
-	data.sample_rate = globals.sample_rate;
-	strncpy(data.bit_depth, globals.bit_depth, AUDIO_FMT_STR_LEN);
+	data.sample_rate = aes67_globals.sample_rate;
+	strncpy(data.bit_depth, aes67_globals.bit_depth, AUDIO_FMT_STR_LEN);
 
-	data.tx_codec = globals.tx_codec;
-	data.rx_codec = globals.rx_codec;
-	data.codec_ms = globals.codec_ms;
-	data.channels = globals.channels;
+	data.tx_codec = aes67_globals.tx_codec;
+	data.rx_codec = aes67_globals.rx_codec;
+	data.codec_ms = aes67_globals.codec_ms;
+	data.channels = aes67_globals.channels;
 	data.name = NULL;
-	data.ptime_ms = globals.ptime_ms;
-	data.clock = globals.clock;
-	data.synthetic_ptp = globals.synthetic_ptp;
-	data.rtp_iface = globals.rtp_iface;
-	data.rtp_payload_type = globals.rtp_payload_type;
-	data.rtp_jitbuf_latency = globals.rtp_jitbuf_latency;
+	data.ptime_ms = aes67_globals.ptime_ms;
+	data.clock = aes67_globals.clock;
+	data.synthetic_ptp = aes67_globals.synthetic_ptp;
+	data.rtp_iface = aes67_globals.rtp_iface;
+	data.rtp_payload_type = aes67_globals.rtp_payload_type;
+	data.rtp_jitbuf_latency = aes67_globals.rtp_jitbuf_latency;
 
 	*stream = create_pipeline(&data, error_callback);
 
@@ -2803,7 +2888,7 @@ int open_shared_audio_stream(shared_audio_stream_t *shstream)
 	data.channels = shstream->channels;
 	data.name = shstream->name;
 	data.ptime_ms = shstream->ptime_ms;
-	data.clock = globals.clock; // no clock setting per stream, only globals
+	data.clock = aes67_globals.clock; // no clock setting per stream, only globals
 	data.synthetic_ptp = shstream->synthetic_ptp;
 	data.rtp_ts_offset = shstream->rtp_ts_offset;
 	data.rtp_iface = shstream->rtp_iface;
@@ -2846,10 +2931,11 @@ static int create_shared_audio_stream(shared_audio_stream_t *shstream) /// check
 static int clear_shared_audio_stream(shared_audio_stream_t *shstream)
 {
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Destroying shared audio stream %s\n", shstream->name);
-	if (shstream->stream) { stop_pipeline(shstream->stream); }
+	if (shstream->stream) { 
+		stop_pipeline(shstream->stream); 
+	}
 
 	shstream->stream = NULL; // deallocated in stop pipeline
-
 	return 0;
 }
 
@@ -2872,8 +2958,8 @@ static audio_stream_t *create_audio_stream(udp_sock_t *indev, udp_sock_t *outdev
 	stream->outdev = outdev;
 
 	if (!stream->write_timer.timer_interface) {
-		if (switch_core_timer_init(&(stream->write_timer), globals.timer_name, globals.codec_ms,
-								   globals.read_codec.implementation->samples_per_packet,
+		if (switch_core_timer_init(&(stream->write_timer), aes67_globals.timer_name, aes67_globals.codec_ms,
+								   aes67_globals.read_codec.implementation->samples_per_packet,
 								   module_pool) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "setup timer failed!\n");
 			switch_safe_free(stream);
@@ -2895,7 +2981,7 @@ static audio_stream_t *create_audio_stream(udp_sock_t *indev, udp_sock_t *outdev
 		return NULL;
 	}
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Created audio stream: %d channels %d\n",
-					  globals.sample_rate, globals.channels);
+					  aes67_globals.sample_rate, aes67_globals.channels);
 	return stream;
 }
 
@@ -2943,9 +3029,8 @@ void error_callback(char *msg, g_stream_t *stream)
 	switch_channel_t *channel;
 	private_t *tp;
 	if (msg) switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Stream error: %s\n", msg); // added check
-	//switch_mutex_lock(globals.pvt_lock);
 
-	for (tp = globals.call_list; tp; tp = tp->next) {
+	for (tp = aes67_globals.call_list; tp; tp = tp->next) {
 		if (!tp->audio_endpoint) continue;
 		STREAM_READER_LOCK(tp->audio_endpoint->in_stream);		//added
 		if ((tp->audio_endpoint->in_stream && (tp->audio_endpoint->in_stream->stream == stream)) ||
@@ -2956,11 +3041,11 @@ void error_callback(char *msg, g_stream_t *stream)
 		}
 		STREAM_READER_UNLOCK(tp->audio_endpoint->in_stream);
 	}
-	//switch_mutex_unlock(globals.pvt_lock); // added check
+
 	return;
 
 hangup:
-	//switch_mutex_unlock(globals.pvt_lock); // added check
+	//switch_mutex_unlock(aes67_globals.pvt_lock); // added check
 	// Note: this could be sync blocking call, would prefer a more asyn event kind which will call channel_kill
 	// switch_channel_hangup(channel, SWITCH_CAUSE_PROTOCOL_ERROR);
 	if (channel) switch_channel_hangup(channel, SWITCH_CAUSE_PROTOCOL_ERROR); // check
@@ -2971,8 +3056,8 @@ static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
 	switch_hash_index_t *hi;
 	int cnt = 0;
 
-	switch_mutex_lock(globals.sh_shtreams_lock); //changed
-	for (hi = switch_core_hash_first(globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
+	switch_mutex_lock(aes67_globals.sh_shtreams_lock); //changed
+	for (hi = switch_core_hash_first(aes67_globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 		const void *var;
 		void *val;
 		shared_audio_stream_t *s = NULL;
@@ -2987,7 +3072,7 @@ static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
 							   s->codec_ms, s->channels, s->synthetic_ptp, s->txflow ? "on" : "off");
 		cnt++;
 	}
-	switch_mutex_unlock(globals.sh_shtreams_lock);//changed
+	switch_mutex_unlock(aes67_globals.sh_shtreams_lock);//changed
 
 	stream->write_function(stream, "Total streams: %d\n", cnt);
 	return SWITCH_STATUS_SUCCESS;
@@ -2997,7 +3082,7 @@ static switch_status_t list_endpoints(switch_stream_handle_t *stream)
 {
 	switch_hash_index_t *hi;
 	int cnt = 0;
-	for (hi = switch_core_hash_first(globals.endpoints); hi; hi = switch_core_hash_next(&hi)) {
+	for (hi = switch_core_hash_first(aes67_globals.endpoints); hi; hi = switch_core_hash_next(&hi)) {
 		const void *var;
 		void *val;
 		audio_endpoint_t *e = NULL;
@@ -3047,7 +3132,6 @@ static switch_status_t reload_config()
 
 SWITCH_STANDARD_API(aes_cmd)
 {
-
 	char *argv[10] = {0};
 	int argc = 0;
 	char *mycmd = NULL;
@@ -3063,6 +3147,9 @@ SWITCH_STANDARD_API(aes_cmd)
 							   "aes67 txflow <stream> <on|off>\n"
 							   "aes67 reloadconf\n"
 							   "aes67 dump <stream> <dotfile name>\n"
+							   "aes67 clrwrkset\n"
+							   "aes67 compactheap\n"
+							   "aes67 clrcount\n"
 							   "--------------------------------------------------------------------------------\n";
 	if (zstr(cmd)) {
 		stream->write_function(stream, "%s", usage_string);
@@ -3074,7 +3161,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		goto done;
 	}
 
-	if (sizeof(argv[0]) <= 0) {
+	if (argc < 0) {
 		stream->write_function(stream, "Unknown Command\n");
 		goto done;
 	}
@@ -3096,10 +3183,10 @@ SWITCH_STANDARD_API(aes_cmd)
 		}
 
 		if (!strcasecmp(argv[1], "on")) {
-			globals.enable_ptp_stats = TRUE;
+			aes67_globals.enable_ptp_stats = TRUE;
 			stream->write_function(stream, "PTP stats printing Enabled!\n");
 		} else if (!strcasecmp(argv[1], "off")) {
-			globals.enable_ptp_stats = FALSE;
+			aes67_globals.enable_ptp_stats = FALSE;
 			stream->write_function(stream, "PTP stats printing Disabled!\n");
 		} else {
 			stream->write_function(stream, "Please mention 'on' or 'off'\n");
@@ -3116,7 +3203,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		}
 
 		// rtpstats command
-		astream = switch_core_hash_find_locked(globals.sh_streams, argv[1], globals.sh_shtreams_lock);
+		astream = switch_core_hash_find_locked(aes67_globals.sh_streams, argv[1], aes67_globals.sh_shtreams_lock);
 		if (!astream) {
 			stream->write_function(stream, "Stream not found\n");
 			goto done;
@@ -3148,7 +3235,7 @@ SWITCH_STANDARD_API(aes_cmd)
 			goto done;
 		}
 
-		astream = switch_core_hash_find_locked(globals.sh_streams, argv[1], globals.sh_shtreams_lock);
+		astream = switch_core_hash_find_locked(aes67_globals.sh_streams, argv[1], aes67_globals.sh_shtreams_lock);
 		if (!astream) {
 			stream->write_function(stream, "Stream with name %s not found\n", argv[1]);
 			stream->write_function(stream, "%s", usage_string);
@@ -3157,7 +3244,7 @@ SWITCH_STANDARD_API(aes_cmd)
 
 		if (!strcasecmp(argv[2], "on")) {
 			if (STREAM_READER_TRYLOCK(astream)) {
-				// switch_mutex_lock(globals.gst_mutex); // added check
+				// switch_mutex_lock(aes67_globals.gst_mutex); // added check
 				drop_output_buffers(FALSE, astream->stream);
 
 				astream->txflow = TRUE;
@@ -3165,7 +3252,7 @@ SWITCH_STANDARD_API(aes_cmd)
 				// the stream is initialized after the pipeline is created, so we need to preserve
 				// txflow somewhere until then
 				astream->stream->txdrop = FALSE;
-				// switch_mutex_unlock(globals.gst_mutex); // added check
+				// switch_mutex_unlock(aes67_globals.gst_mutex); // added check
 				stream->write_function(stream, "Tx buffers flowing!\n");
 
 				STREAM_READER_UNLOCK(astream);
@@ -3174,12 +3261,12 @@ SWITCH_STANDARD_API(aes_cmd)
 			}
 		} else if (!strcasecmp(argv[2], "off")) {
 			if (STREAM_READER_TRYLOCK(astream)) {
-				// switch_mutex_lock(globals.gst_mutex); // added check
+				// switch_mutex_lock(aes67_globals.gst_mutex); // added check
 				drop_output_buffers(TRUE, astream->stream);
 
 				astream->txflow = FALSE;
 				astream->stream->txdrop = TRUE;
-				// switch_mutex_unlock(globals.gst_mutex); // added check
+				// switch_mutex_unlock(aes67_globals.gst_mutex); // added check
 				stream->write_function(stream, "Tx buffers dropping!\n");
 
 				STREAM_READER_UNLOCK(astream);
@@ -3202,7 +3289,7 @@ SWITCH_STANDARD_API(aes_cmd)
 			goto done;
 		}
 
-		if (!(astream = switch_core_hash_find_locked(globals.sh_streams, argv[1], globals.sh_shtreams_lock))) {
+		if (!(astream = switch_core_hash_find_locked(aes67_globals.sh_streams, argv[1], aes67_globals.sh_shtreams_lock))) {
 			stream->write_function(stream, "Stream with name %s not found\n", argv[1]);
 			stream->write_function(stream, "%s", usage_string);
 			goto done;
@@ -3226,11 +3313,19 @@ SWITCH_STANDARD_API(aes_cmd)
 		stream->write_function(stream, "\tdebugs: %d\n", g_alloc_counts.debugs);
 		stream->write_function(stream, "\tstats: %d\n", g_alloc_counts.stats);
 		stream->write_function(stream, "\tchars: %d\n", g_alloc_counts.chars);
-		// stream->write_function(stream, "\tgobjects: %d\n", g_alloc_counts.gobjects);
-		stream->write_function(stream, "\tFDA: %d\n", g_alloc_counts.FDA);
-		stream->write_function(stream, "\tFAL: %d\n", g_alloc_counts.FAL);
 	} else if (!strcasecmp(argv[0], "version")) {
 		stream->write_function(stream, "mod_aes67 version date: %s\n", MOD_AES_VERSION_DATE);
+	} else if (!strcasecmp(argv[0], "clrwrkset")) {
+		TrimCurrentProcessWorkingSet();
+		aes67_globals.trim_cnt++;
+		stream->write_function(stream, "Working set cleared\n");
+	}else if (!strcasecmp(argv[0], "compactheap")){
+		CompactHeaps();
+		aes67_globals.compact_heap_cnt++;
+		stream->write_function(stream, "Compacted idle heap\n");
+	} else if (!strcasecmp(argv[0], "clrcount")) {
+		stream->write_function(stream, "Mem cleanup counts: trim:%" G_GUINT64_FORMAT " heap:%" G_GUINT64_FORMAT "\n"
+			, aes67_globals.trim_cnt, aes67_globals.compact_heap_cnt);
 	}
 
 done:

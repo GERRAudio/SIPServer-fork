@@ -1,8 +1,8 @@
 // Wrappers to track allocations/deallocations (debug)
-// then you can display the counters from the CLI : use "aes67 allocs"
+// allows display the counters from the CLI : use "aes67 allocs"
 // also to wrap sensitive gstreamer calls with mutexes as recommended by gst documentation
 //
-// just prefix functions that are allocators with AL_  and deallocators with DA_. Most AL Da use mutexes as well
+// to use, prefix functions that are allocators with AL_  and deallocators with DA_. Most AL DA can use mutexes as well
 // MU_ just mutexes the call with an appropriate mutex (hardcoded here)
 //
 // NB - the dealloc/deref  wrappers always check if the passed ptr is NULL first
@@ -12,12 +12,10 @@
 // - use flags to remove mutexes
 // - use flags to disable counters
 //
-// Copyright GERRAudio 2025
+// Copyright GERRAudio 2025-2026
 //
 #ifndef G_WRAP
 #define G_WRAP
-
-
 
 #include "aes67_counters.h"
 #include <glib.h>
@@ -28,12 +26,14 @@
 
 // specialized mutexes, must be declared and initialized in c module where MU_ functions are used
 
-extern switch_mutex_t *alloc_pipl_lock2;
-extern switch_mutex_t *alloc_pipl_lock;
-extern switch_mutex_t *alloc_mcp_lock;
-extern switch_mutex_t *alloc_bkup_lock;
+//extern switch_mutex_t *general_pipl_lock;
+
+//extern switch_mutex_t *alloc_mcp_lock;
+//extern switch_mutex_t *alloc_bkup_lock;
 
 // atomic incr/decr for debugging only
+// forces serialization of counters
+// slower and not useful except for debug
 #ifdef ATOMIC_INCR
 #include <glib.h>
 #define G_ATOMIC_LOCK_FREE 1
@@ -159,7 +159,6 @@ inline void g_atomic_int_dec(int *i) { g_atomic_int_add(i, -1); }
 	inline void DA_##name(t p)  {                                                                                       \
 			if (p) {                                                                                                    \
 				accounting_decr(g_alloc_counts.counter);                                                              \
-			p = NULL;                                                                                                  \
 		}										 \
 	}
 
@@ -228,7 +227,7 @@ inline void g_atomic_int_dec(int *i) { g_atomic_int_add(i, -1); }
 		switch_mutex_unlock(l);                                                                                        \
 	}
 
-MU_WRAPV2p(gst_element_release_request_pad, GstElement*, element, GstPad*, p, alloc_pipl_lock2)
+//MU_WRAPV2p(gst_element_release_request_pad, GstElement *, element, GstPad *, p, general_pipl_lock)
 
 #define MU_WRAP3(ret_type, fname, tp1, p1, tp2, p2, tp3, p3, l)                                                        \
 	inline ret_type MU_##fname(tp1 p1, tp2 p2, tp3 p3)                                                                 \
@@ -261,7 +260,8 @@ MU_WRAPV2p(gst_element_release_request_pad, GstElement*, element, GstPad*, p, al
 	{                                                                                                                  \
 		switch_mutex_lock(l);                                                                                          \
 		ret_type retval = fname(p1, p2, p3, p4);                                                                       \
-		switch_mutex_unlock(l);                                                                                        \
+		switch_mutex_unlock(l);																						   \
+	return retval;																									   \
 	}
 
 #define MU_WRAP7(ret_type, fname, t1, p1, t2, p2, t3, p3, t4, p4, t5, p5, t6, p6, t7, p7, l)                           \
@@ -287,11 +287,11 @@ MU_WRAPV2p(gst_element_release_request_pad, GstElement*, element, GstPad*, p, al
 //
 //  === memcpy lock
 // void *memcpy(void *dest, const void *src, size_t n);
-MU_WRAPV3(memcpy, void *, dest, const void *, src, size_t, n, alloc_mcp_lock)
+//MU_WRAPV3(memcpy, void *, dest, const void *, src, size_t, n, alloc_mcp_lock)
 
 // ===element (obj) locks
 
-MU_WRAP2(gboolean, gst_bin_add, GstBin *, bin, GstElement *, element, alloc_pipl_lock2)
+//MU_WRAP2(gboolean, gst_bin_add, GstBin *, bin, GstElement *, element, general_pipl_lock)
 
 #define MU_g_object_set(p1, ...)                                                                                       \
 	do {                                                                                                               \
@@ -320,7 +320,7 @@ G_WRAP_FREE(g_free, chars, gpointer)
 // --- inc/dec wrappers ---
 //G_WRAP_INC(bufs, cnt_bufs, GstStructure *, p)
 G_WRAP_INC(samples, cnt_samples, GstSample *, p)
-//G_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p) 
+G_WRAP_DEC(bufs, dec_bufs, GstBuffer *, p) 
 G_WRAP_DECNN(bufs, dec_bufs, GstBuffer *, p)
 G_WRAP_DECNN(objs, dec_objs, GstElement *, p) 
 G_WRAP_DECNN(caps, dec_caps, GstCaps *, p)
@@ -354,6 +354,7 @@ G_WRAP_FREE(gst_object_unref, objs, GstObject *)
 
 G_WRAP_DEC(objs, dec_objs, GstObject *, p)
 G_WRAP_DEC(caps, dec_caps, GstCaps *, p)
+G_WRAP_DEC(samples, dec_samples, GstSample *, p)
 
 //G_WRAP_INC(objs, cnt_objs, GstObject *, p)
 G_WRAP_INC(objs, cnt_caps, GstCaps *, p)
@@ -378,17 +379,17 @@ G_WRAP_ALLOC(GstPad *, gst_pad_get_peer, objs, GstPad *, p)
 // ===pipeline locks
 
 // gboolean gst_pipeline_set_clock(GstPipeline *pipeline, GstClock *clock);
-MU_WRAP2(gboolean, gst_pipeline_set_clock, GstPipeline *, p, GstClock *, c, alloc_pipl_lock2)
+//MU_WRAP2(gboolean, gst_pipeline_set_clock, GstPipeline *, p, GstClock *, c, general_pipl_lock)
 // void gst_pipeline_use_clock(GstPipeline *pipeline, GstClock *clock);
-MU_WRAPV2(gst_pipeline_use_clock, GstPipeline *, pipeline, GstClock *, clock, alloc_pipl_lock2)
+//MU_WRAPV2(gst_pipeline_use_clock, GstPipeline *, pipeline, GstClock *, clock, general_pipl_lock)
 // gst_object_unref(GST_OBJECT(stream->pipeline));
-MU_WRAPV1p(gst_object_unref, gpointer, pipeline, alloc_pipl_lock2)
+//MU_WRAPV1p(gst_object_unref, gpointer, pipeline, general_pipl_lock)
 // gboolean gst_bin_remove(GstBin *bin, GstElement *element);
-MU_WRAP2(gboolean, gst_bin_remove, GstBin *, bin, GstElement *, element, alloc_pipl_lock2)
+//MU_WRAP2(gboolean, gst_bin_remove, GstBin *, bin, GstElement *, element, general_pipl_lock)
 // GstStateChangeReturn gst_element_get_state(GstElement *e, GstState *s,GstState *pending, GstClockTime timeout);
-MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime,t, alloc_pipl_lock2)
+//MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime,t, general_pipl_lock)
 // gboolean gst_bus_remove_watch(GstBus *bus);
-MU_WRAP1(gboolean, gst_bus_remove_watch, GstBus *, bus, alloc_pipl_lock2)
+//MU_WRAP1(gboolean, gst_bus_remove_watch, GstBus *, bus, general_pipl_lock)
 // GstObject* gst_element_get_parent(GstElement *element);
 G_WRAP_ALLOC(GstObject *, gst_element_get_parent, objs, GstElement *, e)
 // --- Sample  wrappers ---

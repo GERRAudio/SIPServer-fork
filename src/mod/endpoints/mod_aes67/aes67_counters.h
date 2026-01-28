@@ -15,10 +15,8 @@ typedef struct {
     int gobjects;
 	int debugs;
 	int stats;
-	int FDA;
-	int FAL;
 } G_alloc_counts;
 
 // -- need to define the following in c file --
-extern G_alloc_counts g_alloc_counts;	
+extern volatile G_alloc_counts g_alloc_counts;	// declared volatile to avoid subtle miscounts due to optimizations
 #endif
