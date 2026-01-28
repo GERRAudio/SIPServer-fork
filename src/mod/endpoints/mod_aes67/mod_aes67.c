@@ -714,7 +714,7 @@ static void add_pvt(private_t *tech_pvt, int master)
 	switch_mutex_lock(aes67_globals.pvt_lock);
 
 	if (*tech_pvt->call_id == '\0') {
-		//switch_mutex_lock(aes67_globals.gst_mutex); /// check should this be pvt mutex?
+
 		switch_snprintf(tech_pvt->call_id, sizeof(tech_pvt->call_id), "%d", ++aes67_globals.call_id);
 		switch_channel_set_variable(switch_core_session_get_channel(tech_pvt->session), SWITCH_PA_CALL_ID_VARIABLE,
 									tech_pvt->call_id);
@@ -723,7 +723,6 @@ static void add_pvt(private_t *tech_pvt, int master)
 			switch_core_session_set_read_codec(tech_pvt->session, &aes67_globals.read_codec);
 			switch_core_session_set_write_codec(tech_pvt->session, &aes67_globals.write_codec);
 		}
-		//switch_mutex_unlock(aes67_globals.gst_mutex);
 		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(tech_pvt->session), SWITCH_LOG_DEBUG, "Added call %s\n",
 						  tech_pvt->call_id);
 	}
@@ -842,9 +841,8 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 		switch_mutex_unlock(endpoint->mutex);
 	}
 
-	//switch_mutex_lock(aes67_globals.gst_mutex); /// added
 	switch_core_hash_delete(aes67_globals.call_hash, tech_pvt->call_id);
-	//switch_mutex_unlock(aes67_globals.gst_mutex); /// added
+
 
 	switch_clear_flag_locked(tech_pvt, TFLAG_IO);
 	switch_set_flag_locked(tech_pvt, TFLAG_HUP);
@@ -1056,7 +1054,7 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 	int samples = 0;
 	int bytes = 0;
 	switch_status_t status = SWITCH_STATUS_FALSE;
-	// switch_assert (tech_pvt != NULL);	changed to below
+
 	if (tech_pvt == NULL) goto error;
 
 	char session_id[SESSION_ID_LEN];
@@ -1137,7 +1135,7 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 	// FIXME: won't work for L24/L32
 	samples = bytes / sizeof(int16_t);
 	STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added
-	//switch_mutex_unlock(aes67_globals.device_lock);
+
 	// poll for clear mem
 	// After pullbuffers() or pushbuffer() succeeds
 	aes67_globals.last_call_activity = switch_micro_time_now();
@@ -1637,7 +1635,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_core_hash_init(&aes67_globals.call_hash);
 	switch_core_hash_init(&aes67_globals.sh_streams);
 	switch_core_hash_init(&aes67_globals.endpoints);
-	//switch_mutex_init(&aes67_globals.device_lock, SWITCH_MUTEX_NESTED,					  module_pool); /// check proper use of all of these - compate to mod_audio
+	//switch_mutex_init(&aes67_globals.device_lock, SWITCH_MUTEX_NESTED, module_pool); /// check proper use of all of these - compare to mod_audio
 	switch_mutex_init(&aes67_globals.pvt_lock, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&aes67_globals.streams_lock, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&aes67_globals.flag_mutex, SWITCH_MUTEX_NESTED, module_pool);
@@ -1795,7 +1793,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 {
 	switch_hash_index_t *hi;
 	STREAM_WRITER_LOCK(stream);
-	//switch_mutex_lock(aes67_globals.gst_mutex); // added check
+
 	for (hi = switch_core_hash_first(aes67_globals.call_hash); hi; hi = switch_core_hash_next(&hi)) {
 		const void *var;
 		void *val;
@@ -1823,7 +1821,7 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 			switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 		}
 	}
-	//switch_mutex_unlock(aes67_globals.gst_mutex); // added check
+
 	STREAM_WRITER_UNLOCK(stream);
 }
 
@@ -3028,7 +3026,6 @@ void error_callback(char *msg, g_stream_t *stream)
 	switch_channel_t *channel;
 	private_t *tp;
 	if (msg) switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Stream error: %s\n", msg); // added check
-	//switch_mutex_lock(aes67_globals.pvt_lock);
 
 	for (tp = aes67_globals.call_list; tp; tp = tp->next) {
 		if (!tp->audio_endpoint) continue;
@@ -3041,7 +3038,7 @@ void error_callback(char *msg, g_stream_t *stream)
 		}
 		STREAM_READER_UNLOCK(tp->audio_endpoint->in_stream);
 	}
-	//switch_mutex_unlock(aes67_globals.pvt_lock); // added check
+
 	return;
 
 hangup:

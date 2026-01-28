@@ -689,6 +689,8 @@ done_no_unlock:
 	return retval;
 }
 
+
+
 g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 {
 	GstBus *bus = NULL;
@@ -698,7 +700,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	GstElement *rtpjitbuf = NULL;
 	char *pipeline_name = NULL;
 
-	g_stream_t *stream = g_new0(g_stream_t, 1);			//note the 0
+	g_stream_t *stream = g_new0(g_stream_t, 1);			//init
 	// Initialize the counter:
 	g_atomic_int_set(&stream->pipeline_elements_count, 0);
 	/*
@@ -824,8 +826,6 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			// The deinterleave will be linked to the tee dynamically
 		}
 
-		//stream->deinterleave_signal_id = g_signal_connect(deinterleave, "pad-added", 
-			//G_CALLBACK(deinterleave_pad_added), NULL);
 		stream->deinterleave_signal_id =
 			g_signal_connect(deinterleave, "pad-added",
 			G_CALLBACK(deinterleave_pad_added), stream); 
@@ -855,12 +855,6 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			goto ddirRX_error;
 		}
 
-		// this stops audio in one direction!!
-		//GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED);			//added extra check
-		//if (ret == GST_STATE_CHANGE_FAILURE) {
-			//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline state change failed\n");
-			//goto ddirRX_error;
-		//}
 
 		goto ddirRX_exit;
 
@@ -899,16 +893,11 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		if (capsfilter) DA_NoNulling_dec_objs(capsfilter);
 		if (split) DA_NoNulling_dec_objs(split);
 		if (deinterleave) DA_NoNulling_dec_objs(deinterleave);
-		/*
-		if (rx_caps) DA_NoNulling_dec_caps(rx_caps);
-		if (udp_caps) DA_NoNulling_dec_caps(udp_caps);
-		*/
+
 		DA_gst_caps_unref(udp_caps); 
 		udp_caps = NULL;
 		DA_gst_caps_unref(rx_caps); 
 		rx_caps = NULL;
-		//gst_object_unref(GST_OBJECT(tee));		//dereferencing crashes DA not needed since not counted
-		//tee = NULL;
 	}
 
 	if (data->direction & DIRECTION_TX) {
@@ -1031,12 +1020,6 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			goto ddirTX_error;
 		}
 
-		// this stops audio in one direction!!
-		//GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PAUSED); // added extra check
-		//if (ret == GST_STATE_CHANGE_FAILURE) {
-			//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline state change failed\n");
-			//goto ddirTX_error;
-		//}
 
 		goto ddirTX_exit;
 
@@ -1221,8 +1204,7 @@ error:
 	pipeline = NULL;
 	DA_gst_object_unref(GST_OBJECT(rtp_pay));
 	rtp_pay = NULL;
-	// DA_gst_object_unref(GST_OBJECT(rtpdepay));
-	// rtpdepay = NULL;
+
 	if (stream != NULL) {
 		if (stream->clock != NULL) {
 			DA_gst_object_unref(GST_OBJECT(stream->clock)); // added - check
@@ -1246,18 +1228,19 @@ exit:
 	//DA_NoNulling_dec_chars(stream);  not counted
 	DA_NoNulling_dec_objs(udpsrc);
 	DA_NoNulling_dec_objs(fakesink);
-	// DA_NoNulling_dec_objs(GST_OBJECT(rtpdepay));		//done above
 	g_atomic_int_set(&stream->pipeline_active, 1); // Mark as active
 	return stream;
 }
 
 
-void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locaked by caller
+void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locked by caller
 {
 	if (!stream) goto error; //added check
 	if (!g_atomic_int_get(&stream->pipeline_active)) { 
 		goto error;
 	}
+
+
 	g_atomic_int_set(&stream->clock_sync, 0);
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_READY);
 
@@ -1274,18 +1257,17 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locaked by caller
 	} else {
 		DA_NoNulling_dec_objs(GST_OBJECT(stream->clock)); // accounting
 	}
-
-	//switch_mutex_lock(general_pipl_lock); //aGStreamer + GLib atomics handle everything. 
+ 
 	gst_pipeline_use_clock(GST_PIPELINE(stream->pipeline), ptp_clock);		
 	gst_pipeline_set_clock(GST_PIPELINE(stream->pipeline), ptp_clock);		
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_PLAYING);	
 	dump_pipeline(stream->pipeline, "ptp-clock-switch");
 	g_atomic_int_set(&stream->clock_sync, 1);
-	//switch_mutex_unlock(general_pipl_lock);  //added check
+
+
 error:
 	return;
 }
-
 
 void *start_pipeline(void *data)
 {
@@ -1297,7 +1279,7 @@ void *start_pipeline(void *data)
 	return NULL;
 }
 
-//TODO: remove aftger testing
+//TODO: remove after confirming by testing
 #ifdef ACCOUNTFORCHILDREN
 /// <summary>
 ///  added to account for object added to pipeline
@@ -1338,6 +1320,12 @@ void account_pipeline_children(g_stream_t *stream)
 }
 #endif
 
+
+// Here be demons
+// if this runs while calls are in progress, some deallocations do not occur
+// this is why there is the atomic flag that indicates it is in progress
+// and it must be checked in critical sections push pull bufs and pad ops
+//
 void stop_pipeline(g_stream_t *stream)
 {
 	if (!stream) goto error_no_unlock;
@@ -1386,7 +1374,9 @@ void stop_pipeline(g_stream_t *stream)
 	}
 
 	// ACCOUNT for linked pipeline objects
-	//account_pipeline_children(stream); // rethought - see below
+	#ifdef ACCOUNTFORCHILDREN
+	account_pipeline_children(stream); // rethought - see below
+	#endif
 	// NEW CODE - Account for elements that will be freed when pipeline is destroyed:
 	int remaining = g_atomic_int_get(&stream->pipeline_elements_count);
 	if (remaining > 0) {
@@ -1419,13 +1409,9 @@ void stop_pipeline(g_stream_t *stream)
 		gst_object_unref(appsink);
 	}
 
-
-
-
 	// NULL STATE - destroys ALL elements safely
 	//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Setting pipeline to NULL...\n");
 	gst_element_set_state(GST_ELEMENT(stream->pipeline), GST_STATE_NULL);
-
 
 	GstState state, pending;
 	GstStateChangeReturn ret = gst_element_get_state(
@@ -1433,7 +1419,7 @@ void stop_pipeline(g_stream_t *stream)
 
 	if (ret != GST_STATE_CHANGE_SUCCESS || state != GST_STATE_NULL) { 
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Unable to stop pipeline ..\n");
-		goto error_unlock; 
+		goto exit_unlock; 
 	}
 
 	// UNREF PIPELINE (frees everything)
@@ -1464,13 +1450,16 @@ void stop_pipeline(g_stream_t *stream)
 
 	//  FINAL FREE
 	g_free(stream);
-	//periodic_mem_check();
 
-error_unlock:
+
+exit_unlock:
 	if (timer_id > 0) {
 		g_source_remove(timer_id);
 		g_atomic_int_set(&stream->backup_sender_idle_timer, 0);
 	}
+	//
+	periodic_mem_check(); // de allocate memory here if required
+	//
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 	return;
 
