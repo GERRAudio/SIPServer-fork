@@ -1329,7 +1329,7 @@ void stop_pipeline(g_stream_t *stream)
 	if (!stream) goto error_no_unlock;
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
-	// CRITICAL: Set flag BEFORE acquiring lock - this immediately stops audio I/O
+	// CRITICAL: Set flag to 0  this immediately stops audio I/O
 	g_atomic_int_set(&stream->pipeline_active, 0);
 
 	// STOP ALL TIMERS/SOURCES FIRST (atomic)
