@@ -2728,7 +2728,7 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 					  "\tobjs: %d\n"
 					  "\tchars: %d\n",
 					  g_alloc_counts.bufs, g_alloc_counts.errs, g_alloc_counts.structs, g_alloc_counts.samples,
-					  g_alloc_counts.memories, g_alloc_counts.messages, g_alloc_counts.objs, g_alloc_counts.chars);
+					  g_alloc_counts.memory, g_alloc_counts.messages, g_alloc_counts.objs, g_alloc_counts.chars);
 
 	if (g_alloc_counts.objs != 0) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "WARNING: %d objects still allocated at shutdown!\n",
@@ -3307,7 +3307,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		stream->write_function(stream, "\terrs: %d\n", g_alloc_counts.errs);
 		stream->write_function(stream, "\tstructs: %d\n", g_alloc_counts.structs);
 		stream->write_function(stream, "\tsamples: %d\n", g_alloc_counts.samples);
-		stream->write_function(stream, "\tmems: %d\n", g_alloc_counts.memories);
+		stream->write_function(stream, "\tmems: %d\n", g_alloc_counts.memory);
 		stream->write_function(stream, "\tmessages: %d\n", g_alloc_counts.messages);
 		stream->write_function(stream, "\tobjs: %d\n", g_alloc_counts.objs);
 		stream->write_function(stream, "\tdebugs: %d\n", g_alloc_counts.debugs);

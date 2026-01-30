@@ -1389,23 +1389,25 @@ void stop_pipeline(g_stream_t *stream)
 	// DUMP PIPELINE (still live)
 	dump_pipeline(stream->pipeline, "pipeline-stop");
 
-	// Drain all appsinks and unref samples BEFORE setting pipeline to NULL
-	for (int ch = 0; ch < MAX_CHANNELS; ch++) {
-		gchar name[ELEMENT_NAME_SIZE];
-		GstElement *appsink;
-		GstSample *sample;
+	// Drain all appsinks BEFORE setting pipeline to NULL
+	GstIterator *iter = gst_bin_iterate_elements(GST_BIN(stream->pipeline));
+	GValue item = G_VALUE_INIT;
 
-		NAME_ELEMENT(name, "appsink", ch);
-		appsink = gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
-		if (!appsink) continue;
+	while (gst_iterator_next(iter, &item) == GST_ITERATOR_OK) {
+		GstElement *element = g_value_get_object(&item);
 
-		// Pull and discard all pending samples
-		while ((sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 0))) {
-			DA_gst_sample_unref(sample); // Properly accounted
+		// Check if this is an appsink
+		if (GST_IS_APP_SINK(element)) {
+			GstSample *sample;
+
+			// Drain all samples from this appsink
+			while ((sample = gst_app_sink_try_pull_sample(GST_APP_SINK(element), 0))) { DA_gst_sample_unref(sample); }
 		}
 
-		gst_object_unref(appsink);
+		g_value_reset(&item);
 	}
+
+	gst_iterator_free(iter);
 
 	// NULL STATE - destroys ALL elements safely
 	//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Setting pipeline to NULL...\n");
@@ -1631,6 +1633,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// PER-CHANNEL lock (critical) 
 	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 	g_rec_mutex_lock(ch_mutex);
+
 	// Double-check after acquiring channel mutex
 	if (!g_atomic_int_get(&stream->pipeline_active)) { 
 		g_rec_mutex_unlock(ch_mutex);
@@ -1662,18 +1665,19 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		stream->leftover_bytes[ch_idx] -= copy;
 	}
 
-	g_rec_mutex_unlock(ch_mutex);		
 
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
 		if (!g_atomic_int_get(&stream->pipeline_active)) {
+			g_rec_mutex_unlock(ch_mutex);
 			break; // Stop pulling samples if pipeline is stopping
 		}
-		g_rec_mutex_lock(ch_mutex);		
+		//g_rec_mutex_lock(ch_mutex);		
 		sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 10 * GST_MSECOND);		
-		g_rec_mutex_unlock(ch_mutex);		
+		//g_rec_mutex_unlock(ch_mutex);		
 		if (!sample) {
 			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Failed to pull sample\n");
+			g_rec_mutex_unlock(ch_mutex);
 			switch_cond_next();
 			break;
 		}
@@ -1683,18 +1687,35 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			// Pipeline stopped while we were pulling 
 			DA_gst_sample_unref(sample); 
 			sample = NULL;
+			g_rec_mutex_unlock(ch_mutex);
 			break;
 		}
 
 		AL_cnt_samples(sample);					// count the successful allocation
 		buf = gst_sample_get_buffer(sample);	 // no alloc no count
+												// check added to avoid bad counts
+		if (!g_atomic_int_get(&stream->pipeline_active)) {
+			// Pipeline stopped while we were pulling
+			DA_gst_sample_unref(sample);
+			sample = NULL;
+			g_rec_mutex_unlock(ch_mutex);
+			break;
+		}
+
 		if (!buf) {
 			DA_gst_sample_unref(sample);
 			sample = NULL;
 			continue;
 		}
-
-		g_rec_mutex_lock(ch_mutex);		
+		// check added to avoid bad counts
+		if (!g_atomic_int_get(&stream->pipeline_active)) {
+			// Pipeline stopped while we were pulling
+			DA_gst_sample_unref(sample);
+			sample = NULL;
+			g_rec_mutex_unlock(ch_mutex);
+			break;
+		}
+		//g_rec_mutex_lock(ch_mutex);		
 		gboolean r = gst_buffer_map(buf, &info, GST_MAP_READ);// mutex here may be redundant- check if critical
 
 		if (r) {			
@@ -1711,9 +1732,10 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		gst_buffer_unmap(buf, &info); //check
 		DA_gst_sample_unref(sample);
 		sample = NULL;
-		g_rec_mutex_unlock(ch_mutex);
+		//g_rec_mutex_unlock(ch_mutex);
 	}
 
+	g_rec_mutex_unlock(ch_mutex);
 
 #if 0
   {
@@ -1735,6 +1757,9 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 
 // fall thru
 	DA_gst_sample_unref(sample);		//nop if sample is NULL - just a precaution
+	if (appsink) {
+		gst_object_unref(appsink); 
+	}
 	return (int) total_bytes;
 
 out_unlock:
