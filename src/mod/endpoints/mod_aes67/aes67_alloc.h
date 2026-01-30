@@ -155,11 +155,11 @@ inline void g_atomic_int_dec(int *i) { g_atomic_int_add(i, -1); }
 
 // --- Macro for decrement-only wrappers (for manual tracking) ---
 // the nulling will not work due to the function
-#define G_WRAP_DEC(counter, name, t, p)                                                                                \
+#define G_WRAP_DEC(counter, name, t, p)																					 \
 	inline void DA_##name(t p)  {                                                                                       \
 			if (p) {                                                                                                    \
-				accounting_decr(g_alloc_counts.counter);                                                              \
-		}										 \
+				accounting_decr(g_alloc_counts.counter);																\
+		}																												\
 	}
 
 // --- Macro for decrement-only wrappers no nulling (for manual tracking and accounting) ---

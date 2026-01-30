@@ -8,7 +8,7 @@ typedef struct {
     int errs;
     int structs;
     int samples;
-    int memories;
+    int memory;
     int events;
     int messages;
     int features;
