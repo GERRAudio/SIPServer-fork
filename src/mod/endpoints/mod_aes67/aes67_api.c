@@ -1488,7 +1488,8 @@ void start_mainloop(GMainLoop *mainloop)
 gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guint ch_idx, switch_timer_t *timer)
 {
 	gboolean retval = FALSE;
-	
+	GstElement *appsrc = NULL;
+	GstBuffer *buf = NULL;
 	// Fast atomic check
 	if (!stream || ch_idx >= MAX_CHANNELS 
 		|| !g_atomic_int_get(&stream->pipeline_active)) {
@@ -1501,17 +1502,16 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	GstPipeline *pipeline = stream->pipeline;
 	if (!pipeline || !g_atomic_int_get(&stream->pipeline_active)) { // added check
-		g_rec_mutex_unlock(ch_mutex);
-		goto error;
+		goto exit;
 	}
 
 	GstState cur_state = GST_STATE_NULL;
 	GstState pending_state = GST_STATE_NULL;
-	GstBuffer *buf = NULL;
+
 	GstMapInfo info;
 	GstFlowReturn result;
 	gchar name[ELEMENT_NAME_SIZE];
-	GstElement *appsrc = NULL;
+
 
 	NAME_ELEMENT(name, "appsrc", ch_idx);
 	appsrc = AL_gst_bin_get_by_name(GST_BIN(pipeline), name);	//check 
@@ -1522,37 +1522,31 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	if (!appsrc ) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Failed to find appsrc in the pipeline\n");
-		g_rec_mutex_unlock(ch_mutex);	 
-		goto error;
+		goto exit;
 	}
 
 			
 	if (!g_atomic_int_get(&stream->clock_sync)) {
 		retval = TRUE;
-		g_rec_mutex_unlock(ch_mutex);	 
-		goto exit_no_buffer;
-		
+		goto exit;
 	}
 
 	gst_element_get_state(GST_ELEMENT(pipeline), &cur_state, &pending_state, 0);
 	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) {
 		retval = TRUE;
-		g_rec_mutex_unlock(ch_mutex);	 
-		goto exit_no_buffer;
+		goto exit;
 	}
 
 
 	buf = AL_gst_buffer_new_allocate(NULL, len, NULL);			
 	if (!buf ) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
-		g_rec_mutex_unlock(ch_mutex);	 
-		goto exit_no_buffer; 
+		goto exit; 
 	}
 
 	if (!gst_buffer_map(buf, &info, GST_MAP_WRITE)) {		//MU here kills audio from phone to BP
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get buffer map\n");
-		g_rec_mutex_unlock(ch_mutex);	 
-		goto exit_with_buffer; 
+		goto exit; 
 	}
 
 	memcpy(info.data, payload, len);
@@ -1564,33 +1558,18 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	if (result == GST_FLOW_ERROR) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to do 'push-buffer' \n");
-		g_rec_mutex_unlock(ch_mutex);	
-
-		goto exit_with_buffer;
+		goto exit;
 	}
 	// fall thru, no error
 
 	retval = TRUE;
+
+exit:
 	DA_gst_buffer_unref(buf);
 	buf = NULL;
-
-	//DA_dec_bufs(buf); // Accounting ONLY
 	DA_gst_object_unref(GST_OBJECT(appsrc));
 	appsrc = NULL;
-
-	g_rec_mutex_unlock(ch_mutex);	 
-	return retval;
-
-exit_with_buffer:
-	// Buffer allocated but not given to appsrc 
-	DA_gst_buffer_unref(buf);
-	//DA_dec_bufs(buf); // Accounting ONLY
-	DA_gst_object_unref(GST_OBJECT(appsrc));
-	return retval;
-
-exit_no_buffer:
-	// Buffer not allocated
-	DA_gst_object_unref(GST_OBJECT(appsrc));
+	g_rec_mutex_unlock(ch_mutex);
 	return retval;
 
 error:
