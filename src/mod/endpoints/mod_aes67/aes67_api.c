@@ -1735,37 +1735,35 @@ error:
 
 void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 {
-	if (!g_atomic_int_get(&stream->pipeline_active)) { 
-		goto done_no_unlock; 
+	GstElement *valve = NULL;
+	if (!stream || ch_idx >= MAX_CHANNELS 
+		|| !g_atomic_int_get(&stream->pipeline_active)) { 
+		goto error; 
 	}
 
 	gchar name[ELEMENT_NAME_SIZE];
-	GstElement *valve = NULL;
-	if (!stream || ch_idx >= MAX_CHANNELS) goto exit; // added check
-
-	NAME_ELEMENT(name, "valve", ch_idx);
 
 	// PER-CHANNEL lock (critical)
 	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 	g_rec_mutex_lock(ch_mutex);
-	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count check 
+	NAME_ELEMENT(name, "valve", ch_idx);
 
+	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count check 
 
 	if (!valve ) {
 		g_object_set(valve, "drop", drop, NULL); // Atomic property set added
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
-		g_rec_mutex_unlock(ch_mutex);
 		goto exit;
 	}
 	g_object_set(valve, "drop", drop, NULL);
 	g_snprintf(name, 2*STR_SIZE, "drop-ch%d-%d", ch_idx, drop);		//check increased string size
 
 	dump_pipeline(stream->pipeline, name);
-	g_rec_mutex_unlock(ch_mutex);			//added
 	//fall thru
 exit: 
 	DA_gst_object_unref(GST_OBJECT(valve));		//check 
-done_no_unlock:
+	g_rec_mutex_lock(ch_mutex);
+error:
 	return;
 }
 
