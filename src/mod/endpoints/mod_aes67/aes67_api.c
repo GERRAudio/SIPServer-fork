@@ -1583,37 +1583,36 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 				guint needed_bytes, guint ch_idx, switch_timer_t *timer,
 				 gchar *session)
 {
+	GstBuffer *buf = NULL;
+	GstSample *sample = NULL;
+	GstElement *appsink = NULL;
+
 	gsize total_bytes = 0;
 	if (!stream || ch_idx >= MAX_CHANNELS 
 		|| !g_atomic_int_get(&stream->pipeline_active))
-		goto exit; 
-
+		goto error; 
 
 	GstState cur_state = GST_STATE_NULL, pending_state=GST_STATE_NULL;
-	GstBuffer *buf = NULL;
-	GstSample *sample = NULL;
+
 	GstMapInfo info;
 	gchar name[ELEMENT_NAME_SIZE];
-	GstElement *appsink = NULL;
+
+	// PER-CHANNEL lock (critical)
+	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
+	g_rec_mutex_lock(ch_mutex);
 
 	if (session == NULL)
 		NAME_ELEMENT(name, "appsink", ch_idx);
 	else
 		NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 
-	// PER-CHANNEL lock (critical) 
-	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
-	g_rec_mutex_lock(ch_mutex);
-
 	// Double-check after acquiring channel mutex
 	if (!g_atomic_int_get(&stream->pipeline_active)) { 
-		g_rec_mutex_unlock(ch_mutex);
 		goto exit;
 	}
 
 	appsink = gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // threadsafe
 	if (!appsink) {
-		g_rec_mutex_unlock(ch_mutex);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
 		goto exit;
 	}
@@ -1621,12 +1620,10 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 		&cur_state, &pending_state, 0); 
 
 	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) {
-		g_rec_mutex_unlock(ch_mutex);
 		goto exit;
 	}
 
 	if (gst_app_sink_is_eos(GST_APP_SINK(appsink))) { 
-		g_rec_mutex_unlock(ch_mutex);
 		goto exit;
 	}
 
@@ -1645,7 +1642,6 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
 		if (!g_atomic_int_get(&stream->pipeline_active)) {
-			g_rec_mutex_lock(ch_mutex);
 			goto exit;
 		}
 	
@@ -1674,7 +1670,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 		if (!g_atomic_int_get(&stream->pipeline_active)) {
 			DA_gst_sample_unref(sample);
 			sample = NULL;
-			break;
+			goto exit;
 		}
 
 		if (!buf) {
@@ -1686,7 +1682,6 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 		if (!g_atomic_int_get(&stream->pipeline_active)) {
 			DA_gst_sample_unref(sample);
 			sample = NULL;
-			g_rec_mutex_lock(ch_mutex);
 			goto exit;
 		}
 
@@ -1707,9 +1702,6 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 		DA_gst_sample_unref(sample);
 		sample = NULL;
 	}
-	DA_gst_sample_unref(sample);
-	sample = NULL;
-	g_rec_mutex_unlock(ch_mutex);
 
 #if 0
   {
@@ -1736,7 +1728,8 @@ exit:
 		gst_object_unref(appsink); 
 	}
 	DA_gst_sample_unref(sample);
-	sample = NULL;
+	g_rec_mutex_unlock(ch_mutex);
+error:
 	return (int) total_bytes;
 }
 
