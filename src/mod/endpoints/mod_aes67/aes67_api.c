@@ -1706,7 +1706,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 			break;
 		}
 
-		gboolean r = gst_buffer_map(buf, &info, GST_MAP_READ);// mutex here may be redundant- check if critical
+		gboolean r = gst_buffer_map(buf, &info, GST_MAP_READ);
 
 		if (r) {			
 			if (total_bytes + info.size > needed_bytes) {
@@ -1724,6 +1724,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 		sample = NULL;
 	}
 	DA_gst_sample_unref(sample);
+	sample = NULL;
 	g_rec_mutex_unlock(ch_mutex);
 
 #if 0
