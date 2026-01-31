@@ -1572,8 +1572,11 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	retval = TRUE;
 	DA_gst_buffer_unref(buf);
+	buf = NULL;
+
 	//DA_dec_bufs(buf); // Accounting ONLY
 	DA_gst_object_unref(GST_OBJECT(appsrc));
+	appsrc = NULL;
 
 	g_rec_mutex_unlock(ch_mutex);	 
 	return retval;
@@ -1663,7 +1666,8 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
 		if (!g_atomic_int_get(&stream->pipeline_active)) {
-			break;
+			g_rec_mutex_lock(ch_mutex);
+			goto exit;
 		}
 	
 		g_rec_mutex_unlock(ch_mutex);
@@ -1703,7 +1707,8 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 		if (!g_atomic_int_get(&stream->pipeline_active)) {
 			DA_gst_sample_unref(sample);
 			sample = NULL;
-			break;
+			g_rec_mutex_lock(ch_mutex);
+			goto exit;
 		}
 
 		gboolean r = gst_buffer_map(buf, &info, GST_MAP_READ);
@@ -1751,6 +1756,8 @@ exit:
 	if (appsink) {
 		gst_object_unref(appsink); 
 	}
+	DA_gst_sample_unref(sample);
+	sample = NULL;
 	return (int) total_bytes;
 }
 
