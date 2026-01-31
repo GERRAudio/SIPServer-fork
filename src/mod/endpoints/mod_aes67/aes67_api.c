@@ -1488,20 +1488,21 @@ void start_mainloop(GMainLoop *mainloop)
 gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guint ch_idx, switch_timer_t *timer)
 {
 	gboolean retval = FALSE;
-	if (!stream || ch_idx >= MAX_CHANNELS) goto no_stream; // added check
 	
 	// Fast atomic check
-	if (!g_atomic_int_get(&stream->pipeline_active)) {
-		goto done_no_unlock; // Pipeline stopping, bail immediately
+	if (!stream || ch_idx >= MAX_CHANNELS 
+		|| !g_atomic_int_get(&stream->pipeline_active)) {
+		goto error; // Pipeline stopping, bail immediately
 	}
 
 	// per channel lock
 	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 	g_rec_mutex_lock(ch_mutex);
+
 	GstPipeline *pipeline = stream->pipeline;
 	if (!pipeline || !g_atomic_int_get(&stream->pipeline_active)) { // added check
 		g_rec_mutex_unlock(ch_mutex);
-		goto no_stream;
+		goto error;
 	}
 
 	GstState cur_state = GST_STATE_NULL;
@@ -1514,55 +1515,58 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 	NAME_ELEMENT(name, "appsrc", ch_idx);
 	appsrc = AL_gst_bin_get_by_name(GST_BIN(pipeline), name);	//check 
-	g_rec_mutex_unlock(ch_mutex);	   
 
+  	g_rec_mutex_unlock(ch_mutex);
 	switch_core_timer_next(timer);						//wait a bit
+	g_rec_mutex_lock(ch_mutex);
 
 	if (!appsrc ) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Failed to find appsrc in the pipeline\n");
-		goto no_stream;
+		g_rec_mutex_unlock(ch_mutex);	 
+		goto error;
 	}
 
-	g_rec_mutex_lock(ch_mutex);				
+			
 	if (!g_atomic_int_get(&stream->clock_sync)) {
 		retval = TRUE;
-		goto error_unlock;
+		g_rec_mutex_unlock(ch_mutex);	 
+		goto exit_no_buffer;
+		
 	}
 
 	gst_element_get_state(GST_ELEMENT(pipeline), &cur_state, &pending_state, 0);
 	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) {
 		retval = TRUE;
-		goto error_unlock;
+		g_rec_mutex_unlock(ch_mutex);	 
+		goto exit_no_buffer;
 	}
 
-	g_rec_mutex_unlock(ch_mutex); 
 
 	buf = AL_gst_buffer_new_allocate(NULL, len, NULL);			
 	if (!buf ) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate buffer\n");
-		goto error_no_buffer; 
+		g_rec_mutex_unlock(ch_mutex);	 
+		goto exit_no_buffer; 
 	}
 
 	if (!gst_buffer_map(buf, &info, GST_MAP_WRITE)) {		//MU here kills audio from phone to BP
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get buffer map\n");
-		goto error_with_buffer; 
+		g_rec_mutex_unlock(ch_mutex);	 
+		goto exit_with_buffer; 
 	}
 
-	g_rec_mutex_lock(ch_mutex); 
 	memcpy(info.data, payload, len);
 	gst_buffer_unmap(buf, &info);	
 
 	g_signal_emit_by_name(appsrc, "push-buffer", buf, &result);
 	// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Pushed buffer\n");
-	//if (buf) {
-		//DA_gst_buffer_unref(buf); ownership taken by gs
-		//buf = NULL;
-	//}
-	g_rec_mutex_unlock(ch_mutex); 
+
 
 	if (result == GST_FLOW_ERROR) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to do 'push-buffer' \n");
-		goto error_exit;
+		g_rec_mutex_unlock(ch_mutex);	
+
+		goto exit_with_buffer;
 	}
 	// fall thru, no error
 
@@ -1570,51 +1574,38 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	DA_gst_buffer_unref(buf);
 	//DA_dec_bufs(buf); // Accounting ONLY
 	DA_gst_object_unref(GST_OBJECT(appsrc));
+
+	g_rec_mutex_unlock(ch_mutex);	 
 	return retval;
 
-error_with_buffer:
+exit_with_buffer:
 	// Buffer allocated but not given to appsrc 
 	DA_gst_buffer_unref(buf);
 	//DA_dec_bufs(buf); // Accounting ONLY
 	DA_gst_object_unref(GST_OBJECT(appsrc));
 	return retval;
 
-error_no_buffer:
+exit_no_buffer:
 	// Buffer not allocated
 	DA_gst_object_unref(GST_OBJECT(appsrc));
 	return retval;
 
-error_exit:
-	DA_gst_buffer_unref(buf);
-	//DA_dec_bufs(buf); // Accounting ONLY
-	DA_gst_object_unref(GST_OBJECT(appsrc));
-	return retval;
-
-error_unlock:
-	DA_gst_buffer_unref(buf);
-	//DA_dec_bufs(buf); // Accounting ONLY
-	DA_gst_object_unref(GST_OBJECT(appsrc));	
-	g_rec_mutex_unlock(ch_mutex); // added
-
-done_no_unlock:
-	return retval;
-
-no_stream:
+error:
 	return 0;
 }
 
 //
 // critical to manage threads properly here
 //
-int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes, guint ch_idx, switch_timer_t *timer,
+int pull_buffers(g_stream_t *stream, unsigned char *payload, 
+				guint needed_bytes, guint ch_idx, switch_timer_t *timer,
 				 gchar *session)
 {
 	gsize total_bytes = 0;
-	if (!stream || ch_idx >= MAX_CHANNELS)
-		goto no_stream; // added check
-	if (!g_atomic_int_get(&stream->pipeline_active)) {
-		goto done_no_unlock; // Pipeline stopping, bail immediately
-	}
+	if (!stream || ch_idx >= MAX_CHANNELS 
+		|| !g_atomic_int_get(&stream->pipeline_active))
+		goto exit; 
+
 
 	GstState cur_state = GST_STATE_NULL, pending_state=GST_STATE_NULL;
 	GstBuffer *buf = NULL;
@@ -1622,8 +1613,6 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	GstMapInfo info;
 	gchar name[ELEMENT_NAME_SIZE];
 	GstElement *appsink = NULL;
-
-	//periodic_mem_check();
 
 	if (session == NULL)
 		NAME_ELEMENT(name, "appsink", ch_idx);
@@ -1637,21 +1626,26 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// Double-check after acquiring channel mutex
 	if (!g_atomic_int_get(&stream->pipeline_active)) { 
 		g_rec_mutex_unlock(ch_mutex);
-		goto done_no_unlock;
+		goto exit;
 	}
 
 	appsink = gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // threadsafe
 	if (!appsink) {
+		g_rec_mutex_unlock(ch_mutex);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
-		goto error_unlock_noderef;
+		goto exit;
 	}
-	gst_element_get_state(GST_ELEMENT(stream->pipeline), &cur_state, &pending_state, 0); 
+	gst_element_get_state(GST_ELEMENT(stream->pipeline), 
+		&cur_state, &pending_state, 0); 
 
-	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) 
-		goto out_unlock;
+	if (cur_state != GST_STATE_PAUSED && cur_state != GST_STATE_PLAYING) {
+		g_rec_mutex_unlock(ch_mutex);
+		goto exit;
+	}
 
 	if (gst_app_sink_is_eos(GST_APP_SINK(appsink))) { 
-		goto error_unlock_noderef;
+		g_rec_mutex_unlock(ch_mutex);
+		goto exit;
 	}
 
 	// Note: assumes leftover_bytes will never be more than buflen, which is
@@ -1669,36 +1663,34 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	while (total_bytes < needed_bytes) {
 		// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "pulling buffer\n");
 		if (!g_atomic_int_get(&stream->pipeline_active)) {
-			g_rec_mutex_unlock(ch_mutex);
-			break; // Stop pulling samples if pipeline is stopping
+			break;
 		}
-		//g_rec_mutex_lock(ch_mutex);		
-		sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), 10 * GST_MSECOND);		
-		//g_rec_mutex_unlock(ch_mutex);		
+	
+		g_rec_mutex_unlock(ch_mutex);
+		sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink),
+			10 * GST_MSECOND);	
+		g_rec_mutex_lock(ch_mutex);
+	
 		if (!sample) {
 			// switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Failed to pull sample\n");
 			g_rec_mutex_unlock(ch_mutex);
 			switch_cond_next();
+			g_rec_mutex_lock(ch_mutex);
 			break;
 		}
 
-		 //check added to avoid bad counts
 		if (!g_atomic_int_get(&stream->pipeline_active)) {
-			// Pipeline stopped while we were pulling 
 			DA_gst_sample_unref(sample); 
 			sample = NULL;
-			g_rec_mutex_unlock(ch_mutex);
 			break;
 		}
 
 		AL_cnt_samples(sample);					// count the successful allocation
 		buf = gst_sample_get_buffer(sample);	 // no alloc no count
-												// check added to avoid bad counts
+												
 		if (!g_atomic_int_get(&stream->pipeline_active)) {
-			// Pipeline stopped while we were pulling
 			DA_gst_sample_unref(sample);
 			sample = NULL;
-			g_rec_mutex_unlock(ch_mutex);
 			break;
 		}
 
@@ -1707,15 +1699,13 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 			sample = NULL;
 			continue;
 		}
-		// check added to avoid bad counts
+
 		if (!g_atomic_int_get(&stream->pipeline_active)) {
-			// Pipeline stopped while we were pulling
 			DA_gst_sample_unref(sample);
 			sample = NULL;
-			g_rec_mutex_unlock(ch_mutex);
 			break;
 		}
-		//g_rec_mutex_lock(ch_mutex);		
+
 		gboolean r = gst_buffer_map(buf, &info, GST_MAP_READ);// mutex here may be redundant- check if critical
 
 		if (r) {			
@@ -1732,9 +1722,8 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 		gst_buffer_unmap(buf, &info); //check
 		DA_gst_sample_unref(sample);
 		sample = NULL;
-		//g_rec_mutex_unlock(ch_mutex);
 	}
-
+	DA_gst_sample_unref(sample);
 	g_rec_mutex_unlock(ch_mutex);
 
 #if 0
@@ -1756,23 +1745,12 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload, guint needed_bytes,
 	// stream->leftover_bytes[ch_idx]);
 
 // fall thru
-	DA_gst_sample_unref(sample);		//nop if sample is NULL - just a precaution
+
+exit:
 	if (appsink) {
 		gst_object_unref(appsink); 
 	}
 	return (int) total_bytes;
-
-out_unlock:
-	g_rec_mutex_unlock(ch_mutex); 
-done_no_unlock:
-	return (int) total_bytes;
-
-no_stream:
-	return 0;
-
-error_unlock_noderef:
-	g_rec_mutex_unlock(ch_mutex); 
-	return 0;
 }
 
 void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
@@ -1791,17 +1769,17 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	GRecMutex *ch_mutex = &stream->appsrc_mutexes[ch_idx];
 	g_rec_mutex_lock(ch_mutex);
 	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count check 
-	g_rec_mutex_unlock(ch_mutex);
+
 
 	if (!valve ) {
 		g_object_set(valve, "drop", drop, NULL); // Atomic property set added
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
+		g_rec_mutex_unlock(ch_mutex);
 		goto exit;
 	}
 	g_object_set(valve, "drop", drop, NULL);
 	g_snprintf(name, 2*STR_SIZE, "drop-ch%d-%d", ch_idx, drop);		//check increased string size
 
-	g_rec_mutex_lock(ch_mutex);				//added
 	dump_pipeline(stream->pipeline, name);
 	g_rec_mutex_unlock(ch_mutex);			//added
 	//fall thru
