@@ -1,4 +1,6 @@
-﻿#ifdef _WIN32
+﻿#include "aes67_api.h"
+
+#ifdef _WIN32
 #include <windows.h>
 #include <psapi.h> // For GetProcessHeaps if needed
 
@@ -23,6 +25,8 @@ Monitor with GetProcessMemoryInfo before/after to tune
 frequency; excessive calls hurt perf. HeapCompact adds minimal overhead but offers little footprint reduction unless
 fragmented. ​
 */
+
+volatile BOOL memcheck_active = TRUE;			//default is on
 
 void CompactHeaps(void)
 {
@@ -63,3 +67,18 @@ void TrimCurrentProcessWorkingSet(void)
 void CompactHeaps(void) { ; }
 void TrimCurrentProcessWorkingSet(void) { ; }
 #endif
+
+
+
+// FreeSwitch calls this every 20 seconds by default
+void heartbeat_callback(switch_event_t *event)
+{
+	static long unsigned call_count = 0;
+	call_count++;
+	if (call_count >=
+		((3600L / 20L) * INTERVAL_MINS) / 60L) { // convert to number of 20 sec blips - careful about integer division
+		call_count = 0;
+		periodic_mem_check(TRUE); // force clear
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "AES67: Clearing mem---\n");
+	}
+}

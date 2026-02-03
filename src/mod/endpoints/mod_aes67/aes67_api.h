@@ -15,6 +15,13 @@
 #define TS_CONTEXT_NAME_LEN 100
 #define SESSION_ID_LEN 20
 
+// necessary idle time (no unscheduled calling) before trim
+#define IDLE_THRESHOLD_SEC 60 
+// to reduce polling overhead
+#define IDLE_POLLING_SEC 5	 
+// how often to clear memory
+#define INTERVAL_MINS 30L
+
 typedef enum { L16, L24 } aes67_codec_t;
 
 typedef struct g_stream g_stream_t;
@@ -91,6 +98,7 @@ void account_pipeline_children(g_stream_t *stream);
 void CompactHeaps(void);
 void TrimCurrentProcessWorkingSet(void);
 void periodic_mem_check(BOOL force);
-static void heartbeat_callback(switch_event_t *event);
+volatile extern BOOL memcheck_active;
+void heartbeat_callback(switch_event_t *event);
 
 #endif /*__GSTREAMER_API__*/
