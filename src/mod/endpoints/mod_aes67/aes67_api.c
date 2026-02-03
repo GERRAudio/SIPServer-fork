@@ -1,10 +1,9 @@
-#include <switch.h>
 #include "aes67_api.h"
 #include <gst/app/gstappsink.h>
 #include <gst/audio/audio-channels.h>
 #include <gst/net/net.h>
 
-#include "aes67_alloc.h"		// allocation trackerand mutex wrappers
+#include "aes67_alloc.h"		// allocation tracker and mutex wrappers
 volatile G_alloc_counts g_alloc_counts={0}; // debug counters for allocation
 
 #define ELEMENT_NAME_SIZE 30 + SESSION_ID_LEN
@@ -1278,47 +1277,6 @@ void *start_pipeline(void *data)
 	return NULL;
 }
 
-//TODO: remove after confirming by testing
-#ifdef ACCOUNTFORCHILDREN
-/// <summary>
-///  added to account for object added to pipeline
-/// // not sure if we need critical section here
-/// </summary>
-/// <param name="stream"></param>
-void account_pipeline_children(g_stream_t *stream)
-{
-	if (!stream || !stream->pipeline) return;
-	GstIterator *iter = gst_bin_iterate_recurse(GST_BIN(stream->pipeline));
-	GValue item = G_VALUE_INIT;
-	int elements = 0, pads = 0;
-	
-	while (gst_iterator_next(iter, &item) == GST_ITERATOR_OK) {
-		GstObject *obj = g_value_get_object(&item);
-		if (GST_IS_ELEMENT(obj)) {
-			elements++;
-			// Count pads on this element
-			GstIterator *pad_iter = gst_element_iterate_pads(GST_ELEMENT(obj));
-			if (pad_iter) {
-				GValue pad_item = G_VALUE_INIT;
-				while (pad_iter && gst_iterator_next(pad_iter, &pad_item) == GST_ITERATOR_OK) {
-					pads++;
-					g_value_reset(&pad_item);
-				}
-				gst_iterator_free(pad_iter);
-			}
-		}
-		g_value_reset(&item);
-	}
-	gst_iterator_free(iter);
-
-	// Decrement counters for all objects about to be destroyed
-	g_alloc_counts.objs -= (elements + pads);
-
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-					  "Accounted for %d elements, %d pads in pipeline destruction\n", elements, pads);
-}
-#endif
-
 
 // Here be demons
 // if this runs while calls are in progress, some deallocations do not occur
@@ -1332,6 +1290,9 @@ void stop_pipeline(g_stream_t *stream)
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
 	// CRITICAL: Set flag to 0  this immediately stops audio I/O
 	g_atomic_int_set(&stream->pipeline_active, 0);
+
+	// Give active threads time to see flag and exit cleanly
+	g_usleep(50000); // 50ms should be sufficient (pull timeout is 10ms)
 
 	// STOP ALL TIMERS/SOURCES FIRST (atomic)
 	gint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
@@ -1372,11 +1333,8 @@ void stop_pipeline(g_stream_t *stream)
 		stream->jitterbuf_signal_id = 0;
 	}
 
-	// ACCOUNT for linked pipeline objects
-	#ifdef ACCOUNTFORCHILDREN
-	account_pipeline_children(stream); // rethought - see below
-	#endif
-	// NEW CODE - Account for elements that will be freed when pipeline is destroyed:
+
+	// Account for elements that will be freed when pipeline is destroyed:
 	int remaining = g_atomic_int_get(&stream->pipeline_elements_count);
 	if (remaining > 0) {
 		g_alloc_counts.objs -= remaining;
@@ -1420,7 +1378,8 @@ void stop_pipeline(g_stream_t *stream)
 
 	if (ret != GST_STATE_CHANGE_SUCCESS || state != GST_STATE_NULL) { 
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Unable to stop pipeline ..\n");
-		goto exit_unlock; 
+		// goto exit_unlock; 
+		// drop through to cleanup anyhow
 	}
 
 	// UNREF PIPELINE (frees everything)
@@ -1444,8 +1403,8 @@ void stop_pipeline(g_stream_t *stream)
 
 	// MUTEX CLEANUP 
 	for (int i = 0; i < MAX_IO_CHANNELS; i++) {
-		g_rec_mutex_lock(&stream->appsrc_mutexes[i]);
-		g_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
+		// Try to ensure mutex is unlocked
+		if (g_rec_mutex_trylock(&stream->appsrc_mutexes[i])) { g_rec_mutex_unlock(&stream->appsrc_mutexes[i]); }
 		g_rec_mutex_clear(&stream->appsrc_mutexes[i]);
 	}
 
