@@ -385,7 +385,8 @@ G_WRAP_ALLOC(GstPad *, gst_pad_get_peer, objs, GstPad *, p)
 // gboolean gst_bin_remove(GstBin *bin, GstElement *element);
 // MU_WRAP2(gboolean, gst_bin_remove, GstBin *, bin, GstElement *, element, general_pipl_lock)
 // GstStateChangeReturn gst_element_get_state(GstElement *e, GstState *s,GstState *pending, GstClockTime timeout);
-// MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime,t, general_pipl_lock)
+// MU_WRAP4(GstStateChangeReturn, gst_element_get_state, GstElement *, e, GstState *, s, GstState *, p, GstClockTime,t,
+// general_pipl_lock)
 // gboolean gst_bus_remove_watch(GstBus *bus);
 // MU_WRAP1(gboolean, gst_bus_remove_watch, GstBus *, bus, general_pipl_lock)
 // GstObject* gst_element_get_parent(GstElement *element);
