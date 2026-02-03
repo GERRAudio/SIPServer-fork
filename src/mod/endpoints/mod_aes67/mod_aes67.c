@@ -259,8 +259,7 @@ static struct {
 	switch_time_t last_stream_activity;		// Last pullbuffer/pushbuffer time
 	guint64 trim_cnt;
 	guint64 compact_heap_cnt;
-	#define IDLE_THRESHOLD_SEC 60			// necessary idle time (no calling) before trim
-	#define IDLE_POLLING_SEC 5				// to reduce polling overhead
+
 	// added to track clr mem
 
 
@@ -2640,46 +2639,6 @@ static switch_status_t load_config(void)
 
 
 
-// cleans memory on a periodic basis, called from call routines
-void periodic_mem_check(BOOL force)
-{
-	// IDLE DETECTION and mem clr
-	switch_time_t now = switch_micro_time_now();
-	static switch_time_t last_check = 0; // persists
-	
-	if (last_check == 0) last_check = now;
-
-	if ((now - last_check) < IDLE_POLLING_SEC * 1000000LL) { 
-		return;							  // Skip - too soon
-	}
-	last_check = now;
-
-	switch_time_t idle_time = now - aes67_globals.last_call_activity;
-	if (force || (idle_time > (IDLE_THRESHOLD_SEC * 1000000LL))) {
-		switch_mutex_lock(aes67_globals.pvt_lock);
-		TrimCurrentProcessWorkingSet();
-		aes67_globals.trim_cnt++;
-		CompactHeaps();
-		aes67_globals.compact_heap_cnt++;
-		aes67_globals.last_call_activity = now;
-		switch_mutex_unlock(aes67_globals.pvt_lock);
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Periodic mem clear firing\n");
-	}
-}
-
-// FreeSwitch calls this every 20 seconds by default
-static void heartbeat_callback(switch_event_t *event)
-{
-	#define INTERVAL_MINS 30L
-	static long unsigned call_count = 0;
-	call_count++;
-	if (call_count >= ((3600L/20L) * INTERVAL_MINS)/60L) {			//convert to number of 20 sec blips - careful about integer division
-		call_count = 0;
-		periodic_mem_check(TRUE);		//force clear
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "AES67: Clearing mem---\n");
-	}
-}
-
 
 /*
   If it exists, this is called in it's own thread when the module-load completes
@@ -3032,6 +2991,34 @@ static int is_sock_equal(udp_sock_t *a, udp_sock_t *b)
 	return (a->port == b->port) && (addr_a.s_addr == addr_b.s_addr);
 }
 
+// cleans memory on a periodic basis, called from call routines
+void periodic_mem_check(BOOL force)
+{
+	if (!memcheck_active) return;
+	// IDLE DETECTION and mem clr
+	switch_time_t now = switch_micro_time_now();
+	static switch_time_t last_check = 0; // persists
+
+	if (last_check == 0) last_check = now;
+
+	if ((now - last_check) < IDLE_POLLING_SEC * 1000000LL) {
+		return; // Skip - too soon
+	}
+	last_check = now;
+
+	switch_time_t idle_time = now - aes67_globals.last_call_activity;
+	if (force || (idle_time > (IDLE_THRESHOLD_SEC * 1000000LL))) {
+		switch_mutex_lock(aes67_globals.pvt_lock);
+		TrimCurrentProcessWorkingSet();
+		aes67_globals.trim_cnt++;
+		CompactHeaps();
+		aes67_globals.compact_heap_cnt++;
+		aes67_globals.last_call_activity = now;
+		switch_mutex_unlock(aes67_globals.pvt_lock);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Periodic mem clear firing\n");
+	}
+}
+
 void error_callback(char *msg, g_stream_t *stream)
 {
 	// switch_event_t *event;
@@ -3151,12 +3138,13 @@ SWITCH_STANDARD_API(aes_cmd)
 							   "aes67 version\n"
 							   "aes67 streams\n"
 							   "aes67 endpoints\n"
-							   "aes67 ptpstats <on|off> \n"
+							   "aes67 ptpstats <on|off>\n"
 							   "aes67 rtpstats <stream>\n"
 							   "aes67 txflow <stream> <on|off>\n"
 							   "aes67 reloadconf\n"
 							   "aes67 dump <stream> <dotfile name>\n"
 #ifdef _WIN32
+							   "aes67 autoclr <on|off>\n"
 							   "aes67 clrwrkset\n"
 							   "aes67 compactheap\n"
 							   "aes67 clrcount\n"
@@ -3328,7 +3316,27 @@ SWITCH_STANDARD_API(aes_cmd)
 		stream->write_function(stream, "mod_aes67 version date: %s\n", MOD_AES_VERSION_DATE);
 	}
 #ifdef _WIN32
-	 else if (!strcasecmp(argv[0], "clrwrkset")) {
+	else if (!strcasecmp(argv[0], "autoclr")) {
+		if (!argv[1]) {
+			if (memcheck_active)
+				stream->write_function(stream, "autoclr status: on with interval: %d mins\n", INTERVAL_MINS);
+			else
+				stream->write_function(stream, "autoclr status: off\n");
+			goto done;
+		} else {
+			if ( !strcasecmp(argv[1], "off")) {
+				memcheck_active = FALSE;
+				stream->write_function(stream, "autoclr status is now off\n");
+			} else if (!strcasecmp(argv[1], "on")) {
+				memcheck_active = TRUE;
+				stream->write_function(stream, "autoclr status is now on\n");
+			} else {
+				stream->write_function(stream, "Please mention 'on' or 'off'\n");
+				stream->write_function(stream, "%s", usage_string);
+				goto done;
+			}
+		}
+	}  else if (!strcasecmp(argv[0], "clrwrkset")) {
 		TrimCurrentProcessWorkingSet();
 		aes67_globals.trim_cnt++;
 		stream->write_function(stream, "Working set cleared\n");

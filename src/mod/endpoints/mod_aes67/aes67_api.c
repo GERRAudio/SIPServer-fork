@@ -129,7 +129,7 @@ static GstCaps *request_pt_map(GstElement *jitterbuffer, guint pt, gpointer user
 
 	ret = AL_gst_caps_copy(caps);
 	gst_caps_set_simple(ret, "payload", G_TYPE_INT, pt, NULL);
-	DA_NoNulling_dec_caps(ret); //accounting
+	//DA_NoNulling_dec_caps(ret); //accounting
 	return ret;
 }
 
