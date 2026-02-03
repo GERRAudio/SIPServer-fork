@@ -271,7 +271,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GstElement *appsink = NULL;
 
 
-	if (!stream || ch_idx >= MAX_CHANNELS) goto error; //added check
+	if (!stream || ch_idx >= MAX_IO_CHANNELS) goto error; //added check
 
 	NAME_ELEMENT(name, "tee", ch_idx);
 
@@ -430,8 +430,13 @@ done_no_unlock:
 gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 {
 	gboolean ret = FALSE;
+	GstElement *queue = NULL;
+	GstElement *appsink = NULL;
+	GstElement *tee = NULL;
+	GstPad *tee_src_pad = NULL;
+	GstPad *queue_sink_pad = NULL;
 
-	if (!stream || ch_idx >= MAX_CHANNELS) goto exit; // added check
+	if (!stream || ch_idx >= MAX_IO_CHANNELS) goto exit; // added check
 	if (!g_atomic_int_get(&stream->pipeline_active)) { 
 		goto done_no_unlock; 
 	}
@@ -439,11 +444,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	gchar name[ELEMENT_NAME_SIZE];
 	gchar dot_name[ELEMENT_NAME_SIZE + 10];
 
-	GstElement *queue = NULL;
-	GstElement *appsink = NULL;
-	GstElement *tee = NULL;
-	GstPad *tee_src_pad = NULL;
-	GstPad *queue_sink_pad = NULL;
+
 
 	/*
 	 * tee -> queue -> appsink
@@ -1442,7 +1443,7 @@ void stop_pipeline(g_stream_t *stream)
 	}
 
 	// MUTEX CLEANUP 
-	for (int i = 0; i < MAX_CHANNELS; i++) {
+	for (int i = 0; i < MAX_IO_CHANNELS; i++) {
 		g_rec_mutex_lock(&stream->appsrc_mutexes[i]);
 		g_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
 		g_rec_mutex_clear(&stream->appsrc_mutexes[i]);
@@ -1458,7 +1459,7 @@ exit_unlock:
 		g_atomic_int_set(&stream->backup_sender_idle_timer, 0);
 	}
 	//
-	periodic_mem_check(); // de allocate memory here if required
+	periodic_mem_check(FALSE); // de allocate memory here if required
 	//
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
 	return;
@@ -1491,7 +1492,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 	GstElement *appsrc = NULL;
 	GstBuffer *buf = NULL;
 	// Fast atomic check
-	if (!stream || ch_idx >= MAX_CHANNELS 
+	if (!stream || ch_idx >= MAX_IO_CHANNELS 
 		|| !g_atomic_int_get(&stream->pipeline_active)) {
 		goto error; // Pipeline stopping, bail immediately
 	}
@@ -1588,7 +1589,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 	GstElement *appsink = NULL;
 
 	gsize total_bytes = 0;
-	if (!stream || ch_idx >= MAX_CHANNELS 
+	if (!stream || ch_idx >= MAX_IO_CHANNELS 
 		|| !g_atomic_int_get(&stream->pipeline_active))
 		goto error; 
 
@@ -1736,7 +1737,7 @@ error:
 void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 {
 	GstElement *valve = NULL;
-	if (!stream || ch_idx >= MAX_CHANNELS 
+	if (!stream || ch_idx >= MAX_IO_CHANNELS 
 		|| !g_atomic_int_get(&stream->pipeline_active)) { 
 		goto error; 
 	}

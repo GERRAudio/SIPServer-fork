@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <psapi.h> // For GetProcessHeaps if needed
 
+
 /*
 Optional memory cleansing - call be called programmatically
 or alternately from CLI script in Freeswitch (preferable)
@@ -16,7 +17,7 @@ active RTP/audio processing to prevent latency spikes from page faults. ​
 
 Performance Considerations
 Working set trimming works best for telephony DLLs with bursty allocations, as it reduces RSS (resident set size) by up
-to 2/3 during idle without affecting virtual commit size. 
+to 2/3 during idle without affecting virtual commit size.
 
 Monitor with GetProcessMemoryInfo before/after to tune
 frequency; excessive calls hurt perf. HeapCompact adds minimal overhead but offers little footprint reduction unless
@@ -59,8 +60,6 @@ void TrimCurrentProcessWorkingSet(void)
 	}
 }
 #else
-void CompactHeaps(void){;}
+void CompactHeaps(void) { ; }
 void TrimCurrentProcessWorkingSet(void) { ; }
 #endif
-
-
