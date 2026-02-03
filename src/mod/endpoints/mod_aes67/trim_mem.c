@@ -69,6 +69,7 @@ void TrimCurrentProcessWorkingSet(void) { ; }
 #endif
 
 
+long interval_mins = INTERVAL_MINS;
 
 // FreeSwitch calls this every 20 seconds by default
 void heartbeat_callback(switch_event_t *event)
@@ -76,7 +77,7 @@ void heartbeat_callback(switch_event_t *event)
 	static long unsigned call_count = 0;
 	call_count++;
 	if (call_count >=
-		((3600L / 20L) * INTERVAL_MINS) / 60L) { // convert to number of 20 sec blips - careful about integer division
+		((3600L / 20L) * interval_mins) / 60L) { // convert to number of 20 sec blips - careful about integer division
 		call_count = 0;
 		periodic_mem_check(TRUE); // force clear
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "AES67: Clearing mem---\n");
