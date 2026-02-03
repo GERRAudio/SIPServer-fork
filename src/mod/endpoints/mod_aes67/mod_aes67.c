@@ -3321,7 +3321,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		switch (argc) {
 		case 1:
 			if (memcheck_active) {
-				stream->write_function(stream, "autoclr status: on with interval: %d mins\n", interval_min);
+				stream->write_function(stream, "autoclr status: on with interval: %d minute(s)\n", interval_min);
 			} else {
 				stream->write_function(stream, "autoclr status: off\n");
 			}
@@ -3354,7 +3354,7 @@ SWITCH_STANDARD_API(aes_cmd)
 				}
 				interval_min = (long unsigned)val;
 				memcheck_active = TRUE;
-				stream->write_function(stream, "periodic autoclr is now on with interval: %d mins\n", interval_min);
+				stream->write_function(stream, "periodic autoclr is now on with interval: %d minute(s)\n", interval_min);
 			} else {
 				stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-720]\n");
 				stream->write_function(stream, "%s", usage_string);
