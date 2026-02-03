@@ -3145,6 +3145,7 @@ SWITCH_STANDARD_API(aes_cmd)
 							   "aes67 dump <stream> <dotfile name>\n"
 #ifdef _WIN32
 							   "aes67 autoclr <on|off>\n"
+							   "aes67 autoclr set [1-720]\n"
 							   "aes67 clrwrkset\n"
 							   "aes67 compactheap\n"
 							   "aes67 clrcount\n"
@@ -3317,25 +3318,54 @@ SWITCH_STANDARD_API(aes_cmd)
 	}
 #ifdef _WIN32
 	else if (!strcasecmp(argv[0], "autoclr")) {
-		if (!argv[1]) {
-			if (memcheck_active)
-				stream->write_function(stream, "autoclr status: on with interval: %d mins\n", INTERVAL_MINS);
-			else
+		switch (argc) {
+		case 1:
+			if (memcheck_active) {
+				stream->write_function(stream, "autoclr status: on with interval: %d mins\n", interval_mins);
+			} else {
 				stream->write_function(stream, "autoclr status: off\n");
-			goto done;
-		} else {
-			if ( !strcasecmp(argv[1], "off")) {
+			}
+			break;	
+		case 2:
+			if (!strcasecmp(argv[1], "off")) {
 				memcheck_active = FALSE;
-				stream->write_function(stream, "autoclr status is now off\n");
+				stream->write_function(
+					stream,
+					"periodic autoclr is now off, auto clearing will only occur during idle periods and on demand\n");
 			} else if (!strcasecmp(argv[1], "on")) {
 				memcheck_active = TRUE;
-				stream->write_function(stream, "autoclr status is now on\n");
+				stream->write_function(stream, "periodic autoclr is now on with interval: %d mins\n", interval_mins);
 			} else {
 				stream->write_function(stream, "Please mention 'on' or 'off'\n");
 				stream->write_function(stream, "%s", usage_string);
-				goto done;
 			}
+			break;
+		case 3:
+			if (!strcasecmp(argv[1], "set")) {
+				memcheck_active = TRUE;
+				char *end;
+				long val;
+				errno = 0;
+				if (argv[2])
+					val	= strtol(argv[2], &end, 10);
+				if (end == argv[2] || errno == ERANGE || val < 1 || val > 720) {
+					stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-720]\n");
+					break;
+				}
+				interval_mins = (long unsigned)val;
+				stream->write_function(stream, "periodic autoclr is now on with interval: %d mins\n", interval_mins);
+			} else {
+				stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-720]\n");
+				stream->write_function(stream, "%s", usage_string);
+			}
+			break;
+		default:
+			stream->write_function(stream, "Invalid type or number of arguments\n");
+			stream->write_function(stream, "%s", usage_string);
+			break;
 		}
+		goto done;			
+
 	}  else if (!strcasecmp(argv[0], "clrwrkset")) {
 		TrimCurrentProcessWorkingSet();
 		aes67_globals.trim_cnt++;

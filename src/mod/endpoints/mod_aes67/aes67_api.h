@@ -100,5 +100,6 @@ void TrimCurrentProcessWorkingSet(void);
 void periodic_mem_check(BOOL force);
 volatile extern BOOL memcheck_active;
 void heartbeat_callback(switch_event_t *event);
+extern long interval_mins;
 
 #endif /*__GSTREAMER_API__*/
