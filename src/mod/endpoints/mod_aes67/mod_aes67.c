@@ -3321,7 +3321,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		switch (argc) {
 		case 1:
 			if (memcheck_active) {
-				stream->write_function(stream, "autoclr status: on with interval: %d mins\n", interval_mins);
+				stream->write_function(stream, "autoclr status: on with interval: %d mins\n", interval_min);
 			} else {
 				stream->write_function(stream, "autoclr status: off\n");
 			}
@@ -3334,7 +3334,7 @@ SWITCH_STANDARD_API(aes_cmd)
 					"periodic autoclr is now off, auto clearing will only occur during idle periods and on demand\n");
 			} else if (!strcasecmp(argv[1], "on")) {
 				memcheck_active = TRUE;
-				stream->write_function(stream, "periodic autoclr is now on with interval: %d mins\n", interval_mins);
+				stream->write_function(stream, "periodic autoclr is now on with interval: %d mins\n", interval_min);
 			} else {
 				stream->write_function(stream, "Please mention 'on' or 'off'\n");
 				stream->write_function(stream, "%s", usage_string);
@@ -3342,7 +3342,7 @@ SWITCH_STANDARD_API(aes_cmd)
 			break;
 		case 3:
 			if (!strcasecmp(argv[1], "set")) {
-				memcheck_active = TRUE;
+
 				char *end;
 				long val;
 				errno = 0;
@@ -3352,8 +3352,9 @@ SWITCH_STANDARD_API(aes_cmd)
 					stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-720]\n");
 					break;
 				}
-				interval_mins = (long unsigned)val;
-				stream->write_function(stream, "periodic autoclr is now on with interval: %d mins\n", interval_mins);
+				interval_min = (long unsigned)val;
+				memcheck_active = TRUE;
+				stream->write_function(stream, "periodic autoclr is now on with interval: %d mins\n", interval_min);
 			} else {
 				stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-720]\n");
 				stream->write_function(stream, "%s", usage_string);

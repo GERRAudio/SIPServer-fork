@@ -19,8 +19,8 @@
 #define IDLE_THRESHOLD_SEC 60 
 // to reduce polling overhead
 #define IDLE_POLLING_SEC 5	 
-// how often to clear memory
-#define INTERVAL_MINS 30L
+// how often to clear memory by default
+#define INTERVAL_MIN 60L
 
 typedef enum { L16, L24 } aes67_codec_t;
 
@@ -100,6 +100,6 @@ void TrimCurrentProcessWorkingSet(void);
 void periodic_mem_check(BOOL force);
 volatile extern BOOL memcheck_active;
 void heartbeat_callback(switch_event_t *event);
-extern long interval_mins;
+extern long interval_min;
 
 #endif /*__GSTREAMER_API__*/

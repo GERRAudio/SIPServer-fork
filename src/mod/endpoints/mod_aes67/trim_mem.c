@@ -6,13 +6,13 @@
 
 
 /*
-Optional memory cleansing - call be called programmatically
-or alternately from CLI script in Freeswitch (preferable)
+Optional memory cleansing - call be called programmatically from aes67 CLI
+or alternately from CLI script in Freeswitch 
 "fsctl reclaim_mem"
 
-For heap-specific cleanup, enumerate your private heaps with GetProcessHeaps and call HeapCompact(hHeap, 0) on each
+For heap-specific cleanup, enumerate private heaps with GetProcessHeaps and call HeapCompact(hHeap, 0) on each
 during idle periods; it coalesces free blocks but rarely shrinks the committed virtual address space and is mainly for
-debugging as Windows auto-compacts on HeapFree
+convenience as Windows auto-compacts on HeapFree
 
 Call TrimWorkingSetIdle() periodically (e.g., every 30-60 seconds of idle) or on telephony idle detection; avoid during
 active RTP/audio processing to prevent latency spikes from page faults. ​
@@ -22,8 +22,8 @@ Working set trimming works best for telephony DLLs with bursty allocations, as i
 to 2/3 during idle without affecting virtual commit size.
 
 Monitor with GetProcessMemoryInfo before/after to tune
-frequency; excessive calls hurt perf. HeapCompact adds minimal overhead but offers little footprint reduction unless
-fragmented. ​
+frequency; excessive calls hurt perf. 
+HeapCompact adds minimal overhead but offers little footprint reduction unless fragmented. ​
 */
 
 volatile BOOL memcheck_active = TRUE;			//default is on
@@ -69,7 +69,7 @@ void TrimCurrentProcessWorkingSet(void) { ; }
 #endif
 
 
-long interval_mins = INTERVAL_MINS;
+long interval_min = INTERVAL_MIN;
 
 // FreeSwitch calls this every 20 seconds by default
 void heartbeat_callback(switch_event_t *event)
@@ -77,9 +77,9 @@ void heartbeat_callback(switch_event_t *event)
 	static long unsigned call_count = 0;
 	call_count++;
 	if (call_count >=
-		((3600L / 20L) * interval_mins) / 60L) { // convert to number of 20 sec blips - careful about integer division
+		((3600L / 20L) * interval_min) / 60L) { // convert to number of 20 sec blips - careful about integer division
 		call_count = 0;
 		periodic_mem_check(TRUE); // force clear
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "AES67: Clearing mem---\n");
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "AES67: Cleaning memory ---\n");
 	}
 }
