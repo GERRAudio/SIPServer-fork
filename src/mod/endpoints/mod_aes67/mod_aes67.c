@@ -503,6 +503,16 @@ error:
 	return SWITCH_STATUS_FALSE;
 }
 
+static int clear_shared_audio_stream(shared_audio_stream_t *shstream)
+{
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Destroying shared audio stream %s\n", shstream->name);
+	if (shstream->stream) { stop_pipeline(shstream->stream); }
+
+	shstream->stream = NULL; // deallocated in stop pipeline
+	return 0;
+}
+
+
 static switch_status_t channel_on_execute(switch_core_session_t *session)
 {
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "%s CHANNEL EXECUTE\n",
@@ -2631,7 +2641,7 @@ static switch_status_t load_config(void)
 
 
 // cleans memory on a periodic basis, called from call routines
-void periodic_mem_check()
+void periodic_mem_check(BOOL force)
 {
 	// IDLE DETECTION and mem clr
 	switch_time_t now = switch_micro_time_now();
@@ -2645,7 +2655,7 @@ void periodic_mem_check()
 	last_check = now;
 
 	switch_time_t idle_time = now - aes67_globals.last_call_activity;
-	if ((idle_time > (IDLE_THRESHOLD_SEC * 1000000LL))) {
+	if (force || (idle_time > (IDLE_THRESHOLD_SEC * 1000000LL))) {
 		switch_mutex_lock(aes67_globals.pvt_lock);
 		TrimCurrentProcessWorkingSet();
 		aes67_globals.trim_cnt++;
@@ -2657,10 +2667,17 @@ void periodic_mem_check()
 	}
 }
 
-// FreeSwitch calls this every few seconds
+// FreeSwitch calls this every 20 seconds by default
 static void heartbeat_callback(switch_event_t *event)
 {
-	periodic_mem_check();
+	#define INTERVAL_MINS 30L
+	static long unsigned call_count = 0;
+	call_count++;
+	if (call_count >= ((3600L/20L) * INTERVAL_MINS)/60L) {			//convert to number of 20 sec blips - careful about integer division
+		call_count = 0;
+		periodic_mem_check(TRUE);		//force clear
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "AES67: Clearing mem---\n");
+	}
 }
 
 
@@ -2679,6 +2696,7 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 {
 	if (aes67_globals.ptp_stats_cb_id != -1) gst_ptp_statistics_callback_remove(aes67_globals.ptp_stats_cb_id);
 
+	// timer unbind
 	switch_event_unbind_callback(heartbeat_callback);
 	
 	destroy_audio_streams();
@@ -2928,16 +2946,7 @@ static int create_shared_audio_stream(shared_audio_stream_t *shstream) /// check
 	return 0;
 }
 
-static int clear_shared_audio_stream(shared_audio_stream_t *shstream)
-{
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Destroying shared audio stream %s\n", shstream->name);
-	if (shstream->stream) { 
-		stop_pipeline(shstream->stream); 
-	}
 
-	shstream->stream = NULL; // deallocated in stop pipeline
-	return 0;
-}
 
 static audio_stream_t *create_audio_stream(udp_sock_t *indev, udp_sock_t *outdev)
 {
@@ -3147,9 +3156,11 @@ SWITCH_STANDARD_API(aes_cmd)
 							   "aes67 txflow <stream> <on|off>\n"
 							   "aes67 reloadconf\n"
 							   "aes67 dump <stream> <dotfile name>\n"
+#ifdef _WIN32
 							   "aes67 clrwrkset\n"
 							   "aes67 compactheap\n"
 							   "aes67 clrcount\n"
+#endif
 							   "--------------------------------------------------------------------------------\n";
 	if (zstr(cmd)) {
 		stream->write_function(stream, "%s", usage_string);
@@ -3315,7 +3326,9 @@ SWITCH_STANDARD_API(aes_cmd)
 		stream->write_function(stream, "\tchars: %d\n", g_alloc_counts.chars);
 	} else if (!strcasecmp(argv[0], "version")) {
 		stream->write_function(stream, "mod_aes67 version date: %s\n", MOD_AES_VERSION_DATE);
-	} else if (!strcasecmp(argv[0], "clrwrkset")) {
+	}
+#ifdef _WIN32
+	 else if (!strcasecmp(argv[0], "clrwrkset")) {
 		TrimCurrentProcessWorkingSet();
 		aes67_globals.trim_cnt++;
 		stream->write_function(stream, "Working set cleared\n");
@@ -3327,6 +3340,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		stream->write_function(stream, "Mem cleanup counts: trim:%" G_GUINT64_FORMAT " heap:%" G_GUINT64_FORMAT "\n"
 			, aes67_globals.trim_cnt, aes67_globals.compact_heap_cnt);
 	}
+#endif
 
 done:
 	if (mycmd) switch_safe_free(mycmd);

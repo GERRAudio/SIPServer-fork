@@ -31,10 +31,12 @@
 //extern switch_mutex_t *alloc_mcp_lock;
 //extern switch_mutex_t *alloc_bkup_lock;
 
-// atomic incr/decr for debugging only
+// Atomic incr/decr for debugging only
 // forces serialization of counters
-// slower and not useful except for debug
-#ifdef ATOMIC_INCR
+// slower and not useful except for debug but validates leaks
+// can be changed if performance impacted (not likely)
+#define ATOMIC_COUNTS 1
+#ifdef ATOMIC_COUNTS
 #include <glib.h>
 #define G_ATOMIC_LOCK_FREE 1
 inline void g_atomic_int_dec(int *i) { g_atomic_int_add(i, -1); }
