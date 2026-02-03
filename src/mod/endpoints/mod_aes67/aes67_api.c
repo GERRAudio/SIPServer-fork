@@ -1526,9 +1526,7 @@ gboolean push_buffer(g_stream_t *stream, unsigned char *payload, guint len, guin
 
 exit:
 	DA_gst_buffer_unref(buf);
-	buf = NULL;
 	DA_gst_object_unref(GST_OBJECT(appsrc));
-	appsrc = NULL;
 	g_rec_mutex_unlock(ch_mutex);
 	return retval;
 
@@ -1711,10 +1709,10 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // increases ref count check 
 
 	if (!valve ) {
-		g_object_set(valve, "drop", drop, NULL); // Atomic property set added
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to get valve element in the pipeline\n");
 		goto exit;
 	}
+
 	g_object_set(valve, "drop", drop, NULL);
 	g_snprintf(name, 2*STR_SIZE, "drop-ch%d-%d", ch_idx, drop);		//check increased string size
 
@@ -1722,7 +1720,7 @@ void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 	//fall thru
 exit: 
 	DA_gst_object_unref(GST_OBJECT(valve));		//check 
-	g_rec_mutex_lock(ch_mutex);
+	g_rec_mutex_unlock(ch_mutex);
 error:
 	return;
 }
