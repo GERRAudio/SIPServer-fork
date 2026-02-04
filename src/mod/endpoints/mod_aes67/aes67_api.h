@@ -20,7 +20,12 @@
 // to reduce polling overhead
 #define IDLE_POLLING_SEC 5	 
 // how often to clear memory by default
-#define INTERVAL_MIN 60L
+#define INTERVAL_MIN 8*60L
+// 60*24*31 == 31 days
+#define MAXMIN 44640
+// double-expansion for macros
+#define STR(s) #s
+#define XSTR(s) STR(s)
 
 typedef enum { L16, L24 } aes67_codec_t;
 
