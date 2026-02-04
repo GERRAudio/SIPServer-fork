@@ -36,8 +36,6 @@
  *
  */
 
-#include "switch.h"
-
 #include "aes67_alloc.h"
 #include "aes67_api.h"
 #include "aes67_counters.h"
@@ -604,9 +602,7 @@ static switch_status_t validate_main_audio_stream()
 		return SWITCH_STATUS_SUCCESS;
 	}
 	switch_mutex_lock(aes67_globals.streams_lock); /// check need for mutex
-	//switch_mutex_lock(aes67_globals.device_lock);	 /// check need for mutex
 	aes67_globals.main_stream = get_audio_stream(aes67_globals.indev, aes67_globals.outdev);
-	//switch_mutex_unlock(aes67_globals.device_lock);  /// check need for mutex
 	switch_mutex_unlock(aes67_globals.streams_lock); /// check need for mutex
 	if (aes67_globals.main_stream) { return SWITCH_STATUS_SUCCESS; }
 
@@ -1650,11 +1646,6 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	switch_mutex_init(&aes67_globals.flag_mutex, SWITCH_MUTEX_NESTED, module_pool);
 	//switch_mutex_init(&aes67_globals.gst_mutex, SWITCH_MUTEX_NESTED, module_pool);
 	switch_mutex_init(&aes67_globals.sh_shtreams_lock, SWITCH_MUTEX_NESTED, module_pool);
-
-	//switch_mutex_init(&stop_pipl_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
-	//switch_mutex_init(&general_pipl_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
-	//switch_mutex_init(&alloc_mcp_lock, SWITCH_MUTEX_NESTED, module_pool);  // added check
-	//switch_mutex_init(&alloc_bkup_lock, SWITCH_MUTEX_NESTED, module_pool); // added check
 
 	aes67_globals.codecs_inited = 0;
 	aes67_globals.read_frame.data = aes67_globals.databuf;
@@ -3244,7 +3235,6 @@ SWITCH_STANDARD_API(aes_cmd)
 
 		if (!strcasecmp(argv[2], "on")) {
 			if (STREAM_READER_TRYLOCK(astream)) {
-				// switch_mutex_lock(aes67_globals.gst_mutex); // added check
 				drop_output_buffers(FALSE, astream->stream);
 
 				astream->txflow = TRUE;
@@ -3252,7 +3242,6 @@ SWITCH_STANDARD_API(aes_cmd)
 				// the stream is initialized after the pipeline is created, so we need to preserve
 				// txflow somewhere until then
 				astream->stream->txdrop = FALSE;
-				// switch_mutex_unlock(aes67_globals.gst_mutex); // added check
 				stream->write_function(stream, "Tx buffers flowing!\n");
 
 				STREAM_READER_UNLOCK(astream);
@@ -3261,12 +3250,10 @@ SWITCH_STANDARD_API(aes_cmd)
 			}
 		} else if (!strcasecmp(argv[2], "off")) {
 			if (STREAM_READER_TRYLOCK(astream)) {
-				// switch_mutex_lock(aes67_globals.gst_mutex); // added check
 				drop_output_buffers(TRUE, astream->stream);
 
 				astream->txflow = FALSE;
 				astream->stream->txdrop = TRUE;
-				// switch_mutex_unlock(aes67_globals.gst_mutex); // added check
 				stream->write_function(stream, "Tx buffers dropping!\n");
 
 				STREAM_READER_UNLOCK(astream);
@@ -3334,7 +3321,7 @@ SWITCH_STANDARD_API(aes_cmd)
 					"Periodic autocleanmem is now off, it will only occur during idle periods and on demand\n");
 			} else if (!strcasecmp(argv[1], "on")) {
 				memcheck_active = TRUE;
-				stream->write_function(stream, "Periodic autocleanmem is now on with interval: %d min(s) = %2d:%02d hh:mm\n", interval_min, interval_min/60, interval_min%60);
+				stream->write_function(stream, "Periodic autocleanmem is now on with interval: %d min(s) = %2d:%02d hh:mm\n", interval_min, interval_min / 60, interval_min % 60);
 			} else {
 				stream->write_function(stream, "Please mention 'on' or 'off'\n");
 				stream->write_function(stream, "%s", usage_string);
@@ -3354,7 +3341,8 @@ SWITCH_STANDARD_API(aes_cmd)
 				}
 				interval_min = (long unsigned)val;
 				memcheck_active = TRUE;
-				stream->write_function(stream, "Periodic autocleanmem is now on with interval: %d minute(s)\n", interval_min);
+				stream->write_function(stream,
+									   "Periodic autocleanmem is now on with interval: %d min(s) = %2d:%02d hh:mm\n",  interval_min, interval_min / 60, interval_min % 60);
 			} else {
 				stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-720]\n");
 				stream->write_function(stream, "%s", usage_string);

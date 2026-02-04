@@ -3,7 +3,7 @@
 #include <gst/audio/audio-channels.h>
 #include <gst/net/net.h>
 
-#include "aes67_alloc.h"		// allocation tracker and mutex wrappers
+#include "aes67_alloc.h"					// allocation tracker and mutex wrappers
 volatile G_alloc_counts g_alloc_counts={0}; // debug counters for allocation
 
 #define ELEMENT_NAME_SIZE 30 + SESSION_ID_LEN
@@ -128,7 +128,7 @@ static GstCaps *request_pt_map(GstElement *jitterbuffer, guint pt, gpointer user
 
 	ret = AL_gst_caps_copy(caps);
 	gst_caps_set_simple(ret, "payload", G_TYPE_INT, pt, NULL);
-	//DA_NoNulling_dec_caps(ret); //accounting
+
 	return ret;
 }
 
@@ -302,9 +302,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 #ifndef ENABLE_THREADSHARE
 	queue = AL_gst_element_factory_make("queue", name);
 #else
-	//switch_mutex_lock(general_pipl_lock);		///added check - caller locks stream
 	MAKE_TS_ELEMENT(queue, "ts-queue", name, stream->ts_ctx);
-	//switch_mutex_unlock(general_pipl_lock); /// added check
 #endif
 	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
 	appsink = AL_gst_element_factory_make("appsink", name);
@@ -398,15 +396,14 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	DA_gst_object_unref(queue_sink_pad);
 	//  accounting
-	//DA_NoNulling_dec_objs(GST_OBJECT(tee_src_pad));
-	//DA_NoNulling_dec_objs(GST_OBJECT(queue_sink_pad));
+
 
 	DA_NoNulling_dec_objs(GST_OBJECT(tee)); 
 	DA_NoNulling_dec_objs(GST_OBJECT(queue));
 	DA_NoNulling_dec_objs(GST_OBJECT(appsink));
 	return ret;
 
-error: // TODO: check if we should deallocate other things here
+error: 
 	DA_gst_object_unref(tee_src_pad); 
 	DA_gst_object_unref(queue_sink_pad);
 	DA_gst_object_unref(GST_OBJECT(appsink));			//check
@@ -523,7 +520,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		appsink = NULL;
 	}
 
-	//MUp_gst_element_release_request_pad(tee, tee_src_pad);
+
 	gst_element_release_request_pad(tee, tee_src_pad);
 
 	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
@@ -629,7 +626,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			  we know that new buffers are arriving and so pause our Tx */
 			delta = timestamp < current_time ? current_time - timestamp : timestamp - current_time;
 			
-			//switch_mutex_lock(alloc_bkup_lock); /// added check
+
 			if (delta < max_delta && FALSE == stream->pause_backup_sender) {
 				stream->pause_backup_sender = TRUE;
 
@@ -664,8 +661,6 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			DA_gst_object_unref(GST_OBJECT(clock));
 			clock = NULL;
 
-			//switch_mutex_unlock(alloc_bkup_lock); /// added check
-
 		} else {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Clock not available, pipeline is not PLAYING\n");
 		}
@@ -678,7 +673,6 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 
 exit:
 	DA_gst_sample_unref(last_sample);
-	//DA_NoNulling_bufs(buffer);					//not counted, just borrowed
 	DA_gst_object_unref(GST_OBJECT(clock));
 	DA_gst_object_unref(GST_OBJECT(fakesink));
 	g_free(host);			//not counted
@@ -698,16 +692,10 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	GstElement *rtpjitbuf = NULL;
 	char *pipeline_name = NULL;
 
-	g_stream_t *stream = g_new0(g_stream_t, 1);			//init
-	// Initialize the counter:
+	// init entire structure
+	g_stream_t *stream = g_new0(g_stream_t, 1);			
+	// Initialize the counter used for deallocation in stop pipeline
 	g_atomic_int_set(&stream->pipeline_elements_count, 0);
-	/*
-	stream->bus_watch_id = 0;				
-	stream->deinterleave_signal_id = 0;
-	stream->jitterbuf_signal_id = 0;
-	stream->cb_rx_stats_id = 0;
-	stream->backup_sender_idle_timer = 0;
-	*/
 
 	char fixed_name[25] = {"pipeline"};
 	char *ts_ctx = DEFAULT_CONTEXT_NAME;
@@ -838,8 +826,6 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 															destroy_caps, 0);
 
 
-                                                                                     
-
 		if (!udp_source || !rtpdepay || !rtpjitbuf || !rx_audioconv || !capsfilter || !split || !deinterleave) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create rx elements\n");
 			goto ddirRX_error;
@@ -857,9 +843,9 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		goto ddirRX_exit;
 
 	ddirRX_error:
-		DA_gst_caps_unref(udp_caps); // Added
+		DA_gst_caps_unref(udp_caps); 
 		udp_caps = NULL;
-		DA_gst_caps_unref(rx_caps); // Added
+		DA_gst_caps_unref(rx_caps); 
 		rx_caps = NULL;
 		DA_gst_object_unref(GST_OBJECT(udp_source));
 		udp_source = NULL;
@@ -869,7 +855,6 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		rx_audioconv = NULL;
 		DA_gst_object_unref(GST_OBJECT(capsfilter));
 		capsfilter = NULL;
-		//DA_gst_object_unref(GST_OBJECT(tee));		//not needed since not counted
 		tee = NULL;
 		DA_gst_object_unref(GST_OBJECT(split));
 		split = NULL;
@@ -880,9 +865,6 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		goto error;
 
 	ddirRX_exit:
-		//		if (!udp_source || !rtpdepay || !rtpjitbuf || !rx_audioconv || !capsfilter || !split || !deinterleave) {
-		//DA_gst_object_unref(GST_OBJECT(tee)); // kills audio from BP to phone - TODO-check where it is deallocated
-
 		//  accounting
 		if (udp_source) DA_NoNulling_dec_objs(udp_source); 
 		if (rtpdepay) DA_NoNulling_dec_objs(rtpdepay);
@@ -1130,11 +1112,8 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		DA_gst_caps_unref(caps);
 		caps = NULL;
 		DA_NoNulling_dec_objs(udpsrc);
-		//DA_gst_object_unref(GST_OBJECT(udpsrc));
-		//udpsrc = NULL;
 		DA_NoNulling_dec_objs(fakesink);
-		//DA_gst_object_unref(GST_OBJECT(fakesink));
-		//fakesink = NULL;
+
 		goto bksnd_continue;
 
 	bksnd_error:
@@ -1278,7 +1257,7 @@ void *start_pipeline(void *data)
 }
 
 
-// Here be demons
+// Here be demons - be careful what you change and maintain order of operations
 // if this runs while calls are in progress, some deallocations do not occur
 // this is why there is the atomic flag that indicates it is in progress
 // and it must be checked in critical sections push pull bufs and pad ops
@@ -1742,7 +1721,7 @@ gchar *get_rtp_stats(g_stream_t *stream)
 		g_object_get(G_OBJECT(rtpjitbuf), "stats", &stats, NULL);
 		stats_str = gst_structure_to_string(stats);	
 		DA_gst_structure_free(stats); // added
-		//gst_structure_free(stats);			// Added missing free
+
 		stats = NULL;
 		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
 	} else {
@@ -1750,7 +1729,7 @@ gchar *get_rtp_stats(g_stream_t *stream)
 	}
 exit:
 done_no_unlock:
-	return stats_str;			//deallocated by caller
+	return stats_str;			//deallocated by caller!!
 }
 
 void drop_output_buffers(gboolean drop, g_stream_t *stream)

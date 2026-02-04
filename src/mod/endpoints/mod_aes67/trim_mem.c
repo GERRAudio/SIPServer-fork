@@ -4,11 +4,10 @@
 #include <windows.h>
 #include <psapi.h> // For GetProcessHeaps if needed
 
-
 /*
 Optional memory cleansing - call be called programmatically from aes67 CLI
 or alternately from CLI script in Freeswitch 
-"fsctl reclaim_mem"
+	"fsctl reclaim_mem"
 
 For heap-specific cleanup, enumerate private heaps with GetProcessHeaps and call HeapCompact(hHeap, 0) on each
 during idle periods; it coalesces free blocks but rarely shrinks the committed virtual address space and is mainly for
@@ -71,7 +70,7 @@ void TrimCurrentProcessWorkingSet(void) { ; }
 
 long interval_min = INTERVAL_MIN;
 
-// FreeSwitch calls this every 20 seconds by default
+// FreeSwitch calls this every 20 seconds by default -set in config files as an XML parameter, if not set it is 20secs
 void heartbeat_callback(switch_event_t *event)
 {
 	static long unsigned call_count = 0;
