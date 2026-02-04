@@ -3144,11 +3144,11 @@ SWITCH_STANDARD_API(aes_cmd)
 							   "aes67 reloadconf\n"
 							   "aes67 dump <stream> <dotfile name>\n"
 #ifdef _WIN32
-							   "aes67 autoclr <on|off>\n"
-							   "aes67 autoclr set [1-720]\n"
+							   "aes67 autocleanmem <on|off>\n"
+							   "aes67 autocleanmem setmin [1-" XSTR(MAXMIN) "]\n"
 							   "aes67 clrwrkset\n"
 							   "aes67 compactheap\n"
-							   "aes67 clrcount\n"
+							   "aes67 memcleancount\n"
 #endif
 							   "--------------------------------------------------------------------------------\n";
 	if (zstr(cmd)) {
@@ -3317,13 +3317,13 @@ SWITCH_STANDARD_API(aes_cmd)
 		stream->write_function(stream, "mod_aes67 version date: %s\n", MOD_AES_VERSION_DATE);
 	}
 #ifdef _WIN32
-	else if (!strcasecmp(argv[0], "autoclr")) {
+	else if (!strcasecmp(argv[0], "autocleanmem")) {
 		switch (argc) {
 		case 1:
 			if (memcheck_active) {
-				stream->write_function(stream, "autoclr status: on with interval: %d minute(s)\n", interval_min);
+				stream->write_function(stream, "autocleanmem status is on with interval: %d min(s) = %2d:%02d hh:mm\n",interval_min, interval_min / 60, interval_min % 60);
 			} else {
-				stream->write_function(stream, "autoclr status: off\n");
+				stream->write_function(stream, "autocleanmem status is off\n");
 			}
 			break;	
 		case 2:
@@ -3331,30 +3331,30 @@ SWITCH_STANDARD_API(aes_cmd)
 				memcheck_active = FALSE;
 				stream->write_function(
 					stream,
-					"periodic autoclr is now off, auto clearing will only occur during idle periods and on demand\n");
+					"Periodic autocleanmem is now off, it will only occur during idle periods and on demand\n");
 			} else if (!strcasecmp(argv[1], "on")) {
 				memcheck_active = TRUE;
-				stream->write_function(stream, "periodic autoclr is now on with interval: %d mins\n", interval_min);
+				stream->write_function(stream, "Periodic autocleanmem is now on with interval: %d min(s) = %2d:%02d hh:mm\n", interval_min, interval_min/60, interval_min%60);
 			} else {
 				stream->write_function(stream, "Please mention 'on' or 'off'\n");
 				stream->write_function(stream, "%s", usage_string);
 			}
 			break;
 		case 3:
-			if (!strcasecmp(argv[1], "set")) {
+			if (!strcasecmp(argv[1], "setmin")) {
 
 				char *end;
 				long val;
 				errno = 0;
 				if (argv[2])
 					val	= strtol(argv[2], &end, 10);
-				if (end == argv[2] || errno == ERANGE || val < 1 || val > 720) {
-					stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-720]\n");
+				if (end == argv[2] || errno == ERANGE || val < 1 || val > MAXMIN) {
+					stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-%d]\n", MAXMIN);
 					break;
 				}
 				interval_min = (long unsigned)val;
 				memcheck_active = TRUE;
-				stream->write_function(stream, "periodic autoclr is now on with interval: %d minute(s)\n", interval_min);
+				stream->write_function(stream, "Periodic autocleanmem is now on with interval: %d minute(s)\n", interval_min);
 			} else {
 				stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-720]\n");
 				stream->write_function(stream, "%s", usage_string);
@@ -3375,7 +3375,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		CompactHeaps();
 		aes67_globals.compact_heap_cnt++;
 		stream->write_function(stream, "Compacted idle heap\n");
-	} else if (!strcasecmp(argv[0], "clrcount")) {
+	} else if (!strcasecmp(argv[0], "memcleancount")) {
 		stream->write_function(stream, "Mem cleanup counts: trim:%" G_GUINT64_FORMAT " heap:%" G_GUINT64_FORMAT "\n"
 			, aes67_globals.trim_cnt, aes67_globals.compact_heap_cnt);
 	}
