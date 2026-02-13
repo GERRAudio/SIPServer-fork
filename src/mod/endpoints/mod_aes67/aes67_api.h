@@ -102,7 +102,12 @@ void dump_pipeline(GstPipeline *pipe, const char *name);
 void account_pipeline_children(g_stream_t *stream);
 void CompactHeaps(void);
 void TrimCurrentProcessWorkingSet(void);
+
 void periodic_mem_check(BOOL force);
+void periodic_deep_clean(BOOL force);
+void check_pipeline_memory_pressure(g_stream_t *stream);
+void flush_all_queues(g_stream_t *stream);
+
 volatile extern BOOL memcheck_active;
 void heartbeat_callback(switch_event_t *event);
 extern long interval_min;

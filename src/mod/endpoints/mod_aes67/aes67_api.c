@@ -325,6 +325,15 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	}
 
 	g_rec_mutex_lock(ch_mutex);
+	// Check AGAIN while holding lock
+	if (!g_atomic_int_get(&stream->pipeline_active)) {
+		g_rec_mutex_unlock(ch_mutex);
+		DA_gst_object_unref(GST_OBJECT(appsink));
+		DA_gst_object_unref(GST_OBJECT(queue));
+		DA_gst_object_unref(GST_OBJECT(tee));
+		goto done_no_unlock;
+	}
+
 	g_object_set(appsink, "emit-signals", FALSE, "sync", FALSE, "async", FALSE, "drop", TRUE, "max-buffers", 1,
 				 "enable-last-sample", FALSE, NULL);
 
@@ -356,6 +365,10 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	// Both queue and appsink were successfully added to pipeline
 	// These were allocated via AL_ wrappers, so increment counter:
 	g_atomic_int_add(&stream->pipeline_elements_count, 2);
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+					  "ADD_APPSINK: ch=%d session=%s, pipeline_active=%d, elem_count=%d\n", ch_idx, session,
+					  g_atomic_int_get(&stream->pipeline_active), g_atomic_int_get(&stream->pipeline_elements_count));
 
 	if (!(tee_src_pad = AL_gst_element_request_pad_simple(tee, "src_%u"))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -769,8 +782,10 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		#endif
 
 		g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency,
-		 "mode", 0 /* none */, 
-		 NULL);
+			"mode", 0 /* none */, 
+			"drop-on-latency", TRUE, // drop late packets
+			NULL);
+
 		rx_audioconv = AL_gst_element_factory_make("audioconvert", "rx-aconv");
 		g_object_set(rx_audioconv, "dithering", 0 /* none */, NULL);
 
@@ -1257,6 +1272,39 @@ void *start_pipeline(void *data)
 }
 
 
+
+void flush_all_queues(g_stream_t *stream)
+{
+	if (!stream || !stream->pipeline) return;
+
+	GstIterator *iter = gst_bin_iterate_elements(GST_BIN(stream->pipeline));
+	GValue item = G_VALUE_INIT;
+
+	while (gst_iterator_next(iter, &item) == GST_ITERATOR_OK) {
+		GstElement *element = g_value_get_object(&item);
+		GstElementFactory *factory = gst_element_get_factory(element);
+		const gchar *factory_name = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory));
+
+		// Check if this is a queue element
+		if (g_strcmp0(factory_name, "queue") == 0 || g_strcmp0(factory_name, "ts-queue") == 0) {
+
+			// Send flush events to drain the queue
+			GstPad *sinkpad = gst_element_get_static_pad(element, "sink");
+			if (sinkpad) {
+				gst_pad_send_event(sinkpad, gst_event_new_flush_start());
+				gst_pad_send_event(sinkpad, gst_event_new_flush_stop(TRUE));
+				gst_object_unref(sinkpad);
+			}
+		}
+
+		g_value_reset(&item);
+	}
+
+	gst_iterator_free(iter);
+}
+
+
+
 // Here be demons - be careful what you change and maintain order of operations
 // if this runs while calls are in progress, some deallocations do not occur
 // this is why there is the atomic flag that indicates it is in progress
@@ -1267,11 +1315,22 @@ void stop_pipeline(g_stream_t *stream)
 	if (!stream) goto error_no_unlock;
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
+	
+	// BLOCK SIGNALS FIRST (before setting flag)
+	if (stream->deinterleave_signal_id > 0) {
+		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
+		if (deinterleave) {
+			g_signal_handler_block(deinterleave, stream->deinterleave_signal_id);
+			DA_gst_object_unref(GST_OBJECT(deinterleave));
+		}
+	}
+
+
 	// CRITICAL: Set flag to 0  this immediately stops audio I/O
 	g_atomic_int_set(&stream->pipeline_active, 0);
 
 	// Give active threads time to see flag and exit cleanly
-	g_usleep(50000); // 50ms should be sufficient (pull timeout is 10ms)
+	g_usleep(100000); // 100ms should be sufficient (pull timeout is 10ms)
 
 	// STOP ALL TIMERS/SOURCES FIRST (atomic)
 	gint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
@@ -1281,6 +1340,15 @@ void stop_pipeline(g_stream_t *stream)
 	}
 
 	if (stream->bus_watch_id > 0) {
+		// Drain all pending messages first
+		GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(stream->pipeline));
+		if (bus) {
+			GstMessage *msg;
+			while ((msg = gst_bus_pop(bus)) != NULL) {
+				gst_message_unref(msg); // Free queued messages
+			}
+			gst_object_unref(bus);
+		}
 		g_source_remove(stream->bus_watch_id);
 		stream->bus_watch_id = 0;
 	}
@@ -1330,22 +1398,67 @@ void stop_pipeline(g_stream_t *stream)
 	// Drain all appsinks BEFORE setting pipeline to NULL
 	GstIterator *iter = gst_bin_iterate_elements(GST_BIN(stream->pipeline));
 	GValue item = G_VALUE_INIT;
+	int total_drained = 0;
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "=== Pipeline Memory Diagnostic ===\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Flushing all pipeline elements...\n");
 
 	while (gst_iterator_next(iter, &item) == GST_ITERATOR_OK) {
 		GstElement *element = g_value_get_object(&item);
+		const gchar *name = gst_element_get_name(element);
 
-		// Check if this is an appsink
+		// Force flush on ALL elements
+		GstPad *sinkpad = gst_element_get_static_pad(element, "sink");
+		if (sinkpad) {
+			gst_pad_send_event(sinkpad, gst_event_new_flush_start());
+			gst_pad_send_event(sinkpad, gst_event_new_flush_stop(TRUE));
+			gst_object_unref(sinkpad);
+		}
+
+		GstElementFactory *factory = gst_element_get_factory(element);
+		const gchar *factory_name = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory));
+
+		// Check if this is a queue element
+		if (g_strcmp0(factory_name, "queue") == 0 || g_strcmp0(factory_name, "ts-queue") == 0) {
+			guint current_level_buffers = 0;
+			guint current_level_bytes = 0;
+			g_object_get(element, "current-level-buffers", &current_level_buffers, "current-level-bytes",
+						 &current_level_bytes, NULL);
+
+			if (current_level_buffers > 0) {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Queue '%s': %u buffers, %u bytes\n", name,
+								  current_level_buffers, current_level_bytes);
+			}
+		}
+
 		if (GST_IS_APP_SINK(element)) {
+			// Check if samples are queued
 			GstSample *sample;
+			int drained = 0;
 
-			// Drain all samples from this appsink
-			while ((sample = gst_app_sink_try_pull_sample(GST_APP_SINK(element), 0))) { DA_gst_sample_unref(sample); }
+			// Force EOS first
+			gst_app_sink_set_emit_signals(GST_APP_SINK(element), FALSE);
+
+			// Aggressive drain with timeout
+			while ((sample = gst_app_sink_try_pull_sample(GST_APP_SINK(element), 50 * GST_MSECOND))) {
+				DA_gst_sample_unref(sample);
+				drained++;
+				if (drained > 1000) break; // Safety limit
+			}
+
+			total_drained += drained;
 		}
 
 		g_value_reset(&item);
 	}
 
 	gst_iterator_free(iter);
+
+	if (total_drained > 0) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Drained %d orphaned samples during shutdown\n",
+						  total_drained);
+	}
+
 
 	// NULL STATE - destroys ALL elements safely
 	//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Setting pipeline to NULL...\n");
@@ -1382,14 +1495,39 @@ void stop_pipeline(g_stream_t *stream)
 
 	// MUTEX CLEANUP 
 	for (int i = 0; i < MAX_IO_CHANNELS; i++) {
-		// Try to ensure mutex is unlocked
-		if (g_rec_mutex_trylock(&stream->appsrc_mutexes[i])) { g_rec_mutex_unlock(&stream->appsrc_mutexes[i]); }
+		gint timeout_count = 0;
+		const gint MAX_TIMEOUT = 100; // 1 second (100 * 10ms)
+		gboolean got_lock = FALSE;
+
+		// Keep trying to acquire the lock
+		while (!got_lock && timeout_count < MAX_TIMEOUT) {
+			got_lock = g_rec_mutex_trylock(&stream->appsrc_mutexes[i]);
+			if (!got_lock) {
+				g_usleep(10000); // 10ms
+				timeout_count++;
+			}
+		}
+
+		if (!got_lock) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+							  "Mutex %d still locked after 1s timeout - NOT clearing (leak to avoid crash)\n", i);
+			// DO NOT call g_rec_mutex_clear() - leak it instead of crashing
+			continue;
+		}
+
+		// Successfully acquired lock - safe to clear
+		g_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
 		g_rec_mutex_clear(&stream->appsrc_mutexes[i]);
 	}
+
 
 	//  FINAL FREE
 	g_free(stream);
 
+	// logging for unallocated object counts
+	remaining = g_atomic_int_get(&stream->pipeline_elements_count);
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "STOP_PIPELINE: elem_count=%d, objs_before=%d\n",
+					  remaining, g_alloc_counts.objs);
 
 exit_unlock:
 	if (timer_id > 0) {

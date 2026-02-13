@@ -257,6 +257,7 @@ static struct {
 	switch_time_t last_stream_activity;		// Last pullbuffer/pushbuffer time
 	guint64 trim_cnt;
 	guint64 compact_heap_cnt;
+	guint64 gst_clean_cnt;
 
 	// added to track clr mem
 
@@ -503,7 +504,9 @@ error:
 static int clear_shared_audio_stream(shared_audio_stream_t *shstream)
 {
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Destroying shared audio stream %s\n", shstream->name);
-	if (shstream->stream) { stop_pipeline(shstream->stream); }
+	if (shstream->stream) {
+		stop_pipeline(shstream->stream); 
+	}
 
 	shstream->stream = NULL; // deallocated in stop pipeline
 	return 0;
@@ -1632,6 +1635,16 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 						  strerror(errno));
 #endif
 	}
+
+
+// turn this on if you want gstreamer mem stats, then check gstreamer_leaks.log file
+#ifdef _DEBUG_MEM
+	g_setenv("GST_DEBUG", "GST_TRACER:7", TRUE);
+	g_setenv("GST_TRACERS", "leaks", TRUE);
+	g_setenv("GST_DEBUG_FILE", "/tmp/gstreamer_leaks.log", TRUE);
+#endif
+
+
 
 	gst_init(NULL, NULL);
 	// gst_debug_remove_log_function (NULL);
@@ -2982,7 +2995,7 @@ static int is_sock_equal(udp_sock_t *a, udp_sock_t *b)
 	return (a->port == b->port) && (addr_a.s_addr == addr_b.s_addr);
 }
 
-// cleans memory on a periodic basis, called from call routines
+// Clean memory on a periodic basis, polled and called on a timer
 void periodic_mem_check(BOOL force)
 {
 	if (!memcheck_active) return;
@@ -3009,6 +3022,88 @@ void periodic_mem_check(BOOL force)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Periodic mem clear firing\n");
 	}
 }
+
+
+// Aggresively cleans when calls are idle only - safe to call since it checks
+void periodic_deep_clean(BOOL force)
+{
+	if (!force) {
+		// Only run when IDLE (no calls active)
+		if (aes67_globals.call_list != NULL) {
+			return; // Skip if calls active or not forced
+		}
+	}
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Starting deep memory cleanup...\n");
+
+	// 1. Destroy and recreate shared streams (releases internal state)
+	destroy_shared_audio_streams();
+	// Streams will be recreated on next call
+
+	// 2. Force GStreamer internal cleanup
+	gst_deinit();
+	gst_init(NULL, NULL);
+
+#ifdef RESET_PTP
+	// 3. Reinit PTP if needed
+	if (aes67_globals.ptp_domain >= 0) {
+		void *ptp_clock = init_ptp(aes67_globals.ptp_domain, aes67_globals.ptp_iface);
+		if (ptp_clock) {
+			if (aes67_globals.clock) { DA_gst_object_unref(GST_OBJECT(aes67_globals.clock)); }
+			aes67_globals.clock = ptp_clock;
+		}
+	}
+#endif
+
+	// 4. NOW do OS-level trim
+	TrimCurrentProcessWorkingSet();
+	aes67_globals.gst_clean_cnt++;
+	CompactHeaps();
+	aes67_globals.compact_heap_cnt++;
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Deep cleanup complete\n");
+}
+
+// Called periodically from a timer to clean up gstreamer mem specifically
+void check_pipeline_memory_pressure(g_stream_t *stream)
+{
+	GstIterator *iter = gst_bin_iterate_elements(GST_BIN(stream->pipeline));
+	GValue item = G_VALUE_INIT;
+	guint total_queued_buffers = 0;
+	guint total_queued_bytes = 0;
+
+	while (gst_iterator_next(iter, &item) == GST_ITERATOR_OK) {
+		GstElement *element = g_value_get_object(&item);
+
+		GstElementFactory *factory = gst_element_get_factory(element);
+		const gchar *factory_name = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory));
+
+		if (g_strcmp0(factory_name, "queue") == 0 || g_strcmp0(factory_name, "ts-queue") == 0) {
+			guint buffers = 0, bytes = 0;
+			g_object_get(element, "current-level-buffers", &buffers, "current-level-bytes", &bytes, NULL);
+			total_queued_buffers += buffers;
+			total_queued_bytes += bytes;
+		}
+
+		g_value_reset(&item);
+	}
+
+	gst_iterator_free(iter);
+
+	// If memory pressure is too high, trigger aggressive flush
+	if (total_queued_buffers > 500 || total_queued_bytes > 10 * 1024 * 1024) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+						  "HIGH MEMORY PRESSURE: %u buffers, %u bytes - flushing!\n", total_queued_buffers,
+						  total_queued_bytes);
+
+		// Trigger flush
+		flush_all_queues(stream);
+	}
+}
+
+
+
+
+
 
 void error_callback(char *msg, g_stream_t *stream)
 {
@@ -3133,13 +3228,14 @@ SWITCH_STANDARD_API(aes_cmd)
 							   "aes67 rtpstats <stream>\n"
 							   "aes67 txflow <stream> <on|off>\n"
 							   "aes67 reloadconf\n"
-							   "aes67 dump <stream> <dotfile name>\n"
+							   "aes67 dump <stream> <dotfile name>\n" 
 #ifdef _WIN32
 							   "aes67 autocleanmem <on|off>\n"
 							   "aes67 autocleanmem setmin [1-" XSTR(MAXMIN) "]\n"
 							   "aes67 clrwrkset\n"
 							   "aes67 compactheap\n"
 							   "aes67 memcleancount\n"
+							   "aes67 clearbufs\n"
 #endif
 							   "--------------------------------------------------------------------------------\n";
 	if (zstr(cmd)) {
@@ -3363,9 +3459,13 @@ SWITCH_STANDARD_API(aes_cmd)
 		CompactHeaps();
 		aes67_globals.compact_heap_cnt++;
 		stream->write_function(stream, "Compacted idle heap\n");
+	} else if (!strcasecmp(argv[0], "clearbufs")) {
+		periodic_deep_clean(TRUE);		//counter incremented inside
+		stream->write_function(stream, "Cleared buffers\n");
 	} else if (!strcasecmp(argv[0], "memcleancount")) {
-		stream->write_function(stream, "Mem cleanup counts: trim:%" G_GUINT64_FORMAT " heap:%" G_GUINT64_FORMAT "\n"
-			, aes67_globals.trim_cnt, aes67_globals.compact_heap_cnt);
+		stream->write_function(stream,
+							   "Mem cleanup counts: trim:%" G_GUINT64_FORMAT " heap:%" G_GUINT64_FORMAT "bufs:%" G_GUINT64_FORMAT "\n",
+							   aes67_globals.trim_cnt, aes67_globals.compact_heap_cnt, aes67_globals.gst_clean_cnt++);
 	}
 #endif
 
