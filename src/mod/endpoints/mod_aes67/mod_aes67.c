@@ -2662,8 +2662,8 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 	// timer unbind
 	switch_event_unbind_callback(heartbeat_callback);
 	
-	destroy_audio_streams();
-	destroy_shared_audio_streams();
+	destroy_audio_streams(5);
+	destroy_shared_audio_streams(5);
 	destroy_codecs();
 	gst_ptp_deinit();
 
@@ -3027,8 +3027,6 @@ void periodic_mem_check(BOOL force)
 // Aggresively cleans when calls are idle only - safe to call since it checks
 void periodic_deep_clean()
 {
-
-
 		// Only run when IDLE (no calls active)
 		if (aes67_globals.call_list != NULL) {
 			return; // Skip if calls active or not forced
@@ -3057,6 +3055,7 @@ void periodic_deep_clean()
 #endif
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Deep cleanup complete\n");
+	aes67_globals.gst_clean_cnt++;		//count only if idle
 }
 
 // Called periodically from a timer to clean up gstreamer mem specifically
@@ -3216,7 +3215,7 @@ SWITCH_STANDARD_API(aes_cmd)
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 	const char *usage_string = "USAGE:\n"
 							   "--------------------------------------------------------------------------------\n"
-							   "aes67 [for this list]\n"
+							   "aes67  [for this list]\n"
 							   "aes67 version\n"
 							   "aes67 streams\n"
 							   "aes67 endpoints\n"
@@ -3231,7 +3230,7 @@ SWITCH_STANDARD_API(aes_cmd)
 							   "aes67 clrwrkset\n"
 							   "aes67 compactheap\n"
 							   "aes67 memcleancount\n"
-							   "aes67 clearbufs [will only clear them if there are no calls active, but will never hang up active calls]\n"
+							   "aes67 clearbufs  [will only clear them if there are no calls active, but will never hang up active calls]\n"
 #endif
 							   "--------------------------------------------------------------------------------\n";
 	if (zstr(cmd)) {
@@ -3460,8 +3459,8 @@ SWITCH_STANDARD_API(aes_cmd)
 		stream->write_function(stream, "Cleared buffers\n");
 	} else if (!strcasecmp(argv[0], "memcleancount")) {
 		stream->write_function(stream,
-							   "Mem cleanup counts: trim:%" G_GUINT64_FORMAT " heap:%" G_GUINT64_FORMAT "bufs:%" G_GUINT64_FORMAT "\n",
-							   aes67_globals.trim_cnt, aes67_globals.compact_heap_cnt, aes67_globals.gst_clean_cnt++);
+							   "Mem cleanup counts:  trim:%" G_GUINT64_FORMAT "  heap:%" G_GUINT64_FORMAT "  bufs:%" G_GUINT64_FORMAT "\n",
+							   aes67_globals.trim_cnt, aes67_globals.compact_heap_cnt, aes67_globals.gst_clean_cnt);
 	}
 #endif
 
