@@ -3025,22 +3025,22 @@ void periodic_mem_check(BOOL force)
 
 
 // Aggresively cleans when calls are idle only - safe to call since it checks
-void periodic_deep_clean(BOOL force)
+void periodic_deep_clean()
 {
-#ifdef RESET_GST
 
-	if (!force) {
+
 		// Only run when IDLE (no calls active)
 		if (aes67_globals.call_list != NULL) {
 			return; // Skip if calls active or not forced
 		}
-	}
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Starting deep memory cleanup...\n");
 
 	// 1. Destroy and recreate shared streams (releases internal state)
 	destroy_shared_audio_streams();
 	// Streams will be recreated on next call
+	// 
+#ifdef RESET_GST
 	// 2. Force GStreamer internal cleanup
 	gst_deinit();
 	gst_init(NULL, NULL);
@@ -3216,7 +3216,7 @@ SWITCH_STANDARD_API(aes_cmd)
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 	const char *usage_string = "USAGE:\n"
 							   "--------------------------------------------------------------------------------\n"
-							   "aes67 (for this list)\n"
+							   "aes67 [for this list]\n"
 							   "aes67 version\n"
 							   "aes67 streams\n"
 							   "aes67 endpoints\n"
@@ -3231,7 +3231,7 @@ SWITCH_STANDARD_API(aes_cmd)
 							   "aes67 clrwrkset\n"
 							   "aes67 compactheap\n"
 							   "aes67 memcleancount\n"
-							   "aes67 clearbufs\n"
+							   "aes67 clearbufs [will only clear them if there are no calls active, but will never hang up active calls]\n"
 #endif
 							   "--------------------------------------------------------------------------------\n";
 	if (zstr(cmd)) {
@@ -3456,7 +3456,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		aes67_globals.compact_heap_cnt++;
 		stream->write_function(stream, "Compacted idle heap\n");
 	} else if (!strcasecmp(argv[0], "clearbufs")) {
-		periodic_deep_clean(TRUE);		//counter incremented inside
+		periodic_deep_clean();		//counter incremented inside
 		stream->write_function(stream, "Cleared buffers\n");
 	} else if (!strcasecmp(argv[0], "memcleancount")) {
 		stream->write_function(stream,

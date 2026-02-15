@@ -104,7 +104,7 @@ void CompactHeaps(void);
 void TrimCurrentProcessWorkingSet(void);
 
 void periodic_mem_check(BOOL force);
-void periodic_deep_clean(BOOL force);
+void periodic_deep_clean(void);
 void check_pipeline_memory_pressure(g_stream_t *stream);
 void flush_all_queues(g_stream_t *stream);
 

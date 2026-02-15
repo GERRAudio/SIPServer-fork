@@ -79,7 +79,7 @@ void heartbeat_callback(switch_event_t *event)
 		((3600L / 20L) * interval_min) / 60L) { // convert to number of 20 sec blips - careful about integer division
 		call_count = 0;
 		periodic_mem_check(TRUE);	// force clear windows mem - does not drop calls
-		periodic_deep_clean(FALSE); // clear gstreamer mem - do not force since it would drops calls - will check if calls are active
+		periodic_deep_clean(); // clear gstreamer mem - will check if calls are active
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "AES67: Cleaning memory ---\n");
 
 	}
