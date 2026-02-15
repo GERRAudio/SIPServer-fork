@@ -338,16 +338,16 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 				 "enable-last-sample", FALSE, NULL);
 
 	gboolean retval = gst_bin_add(GST_BIN(stream->pipeline), appsink);
-	g_rec_mutex_unlock(ch_mutex);
+
 
 	if (!retval) {
+		g_rec_mutex_unlock(ch_mutex);
 		DA_gst_object_unref(appsink);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to add appsink to the pipeline ch: %d, session: %s", ch_idx, session);
 		goto error;
 	}
 
-	g_rec_mutex_lock(ch_mutex);
 	retval = gst_bin_add(GST_BIN(stream->pipeline), queue);
 	g_rec_mutex_unlock(ch_mutex);
 
@@ -1316,15 +1316,6 @@ void stop_pipeline(g_stream_t *stream)
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
 	
-	// BLOCK SIGNALS FIRST (before setting flag)
-	if (stream->deinterleave_signal_id > 0) {
-		GstElement *deinterleave = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-deinterleave");
-		if (deinterleave) {
-			g_signal_handler_block(deinterleave, stream->deinterleave_signal_id);
-			DA_gst_object_unref(GST_OBJECT(deinterleave));
-		}
-	}
-
 
 	// CRITICAL: Set flag to 0  this immediately stops audio I/O
 	g_atomic_int_set(&stream->pipeline_active, 0);
@@ -1521,13 +1512,16 @@ void stop_pipeline(g_stream_t *stream)
 	}
 
 
-	//  FINAL FREE
-	g_free(stream);
+
 
 	// logging for unallocated object counts
 	remaining = g_atomic_int_get(&stream->pipeline_elements_count);
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "STOP_PIPELINE: elem_count=%d, objs_before=%d\n",
 					  remaining, g_alloc_counts.objs);
+
+	//  FINAL FREE
+	g_free(stream);
+	stream = NULL;
 
 exit_unlock:
 	if (timer_id > 0) {
