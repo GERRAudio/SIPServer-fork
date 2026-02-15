@@ -3027,6 +3027,8 @@ void periodic_mem_check(BOOL force)
 // Aggresively cleans when calls are idle only - safe to call since it checks
 void periodic_deep_clean(BOOL force)
 {
+#ifdef RESET_GST
+
 	if (!force) {
 		// Only run when IDLE (no calls active)
 		if (aes67_globals.call_list != NULL) {
@@ -3039,12 +3041,11 @@ void periodic_deep_clean(BOOL force)
 	// 1. Destroy and recreate shared streams (releases internal state)
 	destroy_shared_audio_streams();
 	// Streams will be recreated on next call
-
 	// 2. Force GStreamer internal cleanup
 	gst_deinit();
 	gst_init(NULL, NULL);
 
-#ifdef RESET_PTP
+
 	// 3. Reinit PTP if needed
 	if (aes67_globals.ptp_domain >= 0) {
 		void *ptp_clock = init_ptp(aes67_globals.ptp_domain, aes67_globals.ptp_iface);
@@ -3055,11 +3056,6 @@ void periodic_deep_clean(BOOL force)
 	}
 #endif
 
-	// 4. NOW do OS-level trim
-	TrimCurrentProcessWorkingSet();
-	aes67_globals.gst_clean_cnt++;
-	CompactHeaps();
-	aes67_globals.compact_heap_cnt++;
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Deep cleanup complete\n");
 }
 
