@@ -3215,7 +3215,7 @@ SWITCH_STANDARD_API(aes_cmd)
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 	const char *usage_string = "USAGE:\n"
 							   "--------------------------------------------------------------------------------\n"
-							   "aes67  [for this list]\n"
+							   "aes67  (for this list)\n"
 							   "aes67 version\n"
 							   "aes67 streams\n"
 							   "aes67 endpoints\n"
@@ -3230,7 +3230,7 @@ SWITCH_STANDARD_API(aes_cmd)
 							   "aes67 clrwrkset\n"
 							   "aes67 compactheap\n"
 							   "aes67 memcleancount\n"
-							   "aes67 clearbufs  [will only clear them if there are no calls active, but will never hang up active calls]\n"
+							   "aes67 clearbufs  (will only clear when no calls active. Never hangs up calls)\n"
 #endif
 							   "--------------------------------------------------------------------------------\n";
 	if (zstr(cmd)) {
