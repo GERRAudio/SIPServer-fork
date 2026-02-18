@@ -1314,10 +1314,17 @@ void stop_pipeline(g_stream_t *stream)
 {
 	if (!stream) goto error_no_unlock;
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
 	
+	//  Check if already stopped
+	if (!g_atomic_int_get(&stream->pipeline_active)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline already stopped, skipping\n");
+		return;
+	}
 
-	// CRITICAL: Set flag to 0  this immediately stops audio I/O
+	
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
+
+	// Set flag to 0  this immediately stops audio I/O
 	g_atomic_int_set(&stream->pipeline_active, 0);
 
 	// Give active threads time to see flag and exit cleanly

@@ -503,12 +503,22 @@ error:
 
 static int clear_shared_audio_stream(shared_audio_stream_t *shstream)
 {
+	if (!shstream) return -1;
+
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Destroying shared audio stream %s\n", shstream->name);
+
 	if (shstream->stream) {
-		stop_pipeline(shstream->stream); 
+		// Set shutdown flag FIRST - this stops all I/O immediately
+		g_atomic_int_set(&shstream->stream->pipeline_active, 0);
+
+		// Give threads 200ms to see flag and exit
+		g_usleep(200000);
+
+		// Now safe to call stop_pipeline
+		stop_pipeline(shstream->stream);
 	}
 
-	shstream->stream = NULL; // deallocated in stop pipeline
+	shstream->stream = NULL;
 	return 0;
 }
 
@@ -569,29 +579,62 @@ static void free_shared_audio_stream(shared_audio_stream_t *stream)
 	switch_safe_free(stream);
 }
 
+
 static void destroy_shared_audio_streams()
 {
 	switch_hash_index_t *hi;
 	shared_audio_stream_t *stream;
 
 	// aes67_globals.destroying_streams = 1;
-	g_atomic_int_set(&aes67_globals.destroying_streams, 1); // added
+	g_atomic_int_set(&aes67_globals.destroying_streams, 1); 
 
 	switch_mutex_lock(aes67_globals.sh_shtreams_lock);
 
 	const void *key;
 	for (hi = switch_core_hash_first(aes67_globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 		switch_core_hash_this(hi, &key, NULL, (void **)&stream);
-		STREAM_WRITER_LOCK(stream);
-		free_shared_audio_stream(stream);
-		STREAM_WRITER_UNLOCK(stream);
-		// switch_core_hash_delete(aes67_globals.sh_streams, key); // reference counted, so not needed (check)
-	}
 
+		// CRITICAL: Set shutdown flag BEFORE trying to acquire lock
+		if (stream->stream) { 
+			g_atomic_int_set(&stream->stream->pipeline_active, 0); 
+		}
+		// Give I/O threads time to release locks (they check pipeline_active)
+		g_usleep(100000); // 100ms
+
+		// Try to acquire lock with timeout using trylock
+		int retries = 20; // 2 seconds total
+		while (retries-- > 0 && !g_rw_lock_writer_trylock(&stream->rwlock)) {
+			g_usleep(100000); // 100ms between retries
+		}
+
+		if (retries > 0) {
+			// Got the lock
+			free_shared_audio_stream(stream);
+			g_rw_lock_writer_unlock(&stream->rwlock);
+		} else {
+			// Couldn't get lock - force cleanup anyway
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+							  "Stream %s locked during shutdown - forcing cleanup\n", stream->name);
+			// Aggressive flag setting
+			g_atomic_int_set(&stream->reloading, 1);
+			// Wait a bit more
+			g_usleep(200000);
+			// Force cleanup without lock (we're shutting down anyway)
+			if (stream->stream) {
+				g_atomic_int_set(&stream->stream->pipeline_active, 0);
+				g_usleep(100000);
+				stop_pipeline(stream->stream);
+				stream->stream = NULL;
+			}
+		}
+	}
 	switch_mutex_unlock(aes67_globals.sh_shtreams_lock);
-	g_atomic_int_set(&aes67_globals.destroying_streams, 0); // added
-													  // aes67_globals.destroying_streams = 0;
+	g_atomic_int_set(&aes67_globals.destroying_streams, 0);
 }
+
+
+
+
 
 static switch_status_t validate_main_audio_stream()
 {
@@ -1127,22 +1170,16 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 
 	if (tech_pvt->hfh) { tech_close_file(tech_pvt); }
 
-	//switch_mutex_lock(aes67_globals.device_lock);
-	STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);	//added
-
-	//Added check
-	if (g_atomic_int_get(&tech_pvt->audio_endpoint->in_stream->reloading) || tech_pvt->flags & TFLAG_HUP) {
-		STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
-		goto error; // Bail during teardown
+	// Check if shutdown in progress 
+	if (g_atomic_int_get(&aes67_globals.destroying_streams)) {
+		goto cng_wait; 
 	}
-	//added check
 
 	bytes = pull_buffers(aes67_globals.main_stream->stream, (unsigned char *)aes67_globals.read_frame.data,
 						 aes67_globals.read_codec.implementation->samples_per_packet * 2 /* FIXME: S16LE-only */, 0,
 						 &aes67_globals.read_timer, session_id);
 	// FIXME: won't work for L24/L32
 	samples = bytes / sizeof(int16_t);
-	STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added
 
 	// poll for clear mem
 	// After pullbuffers() or pushbuffer() succeeds
@@ -1225,15 +1262,18 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 	if (switch_test_flag(tech_pvt, TFLAG_HUP)) { return SWITCH_STATUS_FALSE; }
 
 	if (!is_master(tech_pvt) || !switch_test_flag(tech_pvt, TFLAG_IO)) { return SWITCH_STATUS_SUCCESS; }
+	// Check if shutdown in progress 
+	if (g_atomic_int_get(&aes67_globals.destroying_streams)) { return SWITCH_STATUS_SUCCESS; }
+
 
 	if (aes67_globals.main_stream) {
 		if (switch_test_flag((&aes67_globals), GFLAG_EAR)) {
 			// Note: 0 is passed as the channel index because main stream can have only one out channel
-			switch_mutex_lock(aes67_globals.streams_lock); /// check added to avoid contention on globals stream - should it
+			//switch_mutex_lock(aes67_globals.streams_lock); /// check added to avoid contention on globals stream - should it
 													 /// be device_lock as in pull for similar parms?
 			push_buffer(aes67_globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
 						&(aes67_globals.main_stream->write_timer));
-			switch_mutex_unlock(aes67_globals.streams_lock); /// check added
+			//switch_mutex_unlock(aes67_globals.streams_lock); /// check added
 		}
 		status = SWITCH_STATUS_SUCCESS;
 	}
@@ -2662,8 +2702,8 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 	// timer unbind
 	switch_event_unbind_callback(heartbeat_callback);
 	
-	destroy_audio_streams(5);
-	destroy_shared_audio_streams(5);
+	destroy_audio_streams();
+	destroy_shared_audio_streams();
 	destroy_codecs();
 	gst_ptp_deinit();
 
