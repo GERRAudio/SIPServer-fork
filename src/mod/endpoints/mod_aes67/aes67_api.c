@@ -1312,13 +1312,13 @@ void flush_all_queues(g_stream_t *stream)
 //
 void stop_pipeline(g_stream_t *stream)
 {
-	if (!stream) goto error_no_unlock;
+	if (!stream) goto error;
 
 	
 	//  Check if already stopped
 	if (!g_atomic_int_get(&stream->pipeline_active)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline already stopped, skipping\n");
-		return;
+		goto error;
 	}
 
 	
@@ -1403,7 +1403,8 @@ void stop_pipeline(g_stream_t *stream)
 
 	while (gst_iterator_next(iter, &item) == GST_ITERATOR_OK) {
 		GstElement *element = g_value_get_object(&item);
-		const gchar *name = gst_element_get_name(element);
+		//const gchar *name = gst_element_get_name(element);
+		
 
 		// Force flush on ALL elements
 		GstPad *sinkpad = gst_element_get_static_pad(element, "sink");
@@ -1424,7 +1425,8 @@ void stop_pipeline(g_stream_t *stream)
 						 &current_level_bytes, NULL);
 
 			if (current_level_buffers > 0) {
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Queue '%s': %u buffers, %u bytes\n", name,
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Queue '%s': %u buffers, %u bytes\n",
+								  GST_ELEMENT_NAME(element),
 								  current_level_buffers, current_level_bytes);
 			}
 		}
@@ -1441,7 +1443,8 @@ void stop_pipeline(g_stream_t *stream)
 			while ((sample = gst_app_sink_try_pull_sample(GST_APP_SINK(element), 50 * GST_MSECOND))) {
 				DA_gst_sample_unref(sample);
 				drained++;
-				if (drained > 1000) break; // Safety limit
+				if (drained > 1000) 
+					break; // Safety limit
 			}
 
 			total_drained += drained;
@@ -1468,8 +1471,6 @@ void stop_pipeline(g_stream_t *stream)
 
 	if (ret != GST_STATE_CHANGE_SUCCESS || state != GST_STATE_NULL) { 
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Unable to stop pipeline ..\n");
-		// goto exit_unlock; 
-		// drop through to cleanup anyhow
 	}
 
 	// UNREF PIPELINE (frees everything)
@@ -1519,29 +1520,18 @@ void stop_pipeline(g_stream_t *stream)
 	}
 
 
-
-
-	// logging for unallocated object counts
-	remaining = g_atomic_int_get(&stream->pipeline_elements_count);
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "STOP_PIPELINE: elem_count=%d, objs_before=%d\n",
-					  remaining, g_alloc_counts.objs);
+	int elem_count_final = g_atomic_int_get(&stream->pipeline_elements_count);
+	int objs_final = g_alloc_counts.objs;
 
 	//  FINAL FREE
 	g_free(stream);
 	stream = NULL;
-
-exit_unlock:
-	if (timer_id > 0) {
-		g_source_remove(timer_id);
-		g_atomic_int_set(&stream->backup_sender_idle_timer, 0);
-	}
-	//
+exit:
 	periodic_mem_check(FALSE); // de allocate memory here if required
-	//
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline cleaned. Final elem_count=%d, objs=%d\n",
+					  elem_count_final, objs_final);
 	return;
-
-error_no_unlock:
+error:
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline stop error, no stream found\n");
 	return;
 }
