@@ -3479,6 +3479,10 @@ SWITCH_STANDARD_API(aes_cmd)
 				errno = 0;
 				if (argv[2])
 					val	= strtol(argv[2], &end, 10);
+				else {
+					stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-%d]\n", MAXMIN);
+					break;
+				}
 				if (end == argv[2] || errno == ERANGE || val < 1 || val > MAXMIN) {
 					stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-%d]\n", MAXMIN);
 					break;
