@@ -1860,7 +1860,7 @@ done_no_unlock:
 }
 
 void drop_output_buffers(gboolean drop, g_stream_t *stream)
-
+{
 	if (!stream || !g_atomic_int_get(&stream->pipeline_active)) { 
 		goto done_no_unlock; 
 	}

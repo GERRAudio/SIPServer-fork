@@ -2946,10 +2946,10 @@ static int create_shared_audio_stream(shared_audio_stream_t *shstream) /// check
 	if (-1 == open_shared_audio_stream(shstream)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Can't open audio device (indev = %s:%d, outdev = %s:%d)\n", 
-						(shstream->indev?shstream->indev->ip_addr:0,
-						(shstream->indev?shstream->indev->port, 0),
+						(shstream->indev?shstream->indev->ip_addr:0),
+						(shstream->indev?shstream->indev->port: 0),
 						(shstream->outdev?shstream->outdev->ip_addr:0),
-						(shstream->outdev?shstream->outdev->port:0));
+						(shstream->outdev?shstream->outdev->port:0) );
 		if (switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, MY_EVENT_ERROR_AUDIO_DEV) ==
 			SWITCH_STATUS_SUCCESS) {
 			switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Reason", "Failed to create gstreamer pipeline");
