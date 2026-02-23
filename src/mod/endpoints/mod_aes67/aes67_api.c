@@ -196,7 +196,7 @@ gboolean update_clock(gpointer userdata)			//is this a (critical) section
 {
 	g_stream_t *stream = (g_stream_t *)userdata;
 
-	if (!g_atomic_int_get(&stream->pipeline_active)) {
+	if (!stream|| !g_atomic_int_get(&stream->pipeline_active)) {
 		goto done_no_unlock;	// Fast path exit
 	}
 
@@ -256,7 +256,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	gboolean ret = FALSE;
 
 	// Also check atomic flag
-	if (!g_atomic_int_get(&stream->pipeline_active)) {
+	if (!stream|| !g_atomic_int_get(&stream->pipeline_active)) {
 		goto done_no_unlock;
 	
 	}
@@ -270,7 +270,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GstElement *appsink = NULL;
 
 
-	if (!stream || ch_idx >= MAX_IO_CHANNELS) goto error; //added check
+	if ( ch_idx >= MAX_IO_CHANNELS) goto error; //added check
 
 	NAME_ELEMENT(name, "tee", ch_idx);
 
@@ -713,7 +713,6 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	char fixed_name[25] = {"pipeline"};
 	char *ts_ctx = DEFAULT_CONTEXT_NAME;
 
-	stream->bus_watch_id = gst_bus_add_watch(bus, bus_callback, stream);		//added
 
 	if (data->name)
 		pipeline_name = data->name;
@@ -1144,6 +1143,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	// ---
 bksnd_continue: 
 	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(pipeline));
+	stream->bus_watch_id = gst_bus_add_watch(bus, bus_callback, stream);
 	gst_bus_add_watch(bus, bus_callback, stream);
 	DA_gst_object_unref(GST_OBJECT(bus));
 	bus = NULL;
@@ -1227,8 +1227,7 @@ exit:
 
 void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locked by caller
 {
-	if (!stream) goto error; //added check
-	if (!g_atomic_int_get(&stream->pipeline_active)) { 
+	if (!stream|| !g_atomic_int_get(&stream->pipeline_active)) { 
 		goto error;
 	}
 
@@ -1312,11 +1311,9 @@ void flush_all_queues(g_stream_t *stream)
 //
 void stop_pipeline(g_stream_t *stream)
 {
-	if (!stream) goto error;
-
 	
 	//  Check if already stopped
-	if (!g_atomic_int_get(&stream->pipeline_active)) {
+	if (!stream || !g_atomic_int_get(&stream->pipeline_active)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline already stopped, skipping\n");
 		goto error;
 	}
@@ -1838,10 +1835,11 @@ gchar *get_rtp_stats(g_stream_t *stream)
 {
 	GstElement *rtpjitbuf = NULL;
 	gchar *stats_str = NULL;		//fixed: dynamic allocation required since this is NOT on the stack
-	if (!g_atomic_int_get(&stream->pipeline_active)) { 
+
+	if (!stream || !g_atomic_int_get(&stream->pipeline_active)) { 
 		goto done_no_unlock; 
 	}
-	if (!stream) goto exit; //added check
+
 
 	rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
 
@@ -1862,13 +1860,13 @@ done_no_unlock:
 }
 
 void drop_output_buffers(gboolean drop, g_stream_t *stream)
-{
-	if (!g_atomic_int_get(&stream->pipeline_active)) { 
+
+	if (!stream || !g_atomic_int_get(&stream->pipeline_active)) { 
 		goto done_no_unlock; 
 	}
 	GstElement *tx_valve = NULL;
 	gchar name[ELEMENT_NAME_SIZE];
-	if (!stream) goto exit;
+
 
 	tx_valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-valve"); 
 	if (!tx_valve) {

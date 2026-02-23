@@ -603,14 +603,18 @@ static void destroy_shared_audio_streams()
 
 		// Try to acquire lock with timeout using trylock
 		int retries = 20; // 2 seconds total
-		while (retries-- > 0 && !g_rw_lock_writer_trylock(&stream->rwlock)) {
-			g_usleep(100000); // 100ms between retries
+		gboolean got_lock = FALSE;
+		while (retries-- > 0) {
+			if (g_rw_lock_writer_trylock(&stream->rwlock)) {
+				got_lock = TRUE;
+				g_rw_lock_writer_unlock(&stream->rwlock); // release before free_shared_audio_stream re-acquires
+				break;
+			}
+			g_usleep(100000);
 		}
 
-		if (retries > 0) {
-			// Got the lock
-			free_shared_audio_stream(stream);
-			g_rw_lock_writer_unlock(&stream->rwlock);
+		if (got_lock) {
+			free_shared_audio_stream(stream); // acquires lock internally
 		} else {
 			// Couldn't get lock - force cleanup anyway
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
@@ -626,6 +630,9 @@ static void destroy_shared_audio_streams()
 				stop_pipeline(stream->stream);
 				stream->stream = NULL;
 			}
+			switch_safe_free(stream->indev);
+			switch_safe_free(stream->outdev);
+			switch_safe_free(stream);
 		}
 	}
 	switch_mutex_unlock(aes67_globals.sh_shtreams_lock);
@@ -1718,8 +1725,11 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	if ((status = load_config()) != SWITCH_STATUS_SUCCESS) { return status; }
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Input : %s:%d, Output : %s:%d, Sample Rate: %d MS: %d\n",
-					  aes67_globals.indev->ip_addr, aes67_globals.indev->port, aes67_globals.outdev->ip_addr, aes67_globals.outdev->port,
-					  aes67_globals.sample_rate, aes67_globals.codec_ms);
+		aes67_globals.indev->ip_addr, 
+		aes67_globals.indev->port, 
+		aes67_globals.outdev->ip_addr, 
+		aes67_globals.outdev->port,
+		aes67_globals.sample_rate, aes67_globals.codec_ms);
 
 	if (switch_event_reserve_subclass(MY_EVENT_RINGING) != SWITCH_STATUS_SUCCESS) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register subclass!\n");
@@ -2156,7 +2166,7 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 			} else if (!strcmp(var, "rx-address")) {
 				if (stream->indev == NULL) {
 					switch_malloc(stream->indev, sizeof(udp_sock_t));
-					stream->indev->port = aes67_globals.indev->port ? aes67_globals.indev->port : 0;
+					stream->indev->port = (aes67_globals.indev ? aes67_globals.indev->port : 0);
 				}
 				strncpy(stream->indev->ip_addr, val, IP_ADDR_MAX_LEN - 1);
 			} else if (!strcmp(var, "rx-port")) {
@@ -2935,8 +2945,11 @@ static int create_shared_audio_stream(shared_audio_stream_t *shstream) /// check
 	switch_event_t *event;
 	if (-1 == open_shared_audio_stream(shstream)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-						  "Can't open audio device (indev = %s:%d, outdev = %s:%d)\n", shstream->indev->ip_addr,
-						  shstream->indev->port, shstream->outdev->ip_addr, shstream->outdev->port);
+						  "Can't open audio device (indev = %s:%d, outdev = %s:%d)\n", 
+						(shstream->indev?shstream->indev->ip_addr:0,
+						(shstream->indev?shstream->indev->port, 0),
+						(shstream->outdev?shstream->outdev->ip_addr:0),
+						(shstream->outdev?shstream->outdev->port:0));
 		if (switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, MY_EVENT_ERROR_AUDIO_DEV) ==
 			SWITCH_STATUS_SUCCESS) {
 			switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Reason", "Failed to create gstreamer pipeline");
@@ -3148,7 +3161,7 @@ void error_callback(char *msg, g_stream_t *stream)
 	if (msg) switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Stream error: %s\n", msg); // added check
 
 	for (tp = aes67_globals.call_list; tp; tp = tp->next) {
-		if (!tp->audio_endpoint) continue;
+		if (!tp->audio_endpoint || !tp->audio_endpoint->in_stream) continue;
 		STREAM_READER_LOCK(tp->audio_endpoint->in_stream);		//added
 		if ((tp->audio_endpoint->in_stream && (tp->audio_endpoint->in_stream->stream == stream)) ||
 			(tp->audio_endpoint->out_stream && (tp->audio_endpoint->out_stream->stream == stream))) {
@@ -3363,7 +3376,7 @@ SWITCH_STANDARD_API(aes_cmd)
 			stream->write_function(stream, "%s", usage_string);
 			goto done;
 		}
-
+		if (!argv[2]) goto done;
 		if (!strcasecmp(argv[2], "on")) {
 			if (STREAM_READER_TRYLOCK(astream)) {
 				drop_output_buffers(FALSE, astream->stream);
