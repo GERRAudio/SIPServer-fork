@@ -3278,14 +3278,16 @@ SWITCH_STANDARD_API(aes_cmd)
 							   "aes67 reloadconf\n"
 							   "aes67 dump <stream> <dotfile name>\n" 
 #ifdef _WIN32
+							   "(cmds below never hangup calls & clrbufs will only act when no calls are active)\n"
 							   "aes67 autocleanmem <on|off>\n"
 							   "aes67 autocleanmem setmin [1-" XSTR(MAXMIN) "]\n"
 							   "aes67 clrwrkset\n"
 							   "aes67 compactheap\n"
 							   "aes67 memcleancount\n"
-							   "aes67 clearbufs  (will only clear when no calls active. Never hangs up calls)\n"
+							   "aes67 clrbufs \n"
 #endif
 							   "--------------------------------------------------------------------------------\n";
+
 	if (zstr(cmd)) {
 		stream->write_function(stream, "%s", usage_string);
 		goto done;
@@ -3511,7 +3513,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		CompactHeaps();
 		aes67_globals.compact_heap_cnt++;
 		stream->write_function(stream, "Compacted idle heap\n");
-	} else if (!strcasecmp(argv[0], "clearbufs")) {
+	} else if (!strcasecmp(argv[0], "clrbufs")) {
 		periodic_deep_clean();		//counter incremented inside
 		stream->write_function(stream, "Cleared buffers\n");
 	} else if (!strcasecmp(argv[0], "memcleancount")) {
