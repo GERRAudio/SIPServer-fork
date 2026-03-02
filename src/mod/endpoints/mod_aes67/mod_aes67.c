@@ -350,6 +350,7 @@ static switch_status_t destroy_audio_stream(udp_sock_t *indev, udp_sock_t *outde
 static switch_status_t destroy_actual_stream(audio_stream_t *stream);
 static void destroy_audio_streams();
 static void destroy_shared_audio_streams();
+static void deep_destroy_shared_audio_streams();
 static switch_status_t validate_main_audio_stream();
 
 static switch_status_t load_config(void);
@@ -579,13 +580,33 @@ static void free_shared_audio_stream(shared_audio_stream_t *stream)
 	switch_safe_free(stream);
 }
 
-
 static void destroy_shared_audio_streams()
 {
 	switch_hash_index_t *hi;
 	shared_audio_stream_t *stream;
 
-	// aes67_globals.destroying_streams = 1;
+	g_atomic_int_set(&aes67_globals.destroying_streams, 1); // added
+
+	switch_mutex_lock(aes67_globals.sh_shtreams_lock);
+
+	const void *key;
+	for (hi = switch_core_hash_first(aes67_globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
+		switch_core_hash_this(hi, &key, NULL, (void **)&stream);
+		STREAM_WRITER_LOCK(stream);
+		free_shared_audio_stream(stream);
+		STREAM_WRITER_UNLOCK(stream);
+		// switch_core_hash_delete(aes67_globals.sh_streams, key); // reference counted, so not needed (check)
+	}
+
+	switch_mutex_unlock(aes67_globals.sh_shtreams_lock);
+	g_atomic_int_set(&aes67_globals.destroying_streams, 0); 
+}
+
+static void deep_destroy_shared_audio_streams()
+{
+	switch_hash_index_t *hi;
+	shared_audio_stream_t *stream;
+
 	g_atomic_int_set(&aes67_globals.destroying_streams, 1); 
 
 	switch_mutex_lock(aes67_globals.sh_shtreams_lock);
@@ -3084,14 +3105,14 @@ void periodic_deep_clean()
 		if (aes67_globals.call_list != NULL) {
 			return; // Skip if calls active or not forced
 		}
-
+#ifdef RESET_GST
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Starting deep memory cleanup...\n");
 
 	// 1. Destroy and recreate shared streams (releases internal state)
-	destroy_shared_audio_streams();
+	deep_destroy_shared_audio_streams();
 	// Streams will be recreated on next call
 	// 
-#ifdef RESET_GST
+
 	// 2. Force GStreamer internal cleanup
 	gst_deinit();
 	gst_init(NULL, NULL);
@@ -3105,10 +3126,11 @@ void periodic_deep_clean()
 			aes67_globals.clock = ptp_clock;
 		}
 	}
-#endif
+
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Deep cleanup complete\n");
 	aes67_globals.gst_clean_cnt++;		//count only if idle
+#endif
 }
 
 // Called periodically from a timer to clean up gstreamer mem specifically
