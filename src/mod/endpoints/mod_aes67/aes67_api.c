@@ -146,20 +146,17 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 
 	// Check if shutdown is in progress BEFORE any allocations
 	if (!stream || !g_atomic_int_get(&stream->pipeline_active)) {
-		goto done; // Bail immediately, no allocations
+		goto done; // Bail immediately
 	}
 
 
 	GstElement *pipeline = NULL; 
-
 	GstElement *tee = NULL;
 	GstPad *tee_sink_pad = NULL;
 	gchar name[ELEMENT_NAME_SIZE];
 	gchar *pad_name = NULL;
 	guint ch_idx;
 
-
-	// no check for shutdown in progress here
 
 	pipeline = GST_ELEMENT(AL_gst_element_get_parent(deinterleave));		
 	pad_name = AL_gst_pad_get_name(pad);
@@ -192,7 +189,7 @@ done:
 	return;
 }
 
-gboolean update_clock(gpointer userdata)			//is this a (critical) section
+gboolean update_clock(gpointer userdata)			//is this a (critical) section?
 {
 	g_stream_t *stream = (g_stream_t *)userdata;
 
@@ -212,7 +209,7 @@ gboolean update_clock(gpointer userdata)			//is this a (critical) section
 	rtpdepay = AL_gst_bin_get_by_name(GST_BIN(pipeline), RTP_DEPAY);
 	if (!rtpdepay) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "rtpdepay not found in pipeline");
-		goto done;
+		goto done_no_unlock;
 	}
 
 	g_object_get(G_OBJECT(rtpdepay), "stats", &stats, NULL);		//allocates
@@ -234,7 +231,7 @@ gboolean update_clock(gpointer userdata)			//is this a (critical) section
 
 	DA_gst_structure_free(stats);
 	DA_gst_object_unref(GST_OBJECT(rtpdepay));
-done:
+
 done_no_unlock:
 	return G_SOURCE_CONTINUE;
 }
@@ -255,7 +252,6 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 {
 	gboolean ret = FALSE;
 
-	// Also check atomic flag
 	if (!stream|| !g_atomic_int_get(&stream->pipeline_active)) {
 		goto done_no_unlock;
 	
@@ -445,7 +441,8 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GstPad *tee_src_pad = NULL;
 	GstPad *queue_sink_pad = NULL;
 
-	if (!stream || ch_idx >= MAX_IO_CHANNELS) goto exit; // added check
+	if (!stream || ch_idx >= MAX_IO_CHANNELS) 
+		goto done_no_unlock;
 	if (!g_atomic_int_get(&stream->pipeline_active)) { 
 		goto done_no_unlock; 
 	}
@@ -611,7 +608,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			//switch_log_printf(...);
 			DA_gst_object_unref(GST_OBJECT(GST_OBJECT(fakesink))); // added
 			retval = G_SOURCE_CONTINUE;
-	   	    goto done;
+			goto done_no_unlock;
 		} 
 
 		if (clock) {
@@ -689,7 +686,7 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(clock));
 	DA_gst_object_unref(GST_OBJECT(fakesink));
 	g_free(host);			//not counted
-done:
+
 done_no_unlock:
 	return retval;
 }
@@ -1286,7 +1283,6 @@ void flush_all_queues(g_stream_t *stream)
 
 		// Check if this is a queue element
 		if (g_strcmp0(factory_name, "queue") == 0 || g_strcmp0(factory_name, "ts-queue") == 0) {
-
 			// Send flush events to drain the queue
 			GstPad *sinkpad = gst_element_get_static_pad(element, "sink");
 			if (sinkpad) {
@@ -1295,33 +1291,28 @@ void flush_all_queues(g_stream_t *stream)
 				gst_object_unref(sinkpad);
 			}
 		}
-
 		g_value_reset(&item);
 	}
-
 	gst_iterator_free(iter);
 }
 
 
 
-// Here be demons - be careful what you change and maintain order of operations
+// Here be demons/dragons - be careful what you change and maintain order of operations
 // if this runs while calls are in progress, some deallocations do not occur
 // this is why there is the atomic flag that indicates it is in progress
 // and it must be checked in critical sections push pull bufs and pad ops
 //
 void stop_pipeline(g_stream_t *stream)
 {
-	
-	//  Check if already stopped
 	if (!stream || !g_atomic_int_get(&stream->pipeline_active)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline already stopped, skipping\n");
 		goto error;
 	}
 
-	
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
 
-	// Set flag to 0  this immediately stops audio I/O
+	// immediately stops audio I/O
 	g_atomic_int_set(&stream->pipeline_active, 0);
 
 	// Give active threads time to see flag and exit cleanly
@@ -1443,10 +1434,8 @@ void stop_pipeline(g_stream_t *stream)
 				if (drained > 1000) 
 					break; // Safety limit
 			}
-
 			total_drained += drained;
 		}
-
 		g_value_reset(&item);
 	}
 
@@ -1796,6 +1785,9 @@ error:
 	return (int) total_bytes;
 }
 
+
+
+
 void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 {
 	GstElement *valve = NULL;
@@ -1854,10 +1846,12 @@ gchar *get_rtp_stats(g_stream_t *stream)
 	} else {
 		stats_str = g_strdup_printf(""); // must be heap
 	}
-exit:
+
 done_no_unlock:
 	return stats_str;			//deallocated by caller!!
 }
+
+
 
 void drop_output_buffers(gboolean drop, g_stream_t *stream)
 {

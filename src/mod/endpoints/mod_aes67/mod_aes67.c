@@ -502,6 +502,7 @@ error:
 	return SWITCH_STATUS_FALSE;
 }
 
+
 static int clear_shared_audio_stream(shared_audio_stream_t *shstream)
 {
 	if (!shstream) return -1;
@@ -3099,12 +3100,14 @@ void periodic_mem_check(BOOL force)
 
 
 // Aggresively cleans when calls are idle only - safe to call since it checks
-void periodic_deep_clean()
+void deep_clean_gst()
 {
 		// Only run when IDLE (no calls active)
 		if (aes67_globals.call_list != NULL) {
 			return; // Skip if calls active or not forced
 		}
+
+#define RESET_GST 
 #ifdef RESET_GST
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Starting deep memory cleanup...\n");
 
@@ -3536,7 +3539,7 @@ SWITCH_STANDARD_API(aes_cmd)
 		aes67_globals.compact_heap_cnt++;
 		stream->write_function(stream, "Compacted idle heap\n");
 	} else if (!strcasecmp(argv[0], "clrbufs")) {
-		periodic_deep_clean();		//counter incremented inside
+		deep_clean_gst();		//counter incremented inside
 		stream->write_function(stream, "Cleared buffers\n");
 	} else if (!strcasecmp(argv[0], "memcleancount")) {
 		stream->write_function(stream,

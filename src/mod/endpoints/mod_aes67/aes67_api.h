@@ -16,11 +16,11 @@
 #define SESSION_ID_LEN 20
 
 // necessary idle time (no unscheduled calling) before trim
-#define IDLE_THRESHOLD_SEC 60 
+#define IDLE_THRESHOLD_SEC 60
 // to reduce polling overhead
-#define IDLE_POLLING_SEC 5	 
+#define IDLE_POLLING_SEC 5
 // how often to clear memory by default
-#define INTERVAL_MIN 8*60L
+#define INTERVAL_MIN 8 * 60L
 // 60*24*31 == 31 days
 #define MAXMIN 44640
 // double-expansion for macros
@@ -58,7 +58,6 @@ typedef struct {
 	int backup_sender_idle_wait_ms;
 } pipeline_data_t;
 
-
 struct g_stream {
 	GstPipeline *pipeline;
 	GMainLoop *mainloop;
@@ -80,7 +79,7 @@ struct g_stream {
 	gulong deinterleave_signal_id; // added
 	guint jitterbuf_signal_id;
 	GRecMutex appsrc_mutexes[MAX_IO_CHANNELS]; // One per channel added - self init
-	volatile gint pipeline_elements_count;	// Track elements added to pipeline
+	volatile gint pipeline_elements_count;	   // Track elements added to pipeline
 };
 
 g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb);
@@ -99,12 +98,12 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session);
 gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session);
 void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock);
 void dump_pipeline(GstPipeline *pipe, const char *name);
-void account_pipeline_children(g_stream_t *stream);
+// void account_pipeline_children(g_stream_t *stream);
 void CompactHeaps(void);
 void TrimCurrentProcessWorkingSet(void);
 
 void periodic_mem_check(BOOL force);
-void periodic_deep_clean(void);
+void deep_clean_gst(void);
 void check_pipeline_memory_pressure(g_stream_t *stream);
 void flush_all_queues(g_stream_t *stream);
 
