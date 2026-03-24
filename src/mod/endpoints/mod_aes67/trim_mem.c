@@ -27,22 +27,24 @@ HeapCompact adds minimal overhead but offers little footprint reduction unless f
 
 volatile BOOL memcheck_active = TRUE;			//default is on
 
+
 void CompactHeaps(void)
 {
-	HANDLE hHeap = GetProcessHeap();
-	HeapCompact(hHeap, 0);
+	// Get count first
+	DWORD numHeaps = GetProcessHeaps(0, NULL);
+	if (numHeaps == 0) return;
 
-	// For private heaps: enumerate and compact each
-	DWORD numHeaps;
-	HANDLE *heaps = NULL;
-	if (GetProcessHeaps(0, heaps) == 0) { // First pass for count
-		numHeaps = GetProcessHeaps(0, NULL);
-		heaps = HeapAlloc(GetProcessHeap(), 0, numHeaps * sizeof(HANDLE));
-		GetProcessHeaps(numHeaps, heaps);
-		for (DWORD i = 0; i < numHeaps; ++i) { HeapCompact(heaps[i], 0); }
-		HeapFree(GetProcessHeap(), 0, heaps);
-	}
+	HANDLE *heaps = (HANDLE *)HeapAlloc(GetProcessHeap(), 0, numHeaps * sizeof(HANDLE));
+	if (!heaps) return;
+
+	DWORD filled = GetProcessHeaps(numHeaps, heaps);
+	for (DWORD i = 0; i < filled; ++i) { HeapCompact(heaps[i], 0); }
+
+	HeapFree(GetProcessHeap(), 0, heaps);
 }
+
+
+
 
 /*
 Windows treats both parameters as special when set to(SIZE_T)− 1(SIZE_T)−1
