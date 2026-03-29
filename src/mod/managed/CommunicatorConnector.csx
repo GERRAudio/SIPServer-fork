@@ -158,6 +158,27 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         }
     }
 
+    // Requires IIS/Communicator to be up and running. If IIS is restarted, there is no need to clean out phone bridges.
+    // Made Async 3.28.26 so it's fire and forget - if IIS isn't running, we don't care if it succeeds
+    internal void CleanOutPhoneConferences()
+    {
+	    string apiUrl = String.Format(apiServer + "phone/CleanUpAllPhoneBridges/on/Start-Up");
+
+        WriteToLog(LogLevel.Warning, apiUrl);
+        	
+	    try{
+
+        	using (WebClient client = new WebClient())
+        	{
+            	client.DownloadStringAsync(new Uri(apiUrl));
+		    }
+	    } 
+	    catch(Exception ex)
+        {
+		    WriteToLog(LogLevel.Warning, ex.Message);
+	    }
+    }
+
     internal string RefreshVarValues()
     {
         MaxWirelessConf = int.Parse(fsApi.ExecuteString("eval ${MaxWirelessConf}"));
@@ -1361,6 +1382,8 @@ WriteToLog(LogLevel.Notice, xmlDocument.OuterXml);
         RefreshVarValues();
         var firstdigit = fsApi.ExecuteString("eval ${FirstNumber}");
         WriteToLog(LogLevel.Info, "Valid first conference numbers are: " + firstdigit);
+	    CleanOutPhoneConferences();
+	    WriteToLog(LogLevel.Info, "Cleaned out phone conferences");
         DelayExecutionUntilAfterLoad.Elapsed += this.StartScheduledTasks;
         DelayExecutionUntilAfterLoad.Start();
         PeriodicCheck.Elapsed += this.PeriodicCheck_Elapsed;
