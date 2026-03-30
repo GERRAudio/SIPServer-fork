@@ -109,6 +109,6 @@ void flush_all_queues(g_stream_t *stream);
 
 volatile extern BOOL memcheck_active;
 void heartbeat_callback(switch_event_t *event);
-extern long interval_min;
+extern volatile gint interval_min;
 
 #endif /*__GSTREAMER_API__*/

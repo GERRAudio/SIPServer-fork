@@ -3099,41 +3099,29 @@ void periodic_mem_check(BOOL force)
 }
 
 
-// Aggresively cleans when calls are idle only - safe to call since it checks
 void deep_clean_gst()
 {
-		// Only run when IDLE (no calls active)
-		if (aes67_globals.call_list != NULL) {
-			return; // Skip if calls active or not forced
-		}
-
-#define RESET_GST 
-#ifdef RESET_GST
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Starting deep memory cleanup...\n");
-
-	// 1. Destroy and recreate shared streams (releases internal state)
-	deep_destroy_shared_audio_streams();
-	// Streams will be recreated on next call
-	// 
-
-	// 2. Force GStreamer internal cleanup
-	gst_deinit();
-	gst_init(NULL, NULL);
-
-
-	// 3. Reinit PTP if needed
-	if (aes67_globals.ptp_domain >= 0) {
-		void *ptp_clock = init_ptp(aes67_globals.ptp_domain, aes67_globals.ptp_iface);
-		if (ptp_clock) {
-			if (aes67_globals.clock) { DA_gst_object_unref(GST_OBJECT(aes67_globals.clock)); }
-			aes67_globals.clock = ptp_clock;
-		}
+	switch_mutex_lock(aes67_globals.pvt_lock);
+	if (aes67_globals.call_list != NULL) {
+		switch_mutex_unlock(aes67_globals.pvt_lock);
+		return;
 	}
+	switch_mutex_unlock(aes67_globals.pvt_lock);
 
+	// Flush queues in all active streams without destroying them
+	switch_mutex_lock(aes67_globals.sh_shtreams_lock);
+	switch_hash_index_t *hi;
+	for (hi = switch_core_hash_first(aes67_globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
+		const void *key;
+		void *val;
+		shared_audio_stream_t *s;
+		switch_core_hash_this(hi, &key, NULL, &val);
+		s = val;
+		if (s->stream) flush_all_queues(s->stream);
+	}
+	switch_mutex_unlock(aes67_globals.sh_shtreams_lock);
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Deep cleanup complete\n");
-	aes67_globals.gst_clean_cnt++;		//count only if idle
-#endif
+	aes67_globals.gst_clean_cnt++;
 }
 
 // Called periodically from a timer to clean up gstreamer mem specifically
@@ -3514,7 +3502,7 @@ SWITCH_STANDARD_API(aes_cmd)
 					stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-%d]\n", MAXMIN);
 					break;
 				}
-				interval_min = (long unsigned)val;
+				interval_min = (volatile gint)val;
 				memcheck_active = TRUE;
 				stream->write_function(stream,
 									   "Periodic autocleanmem is now on with interval: %d min(s) = %2d:%02d hh:mm\n",  interval_min, interval_min / 60, interval_min % 60);

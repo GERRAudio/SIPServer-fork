@@ -70,19 +70,18 @@ void TrimCurrentProcessWorkingSet(void) { ; }
 #endif
 
 
-long interval_min = INTERVAL_MIN;
+volatile gint interval_min = INTERVAL_MIN > 0 ? INTERVAL_MIN : 1; // guard at declaration
 
-// FreeSwitch calls this every 20 seconds by default -set in config files as an XML parameter, if not set it is 20secs
 void heartbeat_callback(switch_event_t *event)
 {
-	static long unsigned call_count = 0;
-	call_count++;
-	if (call_count >=
-		((3600L / 20L) * interval_min) / 60L) { // convert to number of 20 sec blips - careful about integer division
-		call_count = 0;
-		periodic_mem_check(TRUE);	// force clear windows mem - does not drop calls
-		//deep_clean_gst(); // do not do this automatically - clear gstreamer mem - will check if calls are active
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "AES67: Cleaning memory ---\n");
+	static volatile gint call_count = 0;
+	g_atomic_int_add(&call_count, 1);
 
+	gint threshold = (gint)(((3600L / 20L) * g_atomic_int_get(&interval_min)) / 60L);
+
+	if (g_atomic_int_get(&call_count) >= threshold) {
+		g_atomic_int_set(&call_count, 0);
+		periodic_mem_check(TRUE);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "AES67: Cleaning memory ---\n");
 	}
 }
