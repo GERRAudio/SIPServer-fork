@@ -15,9 +15,11 @@ Make sure Broadcom NICs on PC are configured propery and on the right VLANs
 
 Make sure SIPServer Dash ins running in admin mode on Admin network
 
-Danteante names in Controller must match mod.aes67.xml names, and ports
+Dante names in Dante Controller must match mod.aes67.xml names, and ports
 
 NIC names must also match with Dante
 
-aes67.dll release version date ot be updated
+aes67.dll release version date to be updated
 
+2026-04-01
+Dante address 10.8.90.90 static!
