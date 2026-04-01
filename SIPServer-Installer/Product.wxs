@@ -4,7 +4,7 @@
    xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx"
    xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
    >
-  <!-- GERRAudio Distribution 2024
+  <!-- GERRAudio Distribution 2024-2026
      Installs SIPServer by default in $(InstallPathDefault)\SIPServer folder, creates if necessary.
      This can be overriden by user.
      The gstreamer dependency is installed in the ../Media directory if not present
@@ -34,8 +34,8 @@
   <!-- where to harvest utility installer files from -->
   <?define IconsEtcPath= ".\InstallUtils\" ?>
   
-  <?define SIPServerVersion=1.10.12?>
-  <?define MSIVersion=1.5?>   <!-- Update for new releases of this installer -->
+  <?define SIPServerVersion=1.10.13?>
+  <?define MSIVersion=1.6?>   <!-- Update for new releases of this installer -->
   <!-- TODO auto version increments -->
   <!-- updated the confs to include CUCM,  for external Bruce phone system, renamed examples, and skinny confs -->
 
