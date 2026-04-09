@@ -1,13 +1,15 @@
 2025-12
-Working on Dante connectivity issue and PTP
+Dante connectivity issues and PTP
 
 Config files for
-- Dante-C9300
+- Dante
+- C9300
 - EHX
 
-Dante on .91
+Dante on .90
 Phone on .91
 IPT on .90
+
 
 Set up Partylines, and Dante names and streams
 
@@ -19,7 +21,8 @@ Dante names in Dante Controller must match mod.aes67.xml names, and ports
 
 NIC names must also match with Dante
 
-aes67.dll release version date to be updated
+Check that NICs on PC are plugged in properly for 90 and 91 side of the Cisco 9300
+
 
 2026-04-01
-Dante address 10.8.90.90 static!
+Dante address 10.8.90.90 static! since DHCP may not be reliable on the 90 side
