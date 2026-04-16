@@ -78,7 +78,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "autoload_configs", "autoloa
 		conf\vanilla\autoload_configs\limit.conf.xml = conf\vanilla\autoload_configs\limit.conf.xml
 		conf\vanilla\autoload_configs\local_stream.conf.xml = conf\vanilla\autoload_configs\local_stream.conf.xml
 		conf\vanilla\autoload_configs\logfile.conf.xml = conf\vanilla\autoload_configs\logfile.conf.xml
-		conf\vanilla\autoload_configs\modules.conf.xml = conf\vanilla\autoload_configs\modules.conf.xml
+		conf\Bruce\conf\autoload_configs\modules.conf.xml = conf\Bruce\conf\autoload_configs\modules.conf.xml
 		conf\vanilla\autoload_configs\openmrcp.conf.xml = conf\vanilla\autoload_configs\openmrcp.conf.xml
 		conf\vanilla\autoload_configs\portaudio.conf.xml = conf\vanilla\autoload_configs\portaudio.conf.xml
 		conf\vanilla\autoload_configs\rss.conf.xml = conf\vanilla\autoload_configs\rss.conf.xml
@@ -583,6 +583,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "autoload_configs", "autoload_configs", "{0644AC71-76A5-4DC5-BEFD-25F515CA97CE}"
 	ProjectSection(SolutionItems) = preProject
 		conf\Bruce\conf\autoload_configs\aes67.conf.xml = conf\Bruce\conf\autoload_configs\aes67.conf.xml
+		conf\vanilla\autoload_configs\modules.conf.xml = conf\vanilla\autoload_configs\modules.conf.xml
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dialplan", "dialplan", "{93DAB5BC-D36F-4CEF-9E37-71324B0198C2}"
