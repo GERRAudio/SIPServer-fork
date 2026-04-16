@@ -281,3 +281,6 @@ images/test_text.png
 
 src/mod/codecs/mod_amrwb/test/test_amrwb
 src/mod/endpoints/mod_sofia/test/sipp-based-tests
+/libs/win32/ffmpeg/x64
+/libs/win32/mpg123/x64
+/SIPWebServer/obj
