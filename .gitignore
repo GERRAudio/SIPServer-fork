@@ -284,3 +284,4 @@ src/mod/endpoints/mod_sofia/test/sipp-based-tests
 /libs/win32/ffmpeg/x64
 /libs/win32/mpg123/x64
 /SIPWebServer/obj
+/SIPWebServer/obj
