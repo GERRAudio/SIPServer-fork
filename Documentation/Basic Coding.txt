@@ -1,0 +1,75 @@
+FreeSWITCH Internals Notes
+Posted on November 19, 2015 by moy
+At Sangoma we use FreeSWITCH as a communications development platform. I decided to write some notes and guide lines on the FreeSWITCH internal architecture so our developers can use the FreeSWITCH framework effectively. I decided to publish them here as well so they’re useful to others developing modules or core enhancements for FreeSWITCH.
+
+Core
+The FreeSWITCH core is contained in the src/*.c files, everything that you see there is considered “core”. The FreeSWITCH core provides common services and protocols that are re-used among many different call control or media protocols. For example, the core provides several useful API abstractions:
+
+OS abstraction based on top of the APR project (Apache Portable Runtime). There is a thin layer of abstraction (src/switch_apr.c) that prevents introducing a direct dependency between the rest of the system and the APR library. This means the rest of the system *DOES NOT* use APR directly, they use the API exposed in src/switch_apr.c for operating system abstraction primitives to create sockets, threads, manage memory etc.
+RTP stack (src/switch_rtp.c) and an API to create rtp streams, read/write to them etc. This provides access to RTP as RTP is used by many other signaling protocols such as SIP, H.323, Megaco etc, so it makes sense to have it in the core.
+Call switching (src/switch_ivr.c, src/switch_ivr_originate.c) API routines to create a new call (session) towards a destination without explicitly knowing the low-level protocol details. A module can therefore use switch_ivr_originate() API to place a call in SIP, H.323, SS7, PRI etc, using the same consistent API provided by the core.
+Media playing API (src/switch_ivr_play_say.c, src/switch_ivr_say.c) that allows you to play a file, insert tones etc etc on a given session (regardless of the signaling protocol)
+Session and channel management (src/switch_core_session.c, src/switch_channel.c) that allows to perform call control operations (answer a channel, hangup a channel) and low-level I/O operations (write a frame of media, read a frame of media) on sessions (regardless of the underlying signaling and media protocols).
+fs_architecture
+(Image taken from the FreeSWITCH wiki long ago, can’t recall the URL anymore)
+
+Sessions and Channels
+The core abstraction for a call leg is the switch_core_session_t opaque structure. This contains all the necessary information for a given call leg. The session contains a channel. The channel is simply a lower-level representation of the call leg that contains information about the underlying protocols and data structures used to interface with that call leg (ie, contains function pointers to functions that allow the call to be answered, hangup, provide media etc) and the state of the session.
+
+Sessions in FreeSWITCH live in their own thread. A typical call involves 2 sessions (the inbound session and then an outbound session, both of them “bridged”). Each session lives in its own thread, looping through a finite state machine (the session channel states go from CS_INIT, last state is CS_DESTROY, there are other states such as CS_ROUTING, CS_EXCHANGE_MEDIA etc etc. These states determine what the session is doing, each of the state handlers to perform the operation (ie, hangup) is executed in the session thread. It is possible however that other threads want to send a message to indicate something, or read/write information about a session in it. In order to do this in a safe way, there are several APIs that can be used to get a locked pointer to a session that allows you to peek into the session data safely without fearing the session thread will terminate and destroy the session while you’re looking at it or doing something with it from another thread, the main core function for this is:
+
+switch_core_session_t *switch_core_session_locate(const char *uuid);
+
+Every session has a UUID (universal identifier) that is unique across computers and across time (at least for practical purposes). You can use that UUID to ask the core to find a session in the system with that UUID. The core will attempt to find the session (in an internal hash table) and if it’s found, it will lock it and return it to you. You can then use the session to retrieve data, set data or perform operations on it or in its underlying switch_channel_t (which is obtained through switch_core_session_get_channel()) without fear of the session thread to destroy the session (for example if someone sets the state to CS_DESTROY). You must remember to unlock the session when done, and you should do that fast enough (not more than a few milliseconds) otherwise you’re blocking other threads from accessing that session if they need to do something with it. Unlock the session with:
+
+switch_core_session_rwunlock();
+
+This function unlocks the session and this releases it so other threads can use it (including destroy it).
+
+Be aware that there are other core functions that return a session locked, such as switch_core_session_get_partner(). It is your responsibility to verify if the function you are using returns a locked session and then use switch_core_session_rwunlock() to unlock it when done.
+Modules
+
+FreeSWITCH is highly modular. The FreeSWITCH engine/core source code is contained in the src/ directory. The plugins or modules source code are contained in the src/module/ directory (the only exception is mod_freetdm, which is contained at libs/freetdm/mod_freetdm, there are some legacy reasons why this was done this way, but there is talks in the FreeSWITCH open source community about moving it to the right place in src/mod/endpoints/ folder).
+
+There are different types of modules/plugins (in the future, I’ll refer to them simply as modules). There are endpoints, formats, loggers, event handlers, dialplans, TTS engines etc etc. Pretty much every directory under src/mod/ is a type of module. Each type of module registers an “interface” with the FreeSWITCH core. Great care has been taken to make proper abstractions and do not expose “module-specific” data into the FreeSWITCH core (src/*.c) files. The modules make use of FreeSWITCH core API primitives to request core services, the FreeSWITCH core uses the abstract interface exposed by different type of modules for performing operations. For example, the module mod_sofia is an endpoint module. Therefore mod_sofia code is contained at src/mod/endpoints/mod_sofia/
+
+FreeTDM
+The FreeTDM library is a modular API that allows applications to initialize different types of TDM/Analog signaling stacks, place/receive calls and read/write media. It supports signaling modules for SS7, ISDN(PRI/BRI), Analog, MFCR2 etc. It also supports a I/O modules to support multiple different hardware manufacturers. The 2 most prominent I/O modules are src/ftmod/ftdm_wanpipe/ftmod_wanpipe.c (For Sangoma Wanpipe cards) and the src/ftmod/ftmod_zt/ftmod_zt.c (For DAHDI-enabled cards such as Sangoma and Digium).
+
+The FreeTDM project is part of the same source tree as FreeSWITCH, however FreeTDM does not depend on FreeSWITCH. FreeSWITCH also does not depend on FreeTDM, the glue that links them together is mod_freetdm, which is an endpoint module for FreeSWITCH that allows FreeSWITCH to place calls in SS7, PRI, MFC-R2 and Analog telephony networks. Note that the mod_freetdm module is just a plugin/extension to FreeSWITCH and it is a “user” of the freetdm library. As such, you should never expose internal opaque details of freetdm to mod_freetdm or worst, to FreeSWITCH. The freetdm.h header is the main public header that is used by freetdm API users. There are other headers under a private/ folder in freetdm that are not meant to be used by the API users, only for internal use of other freetdm C files/components.
+
+Memory Allocation
+When allocating memory within FreeSWITCH you must ask yourself where to allocate from. FreeSWITCH uses APR memory pools (wrapped on the switch_memory_pool_t) data structure. You can request a completely new memory pool for yosuelf, but that may be a waste, instead ask yourself whether the memory you’re allocating will be associated to a particular session (call leg) and whether needs to persist. For example, memory for a data structure to keep track of RTCP statistics of an RTP stream, will always be associated to the RTP stream, which in turn is associated to the session. In such cases it is recommended to use the session memory pool, which is automatically destroyed at the end of the call.
+
+In the other hand, if the memory you are allocating must persist beyond the call life cycle, you will be better off requesting a new memory pool and then allocating from it, but now you’re responsible to destroy the pool when you’re done with your object life cycle. Remember it is not possible to free memory allocated from a pool until you destroy the whole pool completely.
+
+Some functions to remember (from src/include/switch_core.h and src/switch_core_memory.c):
+
+switch_core_session_get_pool() – Returns the memory pool associated with a given session
+switch_core_session_alloc() – Allocate x amount of bytes from a given session memory pool
+switch_core_session_sprintf() – Allocates a new string with the provided format using the session memory pool
+switch_core_session_strdup() – Duplicates a new string using the session memory pool
+switch_core_new_memory_pool() – Creates a new pool ready to start allocating objects
+switch_core_destroy_memory_pool() – Destroy the given pool, you better be sure no one will be needing any of the objects allocated from that pool
+switch_core_alloc() – Allocate memory from a given memory pool
+switch_safe_free() – Free memory allocated directly using malloc()/calloc(), testing for NULL pointer
+For all the session-related allocation functions, you must be sure the allocated object will NOT outlive the session.
+
+Remember all switch allocation functions already initialize memory, you do not need to call memset() after allocation
+
+There are a few cases where it’s justifiable to use standard memory allocation functions such as strdup()
+
+strdup() is ok when you need a quick duplicate of another string but you have no session pointer or it’s something called often and short-lived, and therefore you do not want to use the session pointer with switch_core_session_strdup() because that would leave the memory allocated until the end of the call
+
+String Manipulation
+switch_copy_string() – Safely copy a string, use this instead of strcpy() or strncpy(). It will guarantee the output is null-terminated.
+switch_set_string() – Use this to initialize a string buffer of a fixed length. DO NOT USE THIS with char* pointers as the implementation uses sizeof() and sizeof(char*) is only 4 or 8!!
+switch_toupper() – Convert a string to uppercase
+switch_strstr() – Find a string in a substr
+switch_safe_atoi() – Turn a string into a number, testing for NULL and defaulting to a given value in case of NULL
+More gems can be found in src/include/switch_utils.h, please check there before hand-coding your own function or check if you can use one from switch_utils.h instead of using direct libc functions!!
+
+Booleans
+switch_true() – Use this to test if a string is true (ie, “true”, “enabled”, “on”, etc, all are considered true), this is useful when parsing configuration files
+switch_false() – Use this to test if a string is false (ie “false”, “disabled” etc), this is useful when parsing configuration files
+SWITCH_TRUE / SWITCH_FALSE – Use this along with switch_bool_t instead of using integers

@@ -24,7 +24,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
-#ifndef __MINGW32__
+#if defined(__MINGW32__) || defined(_WIN32)
+# include <winsock2.h>
+# include <ws2tcpip.h>
+#else
 # include <sys/types.h>
 # include <netinet/in.h>
 #endif

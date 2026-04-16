@@ -24,7 +24,7 @@
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
-#ifdef __MINGW32__
+#if defined(__MINGW32__) || defined(_WIN32)
 # include <winsock2.h>          /* includes <windows.h> */
 # include <ws2tcpip.h>          /* needed for struct in6_addr */
 #else
@@ -45,7 +45,7 @@
 #  include <sys/times.h>
 # endif
 # define closesocket(sock) close(sock)
-#endif	/* !__MINGW32__ */
+#endif	/* !__MINGW32__ && !_WIN32 */
 
 #include <stdlib.h>
 #include <string.h>
@@ -394,7 +394,7 @@ dns_set_tmcbck(struct dns_ctx *ctx, dns_utm_fn *fn, void *data) {
 }
 
 static unsigned dns_nonrandom_32(void) {
-#ifdef __MINGW32__
+#if defined(__MINGW32__) || defined(_WIN32)
   FILETIME ft;
   GetSystemTimeAsFileTime(&ft);
   return ft.dwLowDateTime;
@@ -553,7 +553,7 @@ int dns_open(struct dns_ctx *ctx) {
     ctx->dnsc_qstatus = DNS_E_TEMPFAIL;
     return -1;
   }
-#ifdef __MINGW32__
+#if defined(__MINGW32__) || defined(_WIN32)
   { unsigned long on = 1;
     if (ioctlsocket(sock, FIONBIO, &on) == SOCKET_ERROR) {
       closesocket(sock);
@@ -561,7 +561,7 @@ int dns_open(struct dns_ctx *ctx) {
       return -1;
     }
   }
-#else	/* !__MINGW32__ */
+#else	/* !__MINGW32__ && !_WIN32 */
   if (fcntl(sock, F_SETFL, fcntl(sock, F_GETFL) | O_NONBLOCK) < 0 ||
       fcntl(sock, F_SETFD, FD_CLOEXEC) < 0) {
     closesocket(sock);
@@ -645,7 +645,7 @@ static void dns_newid(struct dns_ctx *ctx, struct dns_query *q) {
    *   places where random numbers are (or can) be used to increase security:
    *   random qID and random source port number.  Without this randomness
    *   (udns uses fixed port for all queries), or when the randomness is weak,
-   *   it's trivial to spoof query replies.  With randomness however, it
+   *   it's trivial to spoof query replies.  With randomness however, it c
    *   becomes a bit more difficult task.  Too bad we only have 16 bits for
    *   our security, as qID is only two bytes.  It isn't a security per se,
    *   to rely on those 16 bits - an attacker can just flood us with fake
@@ -993,7 +993,7 @@ again: /* receive the reply */
      * or remote.  On local errors, we should stop, while
      * remote errors should be ignored (for now anyway).
      */
-#ifdef __MINGW32__
+#if defined(__MINGW32__) || defined(_WIN32)
     if (WSAGetLastError() == WSAEWOULDBLOCK)
 #else
     if (errno == EAGAIN)

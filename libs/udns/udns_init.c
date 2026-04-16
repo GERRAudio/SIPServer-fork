@@ -24,14 +24,14 @@
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
-#ifdef __MINGW32__
+#if defined(__MINGW32__) || defined(_WIN32)
 # include <winsock2.h>          /* includes <windows.h> */
 # include <iphlpapi.h>		/* for dns server addresses etc */
 #else
 # include <sys/types.h>
 # include <unistd.h>
 # include <fcntl.h>
-#endif	/* !__MINGW32__ */
+#endif	/* !__MINGW32__ && !_WIN32 */
 
 #include <stdlib.h>
 #include <string.h>
@@ -53,7 +53,7 @@ static void dns_set_srch_internal(struct dns_ctx *ctx, char *srch) {
     dns_add_srch(ctx, srch);
 }
 
-#ifdef __MINGW32__
+#if defined(__MINGW32__) || defined(_WIN32)
 
 #define NO_IPHLPAPI
 
@@ -141,9 +141,9 @@ static int dns_initns_registry(struct dns_ctx *ctx) {
   return 0;
 }
 
-#else /* !__MINGW32__ */
+#else /* !__MINGW32__ && !_WIN32 */
 
-static int dns_init_resolvconf(struct dns_ctx *ctx) {
+static int dns_init_resolvconf
   char *v;
   char buf[2049];	/* this buffer is used to hold /etc/resolv.conf */
   int has_srch = 0;
@@ -212,14 +212,14 @@ static int dns_init_resolvconf(struct dns_ctx *ctx) {
   return 0;
 }
 
-#endif /* !__MINGW32__ */
+#endif /* !__MINGW32__ && !_WIN32 */
 
 int dns_init(struct dns_ctx *ctx, int do_open) {
   if (!ctx)
     ctx = &dns_defctx;
   dns_reset(ctx);
 
-#ifdef __MINGW32__
+#if defined(__MINGW32__) || defined(_WIN32)
   if (dns_initns_iphlpapi(ctx) != 0)
     dns_initns_registry(ctx);
   /*XXX __MINGW32__: probably good to get default domain and search list too...
