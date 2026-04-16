@@ -2137,6 +2137,17 @@ SWITCH_DECLARE(switch_status_t) switch_loadable_module_init(switch_bool_t autolo
 	switch_mutex_init(&loadable_modules.mutex, SWITCH_MUTEX_NESTED, loadable_modules.pool);
 	switch_thread_rwlock_create(&loadable_modules.chat_rwlock, loadable_modules.pool);
 	
+	// attempt to load mod_license - if that fails, we aren't licensed
+	if (switch_loadable_module_load_module_ex("", "license", SWITCH_FALSE, SWITCH_FALSE, &err,
+											  SWITCH_LOADABLE_MODULE_TYPE_PRELOAD,
+											  event_hash) == SWITCH_STATUS_GENERR) 
+	{
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Failed to obtain the correct license, cannot continue.\n");
+		switch_core_hash_destroy(&event_hash);
+		abort();
+	}
+
+
 	if (!autoload) return SWITCH_STATUS_SUCCESS;
 	
 	/*
