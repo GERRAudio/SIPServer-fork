@@ -1,5 +1,5 @@
 /*
- * mod_license.c — FreeSwitch licensing module
+ * mod_license.c — FreeSwitch licensing module -GERRAudio
  *
  * Binds a FreeSwitch instance to a specific Windows 10/11 machine.
  * License keys are generated offline by the vendor and installed by
@@ -61,7 +61,7 @@
 #define LICENSE_FILE_DEFAULT "license.key"
 #define MACHINE_ID_HEX_LEN   64   /* SHA-256 = 32 bytes = 64 hex chars */
 #define MAX_KEY_FILE_BYTES   4096
-#define SWITCH_PATH_MAX 256
+#define SWITCH_PATH_MAX      256
 
 SWITCH_MODULE_LOAD_FUNCTION(mod_license_load);
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_license_shutdown);
