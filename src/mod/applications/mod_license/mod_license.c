@@ -62,6 +62,7 @@
 #define MACHINE_ID_HEX_LEN   64   /* SHA-256 = 32 bytes = 64 hex chars */
 #define MAX_KEY_FILE_BYTES   4096
 #define SWITCH_PATH_MAX 256
+
 SWITCH_MODULE_LOAD_FUNCTION(mod_license_load);
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_license_shutdown);
 SWITCH_MODULE_DEFINITION(mod_license, mod_license_load, mod_license_shutdown, NULL);
@@ -467,6 +468,24 @@ SWITCH_STANDARD_API(license_info_api)
 
 /* -----------------------------------------------------------------------
  * Module load
+ *
+ * Design note on ordering:
+ *   SWITCH_ADD_API is called FIRST, before any license check.  This
+ *   ensures "license_info" is always reachable via fs_cli even when no
+ *   key file is present yet — which is exactly the state a new customer
+ *   is in when they need to retrieve their machine ID.
+ *
+ *   If the fingerprint cannot be built (catastrophic WMI/CNG failure)
+ *   we still return SWITCH_STATUS_TERM, but that is an environmental
+ *   error unrelated to normal activation.
+ *
+ *   For missing / invalid keys the module loads successfully but sets
+ *   globals.licensed = 0 and calls switch_core_set_variable() so other
+ *   modules (and ESL scripts) can gate on "license_status".  The
+ *   shutdown is deferred: FreeSwitch itself is not killed here; instead
+ *   any module that should be restricted checks the variable.  If you
+ *   want hard shutdown on bad key, uncomment the SWITCH_STATUS_TERM
+ *   block marked below.
  * ----------------------------------------------------------------------- */
 SWITCH_MODULE_LOAD_FUNCTION(mod_license_load)
 {
@@ -480,7 +499,18 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_license_load)
     snprintf(globals.license_file, sizeof(globals.license_file),
              "%s/%s", SWITCH_GLOBAL_dirs.conf_dir, LICENSE_FILE_DEFAULT);
 
-    /* Load configuration */
+    /* ------------------------------------------------------------------
+     * STEP 1: Register the API command immediately.
+     * This must happen before any early-return so that fs_cli -x
+     * "license_info" works even when no key has been installed yet.
+     * ------------------------------------------------------------------ */
+    SWITCH_ADD_API(api_interface, "license_info",
+                   "Show machine ID and license status (mod_license)",
+                   license_info_api, "");
+
+    /* ------------------------------------------------------------------
+     * STEP 2: Load configuration (optional license_file override).
+     * ------------------------------------------------------------------ */
     if ((xml = switch_xml_open_cfg("license.conf", &cfg, NULL))) {
         if ((settings = switch_xml_child(cfg, "settings"))) {
             for (param = switch_xml_child(settings, "param"); param;
@@ -496,32 +526,50 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_license_load)
         switch_xml_free(xml);
     }
 
-    /* Initialise COM for WMI (must happen in the same thread as WMI calls) */
+    /* ------------------------------------------------------------------
+     * STEP 3: Initialise COM and build the machine fingerprint.
+     * Failure here is an environmental error (WMI broken, CNG missing).
+     * ------------------------------------------------------------------ */
     HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
     int com_init = SUCCEEDED(hr);
 
-    /* Build machine fingerprint */
     if (!build_machine_id(globals.machine_id)) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT,
-                          "mod_license: failed to build machine fingerprint\n");
+                          "mod_license: failed to build machine fingerprint "
+                          "(WMI or CNG unavailable)\n");
         if (com_init) CoUninitialize();
+        /* API is already registered; license_info will report no machine ID */
         return SWITCH_STATUS_TERM;
     }
 
+    if (com_init) CoUninitialize();
+
+    /* Log the machine ID at NOTICE level every startup so it is always
+     * visible in the log, regardless of license state. */
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
                       "mod_license: machine ID = %s\n", globals.machine_id);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+                      "mod_license: to retrieve via CLI: fs_cli -x \"license_info\"\n");
 
-    /* Read license key file */
+    /* ------------------------------------------------------------------
+     * STEP 4: Attempt to read and validate the license key file.
+     * Missing or invalid key → licensed = 0, but module stays loaded
+     * so the API remains queryable.
+     * ------------------------------------------------------------------ */
     FILE *f = fopen(globals.license_file, "r");
     if (!f) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT,
-                          "mod_license: license file not found: %s\n",
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+                          "mod_license: no license key found at: %s\n",
                           globals.license_file);
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT,
-                          "mod_license: run the keygen tool with --machine-id %s"
-                          " to generate a key\n", globals.machine_id);
-        if (com_init) CoUninitialize();
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+                          "mod_license: send machine ID to vendor to obtain a key:\n"
+                          "             %s\n", globals.machine_id);
+        switch_core_set_variable("license_status", "UNLICENSED");
+
+        /* --- Hard-shutdown option (uncomment to re-enable): ---
         return SWITCH_STATUS_TERM;
+        --------------------------------------------------------- */
+        return SWITCH_STATUS_SUCCESS;   /* stay loaded; API is queryable */
     }
 
     char key_buf[MAX_KEY_FILE_BYTES] = {0};
@@ -529,29 +577,35 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_license_load)
     fclose(f);
 
     if (n == 0) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT,
-                          "mod_license: license file is empty\n");
-        if (com_init) CoUninitialize();
-        return SWITCH_STATUS_TERM;
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+                          "mod_license: license file is empty: %s\n",
+                          globals.license_file);
+        switch_core_set_variable("license_status", "UNLICENSED");
+        return SWITCH_STATUS_SUCCESS;
     }
 
-    /* Validate */
     globals.licensed = validate_license_key(key_buf, globals.machine_id);
-    if (com_init) CoUninitialize();
 
     if (!globals.licensed) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT,
-                          "mod_license: LICENSE VALIDATION FAILED — shutting down\n");
+                          "mod_license: LICENSE VALIDATION FAILED\n"
+                          "             machine ID : %s\n"
+                          "             key file   : %s\n",
+                          globals.machine_id, globals.license_file);
+        switch_core_set_variable("license_status", "INVALID");
+
+        /* --- Hard-shutdown option (uncomment to re-enable): ---
         return SWITCH_STATUS_TERM;
+        --------------------------------------------------------- */
+        return SWITCH_STATUS_SUCCESS;   /* stay loaded; API is queryable */
     }
 
-    /* Register API */
-    SWITCH_ADD_API(api_interface, "license_info",
-                   "Show machine ID and license status",
-                   license_info_api, "");
-
+    /* ------------------------------------------------------------------
+     * STEP 5: Licensed — all clear.
+     * ------------------------------------------------------------------ */
+    switch_core_set_variable("license_status", "LICENSED");
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-                      "mod_license: loaded — this instance is licensed\n");
+                      "mod_license: this instance is LICENSED ✓\n");
 
     return SWITCH_STATUS_SUCCESS;
 }
