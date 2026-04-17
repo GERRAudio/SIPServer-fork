@@ -2,33 +2,23 @@
 # =========================
 
 ## Files
-  mod_license.c   — FreeSwitch module (goes in src/mod/applications/mod_license/)
+  mod_license.c   — SIPServer module (goes in src/mod/applications/mod_license/)
   keygen.c        — Vendor key-generation tool (keep internal, never ship)
 
 ---
 
 ## 1. Building mod_license
 
-### Standard FreeSwitch module build (MSVC)
-1. Copy mod_license.c to:
-     <freeswitch_src>/src/mod/applications/mod_license/
+### Standard SIPServer module build (MSVC)
+   1. Copy mod_license.c to: <SIPServer_src>/src/mod/applications/mod_license/
 
-2. Create Makefile.am (next to the .c file):
-     MODNAME=mod_license
-     include $(top_srcdir)/build/modmake.rules
+   2. Create proj file for Visual studio and add project
 
-3. Add to <freeswitch_src>/src/mod/applications/Makefile.am:
-     SUBDIRS += mod_license
+   3. Add sources and project file to /src/mod/applications/
 
-4. From the FreeSWITCH source root:
-     ./bootstrap.sh
-     ./configure
-     make mod_license
-     make mod_license-install
+   4. Build. Note that mod_aes67.c has been modified to check license.
+    All other modules should load regardless, since they do not check.
 
-### Quick MSVC compile (standalone test, no FreeSWITCH headers)
-   cl mod_license.c bcrypt.lib iphlpapi.lib ole32.lib oleaut32.lib wbemuuid.lib \
-      /I <freeswitch_include_path> /LD /Fe:mod_license.dll
 
 ---
 
@@ -37,9 +27,6 @@
 ### MSVC
    cl keygen.c bcrypt.lib /Fe:keygen.exe
 
-### MinGW / GCC on Windows
-   gcc keygen.c -o keygen.exe -lbcrypt
-
 ---
 
 ## 3. Configuration
@@ -47,7 +34,7 @@
 Add to autoload_configs/license.conf.xml:
 
   <?xml version="1.0" encoding="utf-8"?>
-  <document type="freeswitch/xml">
+  <document type="SIPServer/xml">
     <section name="configuration">
       <configuration name="license.conf" description="License">
         <settings>
@@ -67,23 +54,25 @@ so it gates all other modules.
 
 ## 4. Activation workflow
 
-Step 1 — Customer installs FreeSwitch + mod_license (no key yet).
+1. Customer installs SIPServer + mod_license (no key yet).
          On first start, the module logs:
            mod_license: machine ID = <64-char hex>
            mod_license: license file not found: ...
 
-Step 2 — Customer sends you the machine ID (from log, or via
+2. Customer sends you the machine ID (from log, or via
          fs_cli -x "license_info").
 
-Step 3 — Vendor runs keygen (never on the customer machine):
-           keygen.exe --machine-id <hex> [--days 365]
-         Output: a single-line key string.
+3. Vendor runs keygen (never on the customer machine):
+           keygen.exe --machine-id <hex> [--days 365] > license.key
+         Output: a single-line key string in the text file license.key
 
-Step 4 — Vendor delivers the key string to the customer.
+4. Days are optional, leave blank for perpetual
 
-Step 5 — Customer saves the key to:
-           <freeswitch_conf>/license.key
-         Restarts FreeSwitch.  Module loads and logs "licensed".
+5. Vendor delivers the key string to the customer.
+
+6. Customer saves the key to:
+           <SIPServer_conf>/license.key
+         Restarts SIPServer.  Module loads and logs "licensed".
 
 ---
 
