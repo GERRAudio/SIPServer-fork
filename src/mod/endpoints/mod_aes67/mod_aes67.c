@@ -1660,6 +1660,26 @@ static void gst_logger(GstDebugCategory *category, GstDebugLevel level, const gc
 
 SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 {
+
+	 switch_stream_handle_t stream = {0};
+
+	*module_interface = switch_loadable_module_create_module_interface(pool, modname);
+
+	/* Check if this module is licensed */
+	SWITCH_STANDARD_STREAM(stream);
+	switch_api_execute("check_module", "aes67", NULL, &stream);
+
+	if (!stream.data || !strstr((char *)stream.data, "+OK")) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT,
+						  "mod_aes67: Not licensed. Please obtain a valid license.\n");
+		switch_safe_free(stream.data);
+		return SWITCH_STATUS_GENERR;
+	}
+	switch_safe_free(stream.data);
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_aes67: License verified, loading...\n");
+
+	/* resume normal operation */
 	switch_status_t status;
 	switch_api_interface_t *api_interface;
 #define MAX_PATH_LEN 10000

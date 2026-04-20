@@ -24,7 +24,7 @@
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
-#ifdef __MINGW32__
+#if defined(__MINGW32__) || defined(_WIN32)
 # include <winsock2.h>          /* includes <windows.h> */
 # include <ws2tcpip.h>          /* needed for struct in6_addr */
 #else
@@ -553,7 +553,7 @@ int dns_open(struct dns_ctx *ctx) {
     ctx->dnsc_qstatus = DNS_E_TEMPFAIL;
     return -1;
   }
-#ifdef __MINGW32__
+#if defined(__MINGW32__) || defined(_WIN32)
   { unsigned long on = 1;
     if (ioctlsocket(sock, FIONBIO, &on) == SOCKET_ERROR) {
       closesocket(sock);

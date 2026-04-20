@@ -41,8 +41,8 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_amr_load);
 SWITCH_MODULE_DEFINITION(mod_amr, mod_amr_load, NULL, NULL);
 
 #ifndef AMR_PASSTHROUGH
-#include "opencore-amrnb/interf_enc.h"
-#include "opencore-amrnb/interf_dec.h"
+#include "../../../../libs/opencore-amr-master/amrnb/interf_enc.h"
+#include "../../../../libs/opencore-amr-master/amrnb/interf_dec.h"
 
 #include "bitshift.h"
 #include "amr_be.h"

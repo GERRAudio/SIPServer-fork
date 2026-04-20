@@ -251,6 +251,15 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="Product Keys\Templates\status.html.template">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    <Link>Product Keys\Templates\status.html.template</Link>
+    <DeploymentContent>true</DeploymentContent>
+  </None>
+    <None Include="sentry.dll">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <DeploymentContent>true</DeploymentContent>
+    </None>
     <None Include="switch_version.rc2" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
