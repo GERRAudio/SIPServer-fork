@@ -191,6 +191,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="mod_licensing.c" />
+    <ClCompile Include="mod_licensing_json.c" />
+    <ClCompile Include="mod_licensing_offline.c" />
+    <ClCompile Include="mod_licensing_online.c" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\libs\win32\apr\libapr.2017.vcxproj">
@@ -210,6 +213,12 @@
     <None Include="Makefile.am" />
     <None Include="README.md" />
     <None Include="x64\Release\mod_license.dll.recipe" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="mod_licensing_common.h" />
+    <ClInclude Include="mod_licensing_json.h" />
+    <ClInclude Include="mod_licensing_offline.h" />
+    <ClInclude Include="mod_licensing_online.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
