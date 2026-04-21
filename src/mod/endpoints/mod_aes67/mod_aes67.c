@@ -1733,12 +1733,6 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	g_setenv("GST_DEBUG_FILE", "/tmp/gstreamer_leaks.log", TRUE);
 #endif
 
-	if (strcmp( switch_core_get_variable("license_status"), "LICENSED")	)		//not licensed
-	{
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Mod AES67 is unlicensed, please contact GERRAudio");
-		return SWITCH_STATUS_NOTIMPL;
-	}
-
 
 	gst_init(NULL, NULL);
 	// gst_debug_remove_log_function (NULL);

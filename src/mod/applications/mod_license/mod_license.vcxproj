@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mod_license</ProjectName>
+    <ProjectName>mod_licensing</ProjectName>
     <ProjectGuid>{04E8AC1B-7EAF-4E65-8106-AF3258ABD18B}</ProjectGuid>
     <RootNamespace>mod_license</RootNamespace>
     <Keyword>Win32Proj</Keyword>
@@ -190,7 +190,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="mod_license.c" />
+    <ClCompile Include="mod_licensing.c" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\libs\win32\apr\libapr.2017.vcxproj">
