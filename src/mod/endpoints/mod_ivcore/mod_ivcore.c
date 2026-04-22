@@ -561,8 +561,9 @@ static switch_status_t channel_write_frame(switch_core_session_t *session,
 	return SWITCH_STATUS_SUCCESS;
 }
 
-/* Forward declaration — defined after the config loader. */
+/* Forward declarations — defined after the config loader. */
 static void spawn_autoconnect_session(int ci, int pi);
+static void schedule_autoconnect_retry(int ci, int pi);
 
 static switch_status_t channel_on_hangup(switch_core_session_t *session)
 {
@@ -1126,6 +1127,53 @@ done:
  * Autoconnect session spawner (shared by module load and post-call respawn)
  * ===================================================================*/
 
+#define IVP_AUTOCONNECT_RETRY_US  10000000  /* 10 seconds */
+
+typedef struct {
+    int ci;
+    int pi;
+} autoconnect_retry_args_t;
+
+static void *autoconnect_retry_thread(switch_thread_t *thread, void *obj)
+{
+    autoconnect_retry_args_t *args = (autoconnect_retry_args_t *)obj;
+    int ci = args->ci;
+    int pi = args->pi;
+    (void)thread;
+    free(args);
+
+    while (ivcore_globals.running == SWITCH_TRUE) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+            "mod_ivcore: autoconnect retry in 10 s (card=%d port=%d)\n", ci, pi);
+        switch_yield(IVP_AUTOCONNECT_RETRY_US);
+        if (ivcore_globals.running == SWITCH_FALSE) break;
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+            "mod_ivcore: retrying autoconnect (card=%d port=%d)\n", ci, pi);
+        spawn_autoconnect_session(ci, pi);
+        break; /* spawn_autoconnect_session will start another retry if it fails */
+    }
+    return NULL;
+}
+
+static void schedule_autoconnect_retry(int ci, int pi)
+{
+    autoconnect_retry_args_t *args;
+    switch_thread_t    *t;
+    switch_threadattr_t *tattr;
+
+    if (ivcore_globals.running == SWITCH_FALSE) return;
+
+    args = (autoconnect_retry_args_t *)malloc(sizeof(*args));
+    if (!args) return;
+    args->ci = ci;
+    args->pi = pi;
+
+    switch_threadattr_create(&tattr, ivcore_globals.pool);
+    switch_threadattr_detach_set(tattr, 1);
+    switch_thread_create(&t, tattr, autoconnect_retry_thread, args,
+                         ivcore_globals.pool);
+}
+
 static void spawn_autoconnect_session(int ci, int pi)
 {
     ivcore_card_t  *c = &ivcore_globals.cards[ci];
@@ -1202,10 +1250,11 @@ static void spawn_autoconnect_session(int ci, int pi)
     if (ivp_udp_open(ch)  != SWITCH_STATUS_SUCCESS ||
         ivp_tcp_login(ch) != SWITCH_STATUS_SUCCESS) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "mod_ivcore: autoconnect card='%s' port='%s' - connect failed\n",
+            "mod_ivcore: autoconnect card='%s' port='%s' - connect failed, will retry\n",
             c->name, p->name);
         ivcore_channel_free(ch);
         switch_core_session_destroy(&ac_session);
+        schedule_autoconnect_retry(ci, pi);
         return;
     }
 
@@ -1220,11 +1269,12 @@ static void spawn_autoconnect_session(int ci, int pi)
 
     if (ivp_send_new(ch) != SWITCH_STATUS_SUCCESS) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "mod_ivcore: autoconnect card='%s' port='%s' - send NEW failed\n",
+            "mod_ivcore: autoconnect card='%s' port='%s' - send NEW failed, will retry\n",
             c->name, p->name);
         ch->running = SWITCH_FALSE;
         ivcore_channel_free(ch);
         switch_core_session_destroy(&ac_session);
+        schedule_autoconnect_retry(ci, pi);
         return;
     }
 
@@ -1249,6 +1299,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_ivcore_load)
 	ivcore_globals.pool = pool;
 
 	switch_mutex_init(&ivcore_globals.mutex, SWITCH_MUTEX_NESTED, pool);
+	ivcore_globals.running = SWITCH_TRUE;
 
 	load_config();
 
@@ -1295,6 +1346,8 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_ivcore_load)
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_ivcore_shutdown)
 {
 	int i;
+
+	ivcore_globals.running = SWITCH_FALSE;
 
 	switch_mutex_lock(ivcore_globals.mutex);
 	for (i = 0; i < MAX_IVC_CHANNELS; i++) {

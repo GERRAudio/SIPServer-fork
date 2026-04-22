@@ -479,6 +479,9 @@ typedef struct {
 	/* Card table — loaded from ivcore.conf.xml <cards> */
 	ivcore_card_t                cards[MAX_IVC_PROFILES];  /* reuse limit constant */
 	int                          card_count;
+
+	/** FALSE once mod_ivcore_shutdown begins — retry threads check this. */
+	switch_bool_t                running;
 } ivcore_globals_t;
 
 extern ivcore_globals_t ivcore_globals;
