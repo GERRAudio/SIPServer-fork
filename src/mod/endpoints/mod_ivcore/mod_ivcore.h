@@ -359,6 +359,11 @@ typedef struct ivcore_channel_s {
 	/* Silence padding when rx_ring is starved */
 	uint32_t               ptime_ms;     /**< Packet time in ms (default 20)    */
 
+	/** Timestamp (switch_micro_time_now) of the last real audio packet sent by
+	 *  channel_write_frame.  The recv-loop silence keep-alive checks this to
+	 *  avoid doubling the media rate when FreeSWITCH is actively sending audio. */
+	volatile switch_time_t last_write_us;
+
 	/* HDLC data-link state for the IVP Data channel (type=7 sub=1).
 	 * Forward-declared; defined in ivp_hdlc.h. */
 	struct {
@@ -381,6 +386,7 @@ typedef struct ivcore_channel_s {
 	switch_bool_t          dpi_init_sent;          /**< TRUE after PanelTypeReply init sequence sent */
 	uint8_t                dpi_key_status_replies; /**< Count of 0x8B KeyStatusReply messages sent */
 	switch_bool_t          dpi_dial_pending;       /**< TRUE when a complete 0xF1 dial string is ready to route */
+	switch_bool_t          dpi_dial_cont_active;   /**< TRUE while accumulating a multi-packet 0xF1 sequence (cont=1) */
 	/* Stored HDLC send callback — set in ivp_transport.c when the HDLC link
 	 * comes up so that proactive DPI sends (e.g. 0xF1 ConnectReply on SIP
 	 * answer, 0x93 KeyStatusUpdate on hangup) can be issued from mod_ivcore.c
@@ -482,6 +488,11 @@ typedef struct {
 
 	/** FALSE once mod_ivcore_shutdown begins — retry threads check this. */
 	switch_bool_t                running;
+
+	/** TRUE to emit per-frame HDLC/DPI/transport DEBUG traces.
+	 *  Toggled at runtime via "ivc debug on|off".
+	 *  Also readable from ivcore.conf.xml: <param name="debug" value="true"/> */
+	switch_bool_t                debug;
 } ivcore_globals_t;
 
 extern ivcore_globals_t ivcore_globals;
@@ -512,5 +523,20 @@ ivcore_channel_t *ivcore_channel_alloc(switch_core_session_t *session,
                                         const ivcore_card_t *card,
                                         const ivcore_port_t *port);
 void              ivcore_channel_free(ivcore_channel_t *ch);
+
+/* -----------------------------------------------------------------------
+ * Conditional per-frame debug logging
+ *
+ * Use IVC_LOG_DEBUG(...) for high-volume traces (every HDLC frame, every
+ * ACK, every DPI message).  They are suppressed unless ivcore_globals.debug
+ * is TRUE so they don't pollute the FreeSWITCH log during normal operation.
+ * Toggle at runtime: "ivc debug on" / "ivc debug off"
+ * --------------------------------------------------------------------- */
+#define IVC_LOG_DEBUG(fmt, ...) \
+	do { \
+		if (ivcore_globals.debug == SWITCH_TRUE) { \
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, fmt, ##__VA_ARGS__); \
+		} \
+	} while (0)
 
 #endif /* MOD_IVCORE_H */

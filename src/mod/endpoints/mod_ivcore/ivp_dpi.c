@@ -458,12 +458,21 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 		copy_ascii(dial, (int)sizeof(dial), dpi + 1, 80);
 		if (dpi_len >= 1 + 80 + 1) cont = dpi[1 + 80];
 
+		/* If this is the first packet of a new sequence (not a continuation),
+		 * clear any leftover buffer from a previous dial attempt first. */
+		if (!ch->dpi_dial_cont_active)
+			ch->dpi_dial_buffer[0] = '\0';
+
 		{
 			size_t cur = strlen(ch->dpi_dial_buffer);
 			size_t add = strlen(dial);
 			if (cur + add < sizeof(ch->dpi_dial_buffer))
 				memcpy(ch->dpi_dial_buffer + cur, dial, add + 1);
 		}
+
+		/* Track whether we are mid-continuation so the next packet knows
+		 * not to reset the buffer. */
+		ch->dpi_dial_cont_active = (cont != 0) ? SWITCH_TRUE : SWITCH_FALSE;
 
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
 			"mod_ivcore: DPI <- 0xF1 DialOut dial='%s' cont=%u accumulated='%s'\n",
@@ -494,6 +503,7 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 			(unsigned)reason);
 		ch->dpi_state = (uint8_t)IVP_SIP_STATE_ON_HOOK_ALLOCATED;
 		ch->dpi_dial_buffer[0] = '\0';
+		ch->dpi_dial_cont_active = SWITCH_FALSE;
 		send_disconnect_outbound_reply(ch, /*success*/ 1, send_cb);
 		/* Only hang up the FreeSWITCH session if the SIP call was
 		 * actually in progress (ConnectedOut or ConnectingOut).
@@ -545,8 +555,7 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 			pos += switch_snprintf(preview + pos,
 				(int)sizeof(preview) - pos, "%02X ", dpi[i]);
 		if (pos > 0) preview[pos - 1] = '\0';
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-			"mod_ivcore: DPI <- id=0x%02X len=%d bytes=%s%s\n",
+		IVC_LOG_DEBUG("mod_ivcore: DPI <- id=0x%02X len=%d bytes=%s%s\n",
 			(unsigned)id, dpi_len, preview, dpi_len > 16 ? " ..." : "");
 		break;
 	}

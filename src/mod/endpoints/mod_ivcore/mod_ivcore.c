@@ -555,8 +555,10 @@ static switch_status_t channel_write_frame(switch_core_session_t *session,
 	if (!ch || ch->call_state != IVC_STATE_UP)
 		return SWITCH_STATUS_SUCCESS;
 
-	if (frame->datalen > 0)
+	if (frame->datalen > 0) {
 		ivp_send_media(ch, (const uint8_t *)frame->data, (int)frame->datalen);
+		ch->last_write_us = switch_micro_time_now();
+	}
 
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -790,6 +792,7 @@ static switch_io_routines_t channel_io_routines = {
 static switch_status_t load_config(void)
 {
 	switch_xml_t cfg, xml, cards_node, card_node, port_node, param;
+	switch_xml_t settings_node;
 
 	ivcore_globals.card_count = 0;
 
@@ -797,6 +800,17 @@ static switch_status_t load_config(void)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
 			"mod_ivcore: ivcore.conf.xml not found - no cards loaded\n");
 		return SWITCH_STATUS_SUCCESS;
+	}
+
+	/* Optional <settings> section for module-level params. */
+	if ((settings_node = switch_xml_child(cfg, "settings"))) {
+		for (param = switch_xml_child(settings_node, "param"); param; param = param->next) {
+			const char *n = switch_xml_attr_soft(param, "name");
+			const char *v = switch_xml_attr_soft(param, "value");
+			if (!n || !v) continue;
+			if (!strcasecmp(n, "debug"))
+				ivcore_globals.debug = switch_true(v) ? SWITCH_TRUE : SWITCH_FALSE;
+		}
 	}
 
 	if (!(cards_node = switch_xml_child(cfg, "cards"))) {
@@ -1065,6 +1079,7 @@ static const char *ivc_api_usage =
     "ivc list             List active channels and loaded cards (text)\n"
     "ivc list xml         Same as above, as an XML fragment\n"
     "ivc rescan           Reload ivcore.conf.xml (requires no active calls)\n"
+    "ivc debug on|off     Enable/disable per-frame HDLC/DPI/transport traces\n"
     "ivc help             Show this message\n"
     "-----------------------------------------------------------------------\n";
 
@@ -1112,6 +1127,24 @@ SWITCH_STANDARD_API(ivc_cmd)
             stream->write_function(stream, "+OK %d card%s loaded\n",
                 ivcore_globals.card_count,
                 ivcore_globals.card_count == 1 ? "" : "s");
+        }
+
+    } else if (!strcasecmp(argv[0], "debug")) {
+        if (!argv[1]) {
+            stream->write_function(stream, "ivc debug is currently %s\nUsage: ivc debug on|off\n",
+                ivcore_globals.debug == SWITCH_TRUE ? "ON" : "OFF");
+        } else if (!strcasecmp(argv[1], "on")) {
+            ivcore_globals.debug = SWITCH_TRUE;
+            stream->write_function(stream, "+OK IVC debug logging enabled\n");
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+                "mod_ivcore: per-frame debug logging ENABLED\n");
+        } else if (!strcasecmp(argv[1], "off")) {
+            ivcore_globals.debug = SWITCH_FALSE;
+            stream->write_function(stream, "+OK IVC debug logging disabled\n");
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+                "mod_ivcore: per-frame debug logging DISABLED\n");
+        } else {
+            stream->write_function(stream, "-ERR Usage: ivc debug on|off\n");
         }
 
     } else {

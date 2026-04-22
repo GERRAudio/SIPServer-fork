@@ -309,28 +309,23 @@ switch_status_t ivp_hdlc_on_data(ivcore_channel_t *ch,
 			} else if (u == 0x63) {
 				/* UA — server acknowledged our SABME (we did not send one
 				 * but log for completeness). */
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-					"mod_ivcore: HDLC UA received\n");
+				IVC_LOG_DEBUG("mod_ivcore: HDLC UA received\n");
 			} else if (u == 0x43) {
 				/* DISC */
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
 					"mod_ivcore: HDLC DISC received\n");
 				ch->hdlc.link_up = SWITCH_FALSE;
 			} else {
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-					"mod_ivcore: HDLC U-frame ctl=0x%02X (unhandled)\n", ctl);
+				IVC_LOG_DEBUG("mod_ivcore: HDLC U-frame ctl=0x%02X (unhandled)\n", ctl);
 			}
 		} else if ((ctl & 0x03) == 0x01) {
 			/* S-frame from server (rare for us but possible). */
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-				"mod_ivcore: HDLC S-frame ctl=0x%02X ext=0x%02X\n",
-				ctl, ext);
+				IVC_LOG_DEBUG("mod_ivcore: HDLC S-frame ctl=0x%02X ext=0x%02X\n", ctl, ext);
 		} else {
 			/* I-frame.  Update v_r so our next RR/UA ackSeq advances. */
 			uint8_t send_seq = (uint8_t)((ctl >> 1) & 0x7F);
 			ch->hdlc.iframe_count++;
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-				"mod_ivcore: HDLC I-frame send_seq=%u payloadLen=%d (#%u)\n",
+			IVC_LOG_DEBUG("mod_ivcore: HDLC I-frame send_seq=%u payloadLen=%d (#%u)\n",
 				(unsigned)send_seq, frame_payload_len,
 				(unsigned)ch->hdlc.iframe_count);
 

@@ -770,8 +770,7 @@ switch_status_t ivp_send_ack(ivcore_channel_t *ch,
 						   (struct sockaddr *)&ch->remote_addr,
 						   (socklen_t)sizeof(ch->remote_addr));
 	err = (sent == (ssize_t)IVP_PROTO_HEADER_SIZE) ? 0 : sock_errno();
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-		"mod_ivcore: TX ACK dstCallNo=0x%04X oseq=%u iseq=%u ts=%u sent=%d err=%d\n",
+	IVC_LOG_DEBUG("mod_ivcore: TX ACK dstCallNo=0x%04X oseq=%u iseq=%u ts=%u sent=%d err=%d\n",
 		(unsigned)dst_call_number, (unsigned)hdr.out_sequence,
 		(unsigned)hdr.in_sequence, (unsigned)echo_ts, (int)sent, err);
 	return (sent == (ssize_t)IVP_PROTO_HEADER_SIZE)
@@ -858,8 +857,7 @@ static void handle_media_payload(ivcore_channel_t *ch,
 static switch_status_t ivp_send_data_frame(ivcore_channel_t *ch,
 										const uint8_t *frame, int frame_len)
 {
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-		"mod_ivcore: TX HDLC frame %d bytes (oseq=%u)\n",
+	IVC_LOG_DEBUG("mod_ivcore: TX HDLC frame %d bytes (oseq=%u)\n",
 		frame_len, (unsigned)ch->out_sequence);
 	return send_proto_frame(ch, IVP_FRAME_DATA, 0x01, frame, frame_len);
 }
@@ -920,37 +918,46 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 
 		/* Silence media keep-alive while the call is UP.  Without this
 		 * the IVR's media-activity watchdog tears the call down a few
-		 * seconds after ACCEPT. */
+		 * seconds after ACCEPT.  Skip the keep-alive entirely for the
+		 * current interval when channel_write_frame has already sent a
+		 * real audio packet — sending both would double the media rate
+		 * causing audio to sound slow and repeated on the matrix. */
 		if (ch->call_state == IVC_STATE_UP) {
 			switch_time_t now = switch_micro_time_now();
 			uint32_t pkt_us = (ch->ptime_ms ? ch->ptime_ms : 20) * 1000;
 			if (last_media_sent == 0 || now - last_media_sent >= pkt_us) {
-				uint8_t silence[256];
-				int bytes;
-				if (ch->active_codec == IVP_CODEC_G722 ||
-					ch->active_codec == IVP_CODEC_G711U ||
-					ch->active_codec == IVP_CODEC_G711A) {
-					bytes = (int)ch->params.frame_size *
-							(int)ch->params.frames_per_packet;
-				} else {
-					bytes = (int)((ch->ptime_ms ? ch->ptime_ms : 20) * 8);
-				}
-				if (bytes <= 0) bytes = 64;
-				if (bytes > (int)sizeof(silence)) bytes = (int)sizeof(silence);
-				memset(silence, 0, (size_t)bytes);
-				{
-					switch_status_t mst = ivp_send_media(ch, silence, bytes);
-					if (last_media_sent == 0) {
-						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-							"mod_ivcore: starting silence keep-alive (%d bytes / %u ms)\n",
-							bytes, (unsigned)(ch->ptime_ms ? ch->ptime_ms : 20));
-					} else if ((ch->media_sequence_out & 0x1F) == 0) {
-						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-							"mod_ivcore: TX silence mediaSeq=%u status=%d\n",
-							(unsigned)ch->media_sequence_out, (int)mst);
+				/* Only send silence if write_frame hasn't sent real audio
+				 * in the last packet interval (with a 2× window for jitter). */
+				switch_bool_t real_audio_active =
+					(ch->last_write_us != 0 &&
+					 now - ch->last_write_us < (switch_time_t)pkt_us * 2);
+				if (!real_audio_active) {
+					uint8_t silence[256];
+					int bytes;
+					if (ch->active_codec == IVP_CODEC_G722 ||
+						ch->active_codec == IVP_CODEC_G711U ||
+						ch->active_codec == IVP_CODEC_G711A) {
+						bytes = (int)ch->params.frame_size *
+								(int)ch->params.frames_per_packet;
+					} else {
+						bytes = (int)((ch->ptime_ms ? ch->ptime_ms : 20) * 8);
 					}
+					if (bytes <= 0) bytes = 64;
+					if (bytes > (int)sizeof(silence)) bytes = (int)sizeof(silence);
+					memset(silence, 0, (size_t)bytes);
+					{
+						switch_status_t mst = ivp_send_media(ch, silence, bytes);
+						if (last_media_sent == 0) {
+							switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+								"mod_ivcore: starting silence keep-alive (%d bytes / %u ms)\n",
+								bytes, (unsigned)(ch->ptime_ms ? ch->ptime_ms : 20));
+						} else if ((ch->media_sequence_out & 0x1F) == 0) {
+							IVC_LOG_DEBUG("mod_ivcore: TX silence mediaSeq=%u status=%d\n",
+								(unsigned)ch->media_sequence_out, (int)mst);
+						}
+					}
+					last_media_sent = now;
 				}
-				last_media_sent = now;
 			}
 		}
 
@@ -1004,9 +1011,8 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 
 			ivp_read_proto_header(buf, &hdr);
 
-			/* DEBUG level: this fires for every protocol frame (ACKs, media, etc.) */
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-				"mod_ivcore: recv proto frame type=%d sub=%d srcCallNo=0x%04X "
+			/* Per-frame trace: gated behind ivc debug on */
+			IVC_LOG_DEBUG("mod_ivcore: recv proto frame type=%d sub=%d srcCallNo=0x%04X "
 				"dstCallNo=0x%04X outSeq=%u inSeq=%u ts=%u bytes=%d resent=%d\n",
 				(int)hdr.frame_type, (int)hdr.subclass,
 				(unsigned)hdr.src_call_number, (unsigned)hdr.dst_call_number,
