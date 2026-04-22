@@ -1,0 +1,36 @@
+<configuration name="freetdm.conf" description="Freetdm Configuration">
+  <settings>
+    <param name="debug" value="0"/>
+    <!--<param name="hold-music" value="$${moh_uri}"/>-->
+    <!--<param name="enable-analog-option" value="call-swap"/>-->
+    <!--<param name="enable-analog-option" value="3-way"/>-->
+  </settings>
+
+  <config_profiles>
+
+    <profile name="my_pri_te_1">
+      <param name="switchtype" value="ni2" />
+      <param name="interface" value="pri_cpe"/>
+    </profile>
+
+  </config_profiles>
+
+  <sangoma_pri_spans>
+
+    <span name="wp1" cfgprofile="my_pri_te_1">
+      <param name="dialplan" value="XML"/>
+      <param name="context" value="default"/>
+    </span>
+
+    <span name="wp2" cfgprofile="my_pri_te_1">
+      <param name="dialplan" value="XML"/>
+      <param name="context" value="default"/>
+    </span>
+
+  </sangoma_pri_spans>
+
+  <analog_spans>
+
+  </analog_spans>
+
+</configuration>

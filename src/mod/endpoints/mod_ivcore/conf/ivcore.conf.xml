@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ivcore.conf.xml — mod_ivcore configuration
+  Copy to: $FS_ROOT/conf/autoload_configs/ivcore.conf.xml
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  DIAL STRING FORMAT                                                 │
+  │                                                                     │
+  │  ivcore/<called_number>                                             │
+  │      Uses the card named "default", first port.                     │
+  │                                                                     │
+  │  ivcore/<card-name>/<called_number>                                 │
+  │      Uses the named card, first port.                               │
+  │                                                                     │
+  │  ivcore/<card-name>/<port-name>/<called_number>                     │
+  │      Uses the named card and named port explicitly.                 │
+  │                                                                     │
+  │  Examples (from the dialplan):                                      │
+  │    <action application="bridge" data="ivcore/intercom1"/>           │
+  │    <action application="bridge" data="ivcore/main/intercom1"/>      │
+  │    <action application="bridge" data="ivcore/main/op1/intercom1"/>  │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  Each <card> represents one physical IVC card / Eclipse matrix.
+  Card-level params set the network address and audio settings shared
+  by all ports on that card.
+
+  Each <port> inside a card represents one login credential set.
+  Port attributes supply the username and password used for the IVC
+  login handshake.
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  CARD PARAMETERS                                                    │
+  │  login-ip    IP address of the IVC card / Eclipse matrix           │
+  │  tcp-port    TCP login port             (default: 6001)            │
+  │  udp-port    UDP media port hint        (default: 6001)            │
+  │  context     FreeSWITCH dialplan context for inbound calls         │
+  │  codec       u = G.711 µ-law  a = G.711 A-law  g = G.722  p = PCM │
+  │  ptime       Packetisation time in ms   (default: 20)              │
+  │  encryption-key  IVP encryption key (omit = none)                  │
+  │  auth-key        IVP authentication key (omit = none)              │
+  │                                                                     │
+  │  PORT ATTRIBUTES                                                    │
+  │  name        Port name used in the dial string                     │
+  │  username    IVC account username sent during login                 │
+  │  password    IVC account password sent during login                 │
+  │  type        Device type controlling login format (default: lqsip) │
+  │                lqsip  — LQ SIP telephony (LQ 74-byte login)        │
+  │                lq4    — LQ 4-wire interface (LQ 74-byte login)     │
+  │                mobile — Station-IC / Agent-IC (LQ 74-byte login)   │
+  │                panel  — Standard V-Series panel (56-byte login)    │
+  └─────────────────────────────────────────────────────────────────────┘
+-->
+<configuration name="ivcore.conf" description="IVC/IVP Intercom Endpoint">
+  <cards>
+
+    <!--
+      Main IVC card — test credentials as configured in EHX.
+      Dial: ivcore/intercom1
+             ivcore/main/intercom1
+             ivcore/main/op1/intercom1
+    -->
+    <card name="default">
+      <param name="login-ip"  value="192.168.1.112"/>
+      <param name="tcp-port"  value="6001"/>
+      <param name="udp-port"  value="6001"/>
+      <param name="context"   value="default"/>
+      <param name="codec"     value="u"/>  <!-- G.711 µ-law -->
+      <param name="ptime"     value="20"/>
+
+      <port name="LQSIP1" username="lqsip1" password="password" type="lqsip"/>
+    </card>
+
+    <!--
+      Example: second IVC card with G.722 wideband codec.
+      Dial: ivcore/studio-a/intercom2
+             ivcore/studio-a/board1/intercom2
+    -->
+    <!--
+    <card name="studio-a">
+      <param name="login-ip"  value="10.0.1.10"/>
+      <param name="context"   value="default"/>
+      <param name="codec"     value="g"/>
+      <param name="ptime"     value="20"/>
+
+      <port name="board1" username="test" password="test" type="lqsip"/>
+      <port name="board2" username="test2" password="test2" type="lq4"/>
+    </card>
+    -->
+
+    <!--
+      Example: broadcast card with a dedicated dialplan context.
+      Dial: ivcore/broadcast/pg-feed1
+    -->
+    <!--
+    <card name="broadcast">
+      <param name="login-ip"  value="10.0.2.5"/>
+      <param name="context"   value="broadcast"/>
+      <param name="codec"     value="g"/>
+      <param name="ptime"     value="20"/>
+
+      <port name="feed1" username="test" password="test"/>
+    </card>
+    -->
+
+  </cards>
+</configuration>

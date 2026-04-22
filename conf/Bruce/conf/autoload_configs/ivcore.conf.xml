@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ivcore.conf.xml - mod_ivcore configuration
+
+  DIAL STRING FORMAT
+    ivcore/<called_number>
+        Uses the card named "default", first port.
+
+    ivcore/<card-name>/<called_number>
+        Uses the named card, first port.
+
+    ivcore/<card-name>/<port-name>/<called_number>
+        Uses the named card and named port explicitly.
+
+  Examples (from the dialplan):
+    <action application="bridge" data="ivcore/intercom1"/>
+    <action application="bridge" data="ivcore/main/intercom1"/>
+    <action application="bridge" data="ivcore/main/op1/intercom1"/>
+
+  CARD PARAMETERS
+    login-ip        IP address of the IVC card / Eclipse matrix
+    tcp-port        TCP login port                    (default: 6001)
+    udp-port        UDP media port hint               (default: 6001)
+    context         FreeSWITCH dialplan context for inbound calls
+    codec           u = G.711 u-law  a = G.711 A-law  g = G.722  p = PCM
+    ptime           Packetisation time in ms          (default: 20)
+    encryption-key  IVP encryption key (omit = none)
+    auth-key        IVP authentication key (omit = none)
+    autoconnect     true = connect all ports at module load (default: false)
+                    Can be overridden per port with the autoconnect attribute.
+
+  PORT ATTRIBUTES
+    name                Port name used in the dial string
+    username            IVC account username sent during login
+    password            IVC account password sent during login
+    type                Device type controlling login format  (default: lqsip)
+                          lqsip  - LQ SIP telephony (LQ 74-byte login)
+                          lq4    - LQ 4-wire interface (LQ 74-byte login)
+                          mobile - Station-IC / Agent-IC (LQ 74-byte login)
+                          panel  - Standard V-Series panel (56-byte login)
+    autoconnect         true/false - overrides the card-level autoconnect setting
+    autoconnect-number  Called number used in the IVP NEW frame when
+                        autoconnecting (default: "0")
+-->
+<configuration name="ivcore.conf" description="IVC/IVP Intercom Endpoint">
+  <cards>
+
+    <!--
+      Default IVC card.
+      Dial: ivcore/intercom1
+             ivcore/default/intercom1
+             ivcore/default/LQSIP1/intercom1
+    -->
+    <card name="default">
+      <param name="login-ip"  value="192.168.1.112"/>
+      <param name="tcp-port"  value="6001"/>
+      <param name="udp-port"  value="6001"/>
+      <param name="context"   value="default"/>
+      <param name="codec"     value="u"/>
+      <param name="ptime"     value="20"/>
+
+      <!-- autoconnect="true" connects this port at module load -->
+      <port name="LQSIP1" username="lqsip1" password="password" type="lqsip" autoconnect="true"/>
+    </card>
+
+    <!--
+    <card name="studio-a">
+      <param name="login-ip"  value="10.0.1.10"/>
+      <param name="context"   value="default"/>
+      <param name="codec"     value="g"/>
+      <param name="ptime"     value="20"/>
+
+      <param name="autoconnect" value="true"/>
+      <port name="board1" username="test" password="test" type="lqsip"/>
+
+      <port name="board2" username="test2" password="test2" type="lq4" autoconnect="false"/>
+    </card>
+    -->
+
+  </cards>
+</configuration>
