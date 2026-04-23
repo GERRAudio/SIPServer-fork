@@ -458,24 +458,17 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 		copy_ascii(dial, (int)sizeof(dial), dpi + 1, 80);
 		if (dpi_len >= 1 + 80 + 1) cont = dpi[1 + 80];
 
-		/* If this is the first packet of a new sequence (not a continuation),
-		 * clear any leftover buffer from a previous dial attempt first. */
-		if (!ch->dpi_dial_cont_active)
-			ch->dpi_dial_buffer[0] = '\0';
-
-		{
-			size_t cur = strlen(ch->dpi_dial_buffer);
-			size_t add = strlen(dial);
-			if (cur + add < sizeof(ch->dpi_dial_buffer))
-				memcpy(ch->dpi_dial_buffer + cur, dial, add + 1);
-		}
-
-		/* Track whether we are mid-continuation so the next packet knows
-		 * not to reset the buffer. */
+		/* Each 0xF1 packet contains the COMPLETE dial string accumulated
+		 * so far (not just new incremental digits).  cont=1 means the
+		 * user is still entering digits; cont=0 is the final number.
+		 * Always REPLACE the buffer — never append — so that intermediate
+		 * "still-typing" packets cannot concatenate with the final one
+		 * and produce a doubled number (e.g. "919891898" for "9198"). */
+		switch_copy_string(ch->dpi_dial_buffer, dial, sizeof(ch->dpi_dial_buffer));
 		ch->dpi_dial_cont_active = (cont != 0) ? SWITCH_TRUE : SWITCH_FALSE;
 
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-			"mod_ivcore: DPI <- 0xF1 DialOut dial='%s' cont=%u accumulated='%s'\n",
+			"mod_ivcore: DPI <- 0xF1 DialOut dial='%s' cont=%u buffer='%s'\n",
 			dial, (unsigned)cont, ch->dpi_dial_buffer);
 
 		if (cont == 0) {

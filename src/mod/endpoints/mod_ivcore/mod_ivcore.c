@@ -111,10 +111,11 @@ static void apply_card_port(ivcore_channel_t *ch,
 		ch->params.codec_family  = IVP_CODEC_G722;
 		ch->params.codec_format  = IVP_CODEC_G722;
 		ch->params.sampling_rate = 16000;
-		/* IVCore G.722 defaults: 8 samples, 16ms, 8 frames/packet (128ms) */
-		ch->params.frame_size    = 8;
-		ch->params.frame_time    = 16;
-		ch->params.frames_per_packet = 8;
+		/* Matrix's ACCEPT IEs request frameSize=160 / frameTime=20 / fpp=1.
+		 * Advertise exactly that so provisioning matches what the IPA expects. */
+		ch->params.frame_size    = 160;
+		ch->params.frame_time    = 20;
+		ch->params.frames_per_packet = 1;
 		break;
 	case 'p':
 		ch->active_codec         = IVP_CODEC_PCM;
@@ -156,9 +157,9 @@ static void apply_card_port(ivcore_channel_t *ch,
 		ch->params.codec_family  = IVP_CODEC_G722;
 		ch->params.codec_format  = IVP_CODEC_G722;
 		ch->params.sampling_rate = 16000;
-		ch->params.frame_size    = 8;
-		ch->params.frame_time    = 16;
-		ch->params.frames_per_packet = 8;
+		ch->params.frame_size    = 160;
+		ch->params.frame_time    = 20;
+		ch->params.frames_per_packet = 1;
 	}
 
 	/* ptime used for the FreeSWITCH codec init must match the IVP packet
@@ -228,10 +229,10 @@ ivcore_channel_t *ivcore_channel_alloc(switch_core_session_t *session,
 		ch->params.codec_family      = IVP_CODEC_G722;
 		ch->params.codec_format      = IVP_CODEC_G722;
 		ch->params.sampling_rate     = 16000;
-		ch->params.frame_size        = 8;
-		ch->params.frame_time        = 16;
-		ch->params.frames_per_packet = 8;
-		ch->ptime_ms                 = 128;
+		ch->params.frame_size        = 160;
+		ch->params.frame_time        = 20;
+		ch->params.frames_per_packet = 1;
+		ch->ptime_ms                 = 20;
 	}
 
 	return ch;
@@ -498,11 +499,14 @@ static switch_status_t channel_read_frame(switch_core_session_t *session,
 		ch->read_frame.datalen = (ch->active_codec == IVP_CODEC_PCM)
 			? (uint32_t)(ch->ptime_ms * 16) : (uint32_t)(ch->ptime_ms * 8);
 		ch->read_frame.buflen  = (uint32_t)sizeof(ch->read_frame_data);
-		ch->read_frame.samples = ch->read_frame.datalen *
-			(ch->active_codec == IVP_CODEC_G722 ? 2 : 1);
+		/* G.722 is registered in FreeSWITCH at 8 kHz (legacy RTP clock).
+		 * samples = datalen (1 encoded byte = 1 RTP-clock sample at 8 kHz).
+		 * Do NOT multiply by 2 — that would make the RTP timestamp advance
+		 * at 16 kHz, causing the far end to play audio at 2× speed. */
+		ch->read_frame.samples = ch->read_frame.datalen;
 		ch->read_frame.codec   = &ch->read_codec;
 		ch->read_frame.flags   = SFF_CNG;
-		ch->read_frame.rate    = (uint32_t)ch->sample_rate;
+		ch->read_frame.rate    = 8000;
 		*frame = &ch->read_frame;
 		return SWITCH_STATUS_SUCCESS;
 	}
@@ -533,9 +537,13 @@ static switch_status_t channel_read_frame(switch_core_session_t *session,
 	ch->read_frame.data    = ch->read_frame_data;
 	ch->read_frame.datalen = frame_bytes;
 	ch->read_frame.buflen  = (uint32_t)sizeof(ch->read_frame_data);
-	ch->read_frame.samples = frame_bytes * (ch->active_codec == IVP_CODEC_G722 ? 2 : 1);
+	/* G.722 RTP clock = 8 kHz: 1 encoded byte = 1 RTP-clock sample.
+	 * samples = frame_bytes for all codecs here (G.722 at 8 kHz,
+	 * G.711 at 8 kHz, PCM at 8 kHz).  Multiplying by 2 would advance
+	 * the RTP timestamp at 16 kHz and play audio at double speed. */
+	ch->read_frame.samples = frame_bytes;
 	ch->read_frame.codec   = &ch->read_codec;
-	ch->read_frame.rate    = (uint32_t)ch->sample_rate;
+	ch->read_frame.rate    = 8000;
 
 	*frame = &ch->read_frame;
 	return SWITCH_STATUS_SUCCESS;
@@ -556,8 +564,25 @@ static switch_status_t channel_write_frame(switch_core_session_t *session,
 		return SWITCH_STATUS_SUCCESS;
 
 	if (frame->datalen > 0) {
+		switch_time_t now = switch_micro_time_now();
+		/* Diagnostic: log first 10 writes and then 1 in 50 so we can see
+		 * the actual cadence and payload size FreeSWITCH is driving us at.
+		 * If the audio sounds 2x fast, this should show either 10 ms gaps
+		 * between writes or 320-byte datalens. */
+		static uint32_t s_write_count = 0;
+		switch_time_t delta_us = (ch->last_write_us != 0)
+			? (now - ch->last_write_us) : 0;
+		if (s_write_count < 10 || (s_write_count % 50) == 0) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+				"mod_ivcore: TX media #%u datalen=%u samples=%u rate=%u "
+				"flags=0x%X delta=%lldus\n",
+				(unsigned)s_write_count, (unsigned)frame->datalen,
+				(unsigned)frame->samples, (unsigned)frame->rate,
+				(unsigned)frame->flags, (long long)delta_us);
+		}
+		s_write_count++;
 		ivp_send_media(ch, (const uint8_t *)frame->data, (int)frame->datalen);
-		ch->last_write_us = switch_micro_time_now();
+		ch->last_write_us = now;
 	}
 
 	return SWITCH_STATUS_SUCCESS;

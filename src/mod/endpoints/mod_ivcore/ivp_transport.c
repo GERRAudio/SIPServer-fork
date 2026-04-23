@@ -878,14 +878,14 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 	/* Silence keep-alive: per PROTOCOL.md, the IVR's media-activity
 	 * watchdog will hang up the call if no media frames arrive within
 	 * a few seconds.  Once the call is UP, send a zero-payload media
-	 * frame every ptime_ms.  Bytes per packet for G.722 is
-	 * frame_size * frames_per_packet (= 8 * 8 = 64). */
-	switch_time_t last_media_sent = 0;
+	 * frame every ptime_ms.  ch->last_write_us is the single "last media
+	 * sent" clock, stamped by write_frame for real audio AND by this loop
+	 * for silence, guaranteeing exactly one packet per interval. */
 	switch_bool_t have_in_seq = SWITCH_FALSE;
 
 	(void)thread;
 
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
 		"mod_ivcore: recv loop started for channel %p\n", (void *)ch);
 
 	while (ch->running == SWITCH_TRUE) {
@@ -916,48 +916,50 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 			}
 		}
 
-		/* Silence media keep-alive while the call is UP.  Without this
-		 * the IVR's media-activity watchdog tears the call down a few
-		 * seconds after ACCEPT.  Skip the keep-alive entirely for the
-		 * current interval when channel_write_frame has already sent a
-		 * real audio packet — sending both would double the media rate
-		 * causing audio to sound slow and repeated on the matrix. */
+		/* Silence media keep-alive while the call is UP.
+		 * ch->last_write_us is the single authoritative "last media sent"
+		 * clock, stamped by channel_write_frame() for real audio AND by
+		 * this path when silence is sent.  Using one clock guarantees
+		 * exactly one packet per interval regardless of which path fires,
+		 * preventing double-sends that make audio sound slow and repeated. */
 		if (ch->call_state == IVC_STATE_UP) {
 			switch_time_t now = switch_micro_time_now();
 			uint32_t pkt_us = (ch->ptime_ms ? ch->ptime_ms : 20) * 1000;
-			if (last_media_sent == 0 || now - last_media_sent >= pkt_us) {
-				/* Only send silence if write_frame hasn't sent real audio
-				 * in the last packet interval (with a 2× window for jitter). */
-				switch_bool_t real_audio_active =
-					(ch->last_write_us != 0 &&
-					 now - ch->last_write_us < (switch_time_t)pkt_us * 2);
-				if (!real_audio_active) {
-					uint8_t silence[256];
+			switch_bool_t first_packet = (ch->last_write_us == 0);
+			if (first_packet || now - ch->last_write_us >= pkt_us) {
+				uint8_t silence[256];
 					int bytes;
-					if (ch->active_codec == IVP_CODEC_G722 ||
-						ch->active_codec == IVP_CODEC_G711U ||
-						ch->active_codec == IVP_CODEC_G711A) {
+					uint8_t fill;
+					if (ch->active_codec == IVP_CODEC_G722) {
+						/* G.722 at 64 kbit/s, 20 ms → 160 bytes.
+						 * 0xFF is the G.722 idle/comfort-noise codeword
+						 * (matches IvpUdpTransport.cs silence sender). */
+						bytes = 160;
+						fill  = 0xFF;
+					} else if (ch->active_codec == IVP_CODEC_G711U ||
+							   ch->active_codec == IVP_CODEC_G711A) {
 						bytes = (int)ch->params.frame_size *
 								(int)ch->params.frames_per_packet;
+						fill  = 0x00;
 					} else {
 						bytes = (int)((ch->ptime_ms ? ch->ptime_ms : 20) * 8);
+						fill  = 0x00;
 					}
-					if (bytes <= 0) bytes = 64;
+					if (bytes <= 0) bytes = 160;
 					if (bytes > (int)sizeof(silence)) bytes = (int)sizeof(silence);
-					memset(silence, 0, (size_t)bytes);
-					{
-						switch_status_t mst = ivp_send_media(ch, silence, bytes);
-						if (last_media_sent == 0) {
-							switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-								"mod_ivcore: starting silence keep-alive (%d bytes / %u ms)\n",
-								bytes, (unsigned)(ch->ptime_ms ? ch->ptime_ms : 20));
-						} else if ((ch->media_sequence_out & 0x1F) == 0) {
-							IVC_LOG_DEBUG("mod_ivcore: TX silence mediaSeq=%u status=%d\n",
-								(unsigned)ch->media_sequence_out, (int)mst);
-						}
+					memset(silence, fill, (size_t)bytes);
+				{
+					switch_status_t mst = ivp_send_media(ch, silence, bytes);
+					if (first_packet) {
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+							"mod_ivcore: starting silence keep-alive (%d bytes / %u ms)\n",
+							bytes, (unsigned)(ch->ptime_ms ? ch->ptime_ms : 20));
+					} else if ((ch->media_sequence_out & 0x1F) == 0) {
+						IVC_LOG_DEBUG("mod_ivcore: TX silence mediaSeq=%u status=%d\n",
+							(unsigned)ch->media_sequence_out, (int)mst);
 					}
-					last_media_sent = now;
 				}
+				ch->last_write_us = now;
 			}
 		}
 
