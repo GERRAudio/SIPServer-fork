@@ -291,11 +291,18 @@ switch_status_t ivp_hdlc_on_data(ivcore_channel_t *ch,
 				if (n > 0 && send_cb) send_cb(ch, ua, n);
 
 				ch->hdlc.v_s = 0;
-				ch->hdlc.v_r = 0;
-				ch->hdlc.link_up = SWITCH_TRUE;
-				ch->hdlc.last_rr_us = switch_micro_time_now();
-				ch->dpi_init_sent = SWITCH_FALSE;
-				ch->dpi_key_status_replies = 0;
+					ch->hdlc.v_r = 0;
+					ch->hdlc.link_up = SWITCH_TRUE;
+					ch->hdlc.last_rr_us = switch_micro_time_now();
+					ch->dpi_init_sent = SWITCH_FALSE;
+					ch->dpi_key_status_replies = 0;
+					/* Signal the IVP recv loop to reset its in_sequence counter
+					 * so that the IVP-level dedup re-syncs with the fresh HDLC
+					 * link.  Without this, HDLC v_r resets to 0 but the IVP
+					 * layer still thinks it has already seen those sequence
+					 * numbers and silently drops the re-sent I-frames — OR the
+					 * IVP layer re-processes them and doubles the dial string. */
+					ch->hdlc_reset_pending = SWITCH_TRUE;
 
 				/* Set allocated-but-idle so a 0xF0 GetState reply is
 				 * meaningful before the first 0x80 PanelTypeRequest. */

@@ -891,6 +891,17 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 	while (ch->running == SWITCH_TRUE) {
 		ssize_t n;
 
+		/* If the HDLC layer performed a SABME reset, clear our IVP-level
+		 * in_sequence so the dedup window re-syncs.  Without this the IVP
+		 * layer sees the freshly-reset HDLC I-frames (send_seq starting at 0
+		 * again) as already-processed retransmits and either drops or
+		 * double-delivers them, causing doubled dial strings. */
+		if (ch->hdlc_reset_pending) {
+			ch->in_sequence     = 0;
+			have_in_seq         = SWITCH_FALSE;
+			ch->hdlc_reset_pending = SWITCH_FALSE;
+		}
+
 		/* Retransmit NEW while we are still in CONNECTING state. */
 		if (ch->call_state == IVC_STATE_CONNECTING) {
 			switch_time_t now = switch_micro_time_now();

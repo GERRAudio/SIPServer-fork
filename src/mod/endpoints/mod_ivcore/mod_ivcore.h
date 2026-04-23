@@ -387,6 +387,7 @@ typedef struct ivcore_channel_s {
 	uint8_t                dpi_key_status_replies; /**< Count of 0x8B KeyStatusReply messages sent */
 	switch_bool_t          dpi_dial_pending;       /**< TRUE when a complete 0xF1 dial string is ready to route */
 	switch_bool_t          dpi_dial_cont_active;   /**< TRUE while accumulating a multi-packet 0xF1 sequence (cont=1) */
+	volatile switch_bool_t hdlc_reset_pending;     /**< Set by HDLC SABME handler; cleared by recv loop to re-sync IVP in_sequence */
 	/* Stored HDLC send callback — set in ivp_transport.c when the HDLC link
 	 * comes up so that proactive DPI sends (e.g. 0xF1 ConnectReply on SIP
 	 * answer, 0x93 KeyStatusUpdate on hangup) can be issued from mod_ivcore.c
