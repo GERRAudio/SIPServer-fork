@@ -90,6 +90,11 @@ static void apply_card_port(ivcore_channel_t *ch,
 	else
 		switch_copy_string(ch->params.device_type, "lqsip",        sizeof(ch->params.device_type));
 
+	/* Card-level TX pacing timer (mod_sofia-style "timer-name"). */
+	switch_copy_string(ch->params.timer_name,
+		(c->timer_name[0] ? c->timer_name : "soft"),
+		sizeof(ch->params.timer_name));
+
 	ch->params.tcp_port = c->tcp_port;
 	ch->params.udp_port = c->udp_port;
 	ch->ptime_ms        = (uint32_t)c->ptime_ms;
@@ -111,8 +116,9 @@ static void apply_card_port(ivcore_channel_t *ch,
 		ch->params.codec_family  = IVP_CODEC_G722;
 		ch->params.codec_format  = IVP_CODEC_G722;
 		ch->params.sampling_rate = 16000;
-		/* Matrix's ACCEPT IEs request frameSize=160 / frameTime=20 / fpp=1.
-		 * Advertise exactly that so provisioning matches what the IPA expects. */
+		/* 160 bytes / 20 ms: matches FS G.722 native delivery and fits within
+		 * the matrix LAN jitter buffer (max 64 ms).  The dedicated ivp_tx_loop
+		 * paces these at exactly 20 ms intervals. */
 		ch->params.frame_size    = 160;
 		ch->params.frame_time    = 20;
 		ch->params.frames_per_packet = 1;
@@ -211,7 +217,6 @@ ivcore_channel_t *ivcore_channel_alloc(switch_core_session_t *session,
 	ch->running  = SWITCH_FALSE;
 
 	ring_reset(&ch->rx_ring);
-	ring_reset(&ch->tx_ring);
 
 	switch_copy_string(ch->params.version_string, "3.0.0", sizeof(ch->params.version_string));
 
@@ -222,6 +227,7 @@ ivcore_channel_t *ivcore_channel_alloc(switch_core_session_t *session,
 		switch_copy_string(ch->params.called_context, "default",   sizeof(ch->params.called_context));
 		switch_copy_string(ch->params.calling_name,   "sessiax2",  sizeof(ch->params.calling_name));
 		switch_copy_string(ch->params.device_type,    "lqsip",     sizeof(ch->params.device_type));
+		switch_copy_string(ch->params.timer_name,     "soft",      sizeof(ch->params.timer_name));
 		ch->params.tcp_port          = IVC_TCP_PORT;
 		ch->params.udp_port          = IVC_UDP_PORT;
 		ch->active_codec             = IVP_CODEC_G722;
@@ -232,8 +238,7 @@ ivcore_channel_t *ivcore_channel_alloc(switch_core_session_t *session,
 		ch->params.frame_size        = 160;
 		ch->params.frame_time        = 20;
 		ch->params.frames_per_packet = 1;
-		ch->ptime_ms                 = 20;
-	}
+		ch->ptime_ms                 = 20;	}
 
 	return ch;
 }
@@ -277,33 +282,22 @@ static switch_status_t ivcore_setup_codecs(switch_core_session_t *session,
     switch (ch->active_codec) {
     case IVP_CODEC_G711A: codec_name = "PCMA"; rate = 8000;  break;
     /* G.722 is registered in FreeSWITCH at the legacy RTP clock rate of
-     * 8000 Hz even though it actually samples at 16 kHz.  Asking for
-     * G722@16000 makes switch_core_codec_init log
-     *   "Codec G722 Exists but not at the desired implementation"
-     * and leave the codec uninitialized.  Use 8000 here for the lookup
-     * only — ch->sample_rate stays 16000 for media-frame math. */
+     * 8000 Hz even though it actually samples at 16 kHz. */
     case IVP_CODEC_G722:  codec_name = "G722"; rate = 8000;  break;
     case IVP_CODEC_PCM:   codec_name = "L16";  rate = 8000;  break;
     default:              codec_name = "PCMU"; rate = 8000;  break;
     }
 
-    /* FreeSWITCH only registers a small set of supported ptimes per codec
-     * (typically 10/20/30 ms).  The IVP provisioning cadence
-     * (ch->ptime_ms, e.g. 128 ms for G.722 at 8 frames * 16 ms) is a
-     * protocol-layer concept and must NOT be passed straight to
-     * switch_core_codec_init() or it logs
-     *   "Codec G722 Exists but not at the desired implementation"
-     * and leaves the codec uninitialized.  Use a standard 20 ms ptime
-     * for the FreeSWITCH codec; ch->ptime_ms is preserved for IVP
-     * packetization math. */
+    /* Fixed 20 ms — matches the IVP wire cadence exactly (160 bytes/frame for
+     * G.722, 160 bytes/frame for G.711).  write_frame therefore delivers one
+     * complete IVP packet per callback with no accumulation needed. */
     codec_ms = 20;
-
     if (switch_core_codec_init(&ch->read_codec, codec_name, NULL,
             NULL, rate, codec_ms, 1,
             SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE,
             NULL, switch_core_session_get_pool(session)) != SWITCH_STATUS_SUCCESS) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "mod_ivcore: read codec init failed for %s\n", codec_name);
+            "mod_ivcore: read codec init failed for %s at 20 ms\n", codec_name);
         return SWITCH_STATUS_FALSE;
     }
 
@@ -312,13 +306,47 @@ static switch_status_t ivcore_setup_codecs(switch_core_session_t *session,
             SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE,
             NULL, switch_core_session_get_pool(session)) != SWITCH_STATUS_SUCCESS) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-            "mod_ivcore: write codec init failed for %s\n", codec_name);
+            "mod_ivcore: write codec init failed for %s at 20 ms\n", codec_name);
         switch_core_codec_destroy(&ch->read_codec);
         return SWITCH_STATUS_FALSE;
     }
 
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+        "mod_ivcore: codec %s initialized at 20 ms (%d bytes/frame)\n",
+        codec_name, codec_ms * 8);
+
     switch_core_session_set_read_codec(session,  &ch->read_codec);
     switch_core_session_set_write_codec(session, &ch->write_codec);
+
+    /* TX pacer — mirrors mod_sofia's <param name="timer-name"> behaviour.
+     * "none" disables pacing entirely (channel_write_frame sends as fast as
+     * FreeSWITCH delivers).  "soft" (default) gates each write to the
+     * negotiated ptime, eliminating the "hurried/distorted" symptom for
+     * tone_stream / playback sources that have no read-leg back-pressure.
+     * Any other value is passed through to switch_core_timer_init() so the
+     * full set of installed FreeSWITCH timer modules can be selected. */
+    if (!ch->write_timer_inited) {
+        const char *tname = ch->params.timer_name[0] ? ch->params.timer_name : "soft";
+        if (!strcasecmp(tname, "none")) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+                "mod_ivcore: TX pacing disabled (timer-name=none)\n");
+        } else {
+            int samples_per_tick = (rate / 1000) * codec_ms;
+            if (switch_core_timer_init(&ch->write_timer, tname, codec_ms,
+                    samples_per_tick,
+                    switch_core_session_get_pool(session)) == SWITCH_STATUS_SUCCESS) {
+                ch->write_timer_inited = SWITCH_TRUE;
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+                    "mod_ivcore: TX pacer '%s' init at %d ms / %d samples\n",
+                    tname, codec_ms, samples_per_tick);
+            } else {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+                    "mod_ivcore: TX pacer '%s' init failed — falling back to unpaced\n",
+                    tname);
+            }
+        }
+    }
+
     return SWITCH_STATUS_SUCCESS;
 }
 
@@ -446,7 +474,7 @@ static switch_call_cause_t channel_outgoing_channel(
 		goto fail;
 	}
 
-	/* Start the recv thread BEFORE sending NEW so we cannot miss the ACCEPT. */
+	/* Start recv thread BEFORE sending NEW. */
 	ch->running = SWITCH_TRUE;
 	{
 		switch_threadattr_t *tattr;
@@ -491,45 +519,32 @@ static switch_status_t channel_read_frame(switch_core_session_t *session,
 	if (!ch || ch->call_state == IVC_STATE_HANGUP)
 		return SWITCH_STATUS_FALSE;
 
-	/* While waiting for ACCEPT, yield briefly so we don't busy-spin. */
+	/* While waiting for ACCEPT, yield one frame interval and return CNG. */
 	if (ch->call_state == IVC_STATE_CONNECTING) {
-		switch_yield(ch->ptime_ms * 1000);
-		memset(ch->read_frame_data, 0, sizeof(ch->read_frame_data));
+		switch_yield(20 * 1000);
+		memset(ch->read_frame_data, 0, 160);
 		ch->read_frame.data    = ch->read_frame_data;
-		ch->read_frame.datalen = (ch->active_codec == IVP_CODEC_PCM)
-			? (uint32_t)(ch->ptime_ms * 16) : (uint32_t)(ch->ptime_ms * 8);
+		ch->read_frame.datalen = 160;
 		ch->read_frame.buflen  = (uint32_t)sizeof(ch->read_frame_data);
-		/* G.722 is registered in FreeSWITCH at 8 kHz (legacy RTP clock).
-		 * samples = datalen (1 encoded byte = 1 RTP-clock sample at 8 kHz).
-		 * Do NOT multiply by 2 — that would make the RTP timestamp advance
-		 * at 16 kHz, causing the far end to play audio at 2× speed. */
-		ch->read_frame.samples = ch->read_frame.datalen;
+		ch->read_frame.samples = 320;   /* G.722: 20 ms × 16 kHz */
+		ch->read_frame.rate    = 16000;
 		ch->read_frame.codec   = &ch->read_codec;
 		ch->read_frame.flags   = SFF_CNG;
-		ch->read_frame.rate    = 8000;
 		*frame = &ch->read_frame;
 		return SWITCH_STATUS_SUCCESS;
 	}
 
-	if (ch->active_codec == IVP_CODEC_PCM)
-		frame_bytes = (uint32_t)(ch->ptime_ms * 16);
-	else
-		frame_bytes = (uint32_t)(ch->ptime_ms * 8);
-
-	if (frame_bytes > sizeof(ch->read_frame_data))
-		frame_bytes = (uint32_t)sizeof(ch->read_frame_data);
+	/* Fixed 160 bytes / 20 ms / 320 samples — matches the negotiated
+	 * G.722 provisioning (frameSize=160, frameTime=20, fpp=1). */
+	frame_bytes = 160;
 
 	avail = ring_available(&ch->rx_ring);
 	if (avail >= frame_bytes) {
 		ring_read(&ch->rx_ring, ch->read_frame_data, frame_bytes);
 		ch->read_frame.flags = 0;
 	} else {
-		/* No audio packet ready yet — sleep for one packet interval before
-		 * returning silence.  Without this yield the session thread spins at
-		 * full CPU speed (one read_frame call every few microseconds), burning
-		 * an entire core per channel.  This mirrors the CONNECTING path above
-		 * and is the same pattern used by mod_portaudio and mod_alsa. */
-		switch_yield((switch_interval_time_t)(ch->ptime_ms ? ch->ptime_ms : 20) * 1000);
+		/* No packet ready yet — yield one frame interval and send CNG. */
+		switch_yield(20 * 1000);
 		memset(ch->read_frame_data, 0, frame_bytes);
 		ch->read_frame.flags = SFF_CNG;
 	}
@@ -537,13 +552,9 @@ static switch_status_t channel_read_frame(switch_core_session_t *session,
 	ch->read_frame.data    = ch->read_frame_data;
 	ch->read_frame.datalen = frame_bytes;
 	ch->read_frame.buflen  = (uint32_t)sizeof(ch->read_frame_data);
-	/* G.722 RTP clock = 8 kHz: 1 encoded byte = 1 RTP-clock sample.
-	 * samples = frame_bytes for all codecs here (G.722 at 8 kHz,
-	 * G.711 at 8 kHz, PCM at 8 kHz).  Multiplying by 2 would advance
-	 * the RTP timestamp at 16 kHz and play audio at double speed. */
-	ch->read_frame.samples = frame_bytes;
+	ch->read_frame.samples = 320;   /* G.722: 20 ms × 16 kHz */
+	ch->read_frame.rate    = 16000;
 	ch->read_frame.codec   = &ch->read_codec;
-	ch->read_frame.rate    = 8000;
 
 	*frame = &ch->read_frame;
 	return SWITCH_STATUS_SUCCESS;
@@ -563,26 +574,133 @@ static switch_status_t channel_write_frame(switch_core_session_t *session,
 	if (!ch || ch->call_state != IVC_STATE_UP)
 		return SWITCH_STATUS_SUCCESS;
 
+	/* Skip comfort-noise/silence marker frames — they are FS-internal
+	 * placeholders and must not be forwarded as real G.722 audio. */
+	if (frame->flags & SFF_CNG)
+		return SWITCH_STATUS_SUCCESS;
+
+	/* Pace to the negotiated 20 ms wire cadence.  Without this, sources
+	 * like tone_stream/playback (no read-leg back-pressure) blast frames
+	 * back-to-back and the matrix renders them "hurried/distorted".
+	 *
+	 * When `ivc debug on`, capture three numbers per write:
+	 *   arr_us   = wall-clock between this write_frame and the previous one
+	 *              BEFORE the pacer runs.  Small (<5 ms) means FS is firing
+	 *              writes back-to-back — exactly the "hurried" symptom.
+	 *   sleep_us = how long switch_core_timer_next() actually blocked.
+	 *              Should be ≈ (ptime - arr_us) when FS is too fast, ≈0 when
+	 *              FS is already paced upstream (e.g. bridged RTP).
+	 *   datalen / call_state / codec — sanity context.
+	 *
+	 * Aggregated min/avg/max for arr & sleep are dumped once per second so the
+	 * log isn't drowned at 50 frames/s. */
+	{
+		switch_bool_t dbg = (ivcore_globals.debug == SWITCH_TRUE) ? SWITCH_TRUE : SWITCH_FALSE;
+		switch_time_t entry_us = dbg ? switch_micro_time_now() : 0;
+		switch_time_t after_pace_us;
+		uint32_t arr_us = 0;
+		uint32_t sleep_us = 0;
+
+		if (dbg && ch->tx_dbg_last_entry_us != 0) {
+			arr_us = (uint32_t)(entry_us - ch->tx_dbg_last_entry_us);
+		}
+		if (dbg) {
+			ch->tx_dbg_last_entry_us = entry_us;
+		}
+
+		if (ch->write_timer_inited) {
+			switch_core_timer_next(&ch->write_timer);
+		}
+
+		if (dbg) {
+			after_pace_us = switch_micro_time_now();
+			sleep_us = (uint32_t)(after_pace_us - entry_us);
+
+			/* Update rolling stats. */
+			if (ch->tx_dbg_frames == 0) {
+				ch->tx_dbg_arr_min_us   = arr_us;
+				ch->tx_dbg_arr_max_us   = arr_us;
+				ch->tx_dbg_sleep_min_us = sleep_us;
+				ch->tx_dbg_sleep_max_us = sleep_us;
+				ch->tx_dbg_arr_sum_us   = 0;
+				ch->tx_dbg_sleep_sum_us = 0;
+				ch->tx_dbg_last_log_us  = after_pace_us;
+			} else {
+				if (arr_us   < ch->tx_dbg_arr_min_us)   ch->tx_dbg_arr_min_us   = arr_us;
+				if (arr_us   > ch->tx_dbg_arr_max_us)   ch->tx_dbg_arr_max_us   = arr_us;
+				if (sleep_us < ch->tx_dbg_sleep_min_us) ch->tx_dbg_sleep_min_us = sleep_us;
+				if (sleep_us > ch->tx_dbg_sleep_max_us) ch->tx_dbg_sleep_max_us = sleep_us;
+			}
+			ch->tx_dbg_arr_sum_us   += arr_us;
+			ch->tx_dbg_sleep_sum_us += sleep_us;
+			ch->tx_dbg_frames++;
+
+			/* Per-frame trace (DEBUG level so it's only seen when both
+			 * `ivc debug on` AND the FS log level is at DEBUG). */
+			IVC_LOG_DEBUG("mod_ivcore: TX pacer frame#%u arr=%u us sleep=%u us "
+				"datalen=%u flags=0x%X\n",
+				(unsigned)ch->tx_dbg_frames,
+				(unsigned)arr_us, (unsigned)sleep_us,
+				(unsigned)frame->datalen, (unsigned)frame->flags);
+
+			/* Once-per-second summary at INFO level so it shows up in the
+			 * normal log without spamming. */
+			if (after_pace_us - ch->tx_dbg_last_log_us >= 1000000) {
+				uint32_t n = ch->tx_dbg_frames;
+				uint32_t arr_avg   = (uint32_t)(ch->tx_dbg_arr_sum_us   / (n ? n : 1));
+				uint32_t sleep_avg = (uint32_t)(ch->tx_dbg_sleep_sum_us / (n ? n : 1));
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+					"mod_ivcore: TX pacer 1s stats  frames=%u  "
+					"arr min/avg/max=%u/%u/%u us  "
+					"sleep min/avg/max=%u/%u/%u us  "
+					"timer=%s\n",
+					(unsigned)n,
+					(unsigned)ch->tx_dbg_arr_min_us, (unsigned)arr_avg, (unsigned)ch->tx_dbg_arr_max_us,
+					(unsigned)ch->tx_dbg_sleep_min_us, (unsigned)sleep_avg, (unsigned)ch->tx_dbg_sleep_max_us,
+					ch->write_timer_inited ? (ch->params.timer_name[0] ? ch->params.timer_name : "soft") : "none");
+				ch->tx_dbg_frames      = 0;
+				ch->tx_dbg_last_log_us = after_pace_us;
+			}
+		}
+	}
+
 	if (frame->datalen > 0) {
-		switch_time_t now = switch_micro_time_now();
-		/* Diagnostic: log first 10 writes and then 1 in 50 so we can see
-		 * the actual cadence and payload size FreeSWITCH is driving us at.
-		 * If the audio sounds 2x fast, this should show either 10 ms gaps
-		 * between writes or 320-byte datalens. */
 		static uint32_t s_write_count = 0;
-		switch_time_t delta_us = (ch->last_write_us != 0)
-			? (now - ch->last_write_us) : 0;
-		if (s_write_count < 10 || (s_write_count % 50) == 0) {
+		if (s_write_count < 20) {
+			/* Full diagnostic on first 20 frames: show flags, size, rate,
+			 * and a hex dump of the first 32 bytes so we can verify the
+			 * codec bytes look like G.722 (not PCM, not silence, not junk). */
+			char hexbuf[128] = {0};
+			const uint8_t *d = (const uint8_t *)frame->data;
+			uint32_t dump = frame->datalen < 32 ? frame->datalen : 32;
+			uint32_t hi;
+			for (hi = 0; hi < dump; hi++)
+				switch_snprintf(hexbuf + hi * 3, sizeof(hexbuf) - hi * 3,
+					"%02X ", d[hi]);
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-				"mod_ivcore: TX media #%u datalen=%u samples=%u rate=%u "
-				"flags=0x%X delta=%lldus\n",
+				"mod_ivcore: TX #%u datalen=%u samples=%u rate=%u flags=0x%X "
+				"codec_impl=%s  [%s...]\n",
+				(unsigned)s_write_count,
+				(unsigned)frame->datalen,
+				(unsigned)frame->samples,
+				(unsigned)frame->rate,
+				(unsigned)frame->flags,
+				ch->write_codec.implementation
+					? ch->write_codec.implementation->iananame : "?",
+				hexbuf);
+		} else if ((s_write_count % 200) == 0) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+				"mod_ivcore: TX #%u datalen=%u samples=%u rate=%u flags=0x%X\n",
 				(unsigned)s_write_count, (unsigned)frame->datalen,
 				(unsigned)frame->samples, (unsigned)frame->rate,
-				(unsigned)frame->flags, (long long)delta_us);
+				(unsigned)frame->flags);
 		}
 		s_write_count++;
+
+		/* FS is initialised at 20 ms so write_frame always delivers exactly
+		 * 160 bytes — one complete IVP packet.  Send it directly. */
+		ch->last_write_us = switch_micro_time_now();
 		ivp_send_media(ch, (const uint8_t *)frame->data, (int)frame->datalen);
-		ch->last_write_us = now;
 	}
 
 	return SWITCH_STATUS_SUCCESS;
@@ -610,12 +728,26 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 
 	/* Signal the matrix BEFORE sending IVP HANGUP.  The IVC card stops
 	 * forwarding Data frames once it processes a HANGUP, so the 0x93
-	 * KeyStatusUpdate must go out first or CPUApp never sees it. */
-	if (ch->dpi_send_cb &&
-		(ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_OUT ||
-		 ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_OUT)) {
-		ivp_dpi_send_key_status_update(ch, /*press*/  1, ch->dpi_send_cb);
-		ivp_dpi_send_key_status_update(ch, /*release*/0, ch->dpi_send_cb);
+	 * KeyStatusUpdate must go out first or CPUApp never sees it.
+	 *
+	 * Always send the panel-initiated 0xF4 disconnect request whenever
+	 * dpi_state indicates the port was in any telephony-active state.
+	 * This clears CPUApp's dial buffer so the next dial is clean.
+	 * Note: we send the panel-request form [0xF4][reason], NOT the reply
+	 * form [0xF4][success] — the latter is only processed by CPUApp when
+	 * it was the one that originated the disconnect. */
+	if (ch->dpi_send_cb) {
+		if (ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_OUT ||
+			ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_OUT) {
+			ivp_dpi_send_key_status_update(ch, /*press*/  1, ch->dpi_send_cb);
+			ivp_dpi_send_key_status_update(ch, /*release*/0, ch->dpi_send_cb);
+		}
+		/* Send in all non-idle telephony states so CPUApp always resets. */
+		if (ch->dpi_state != (uint8_t)IVP_SIP_STATE_ON_HOOK) {
+			ivp_dpi_send_disconnect_reply(ch,
+				(uint8_t)IVP_SIP_REASON_LOCAL_END,
+				ch->dpi_send_cb);
+		}
 	}
 
 	if (ch->call_state == IVC_STATE_UP || ch->call_state == IVC_STATE_CONNECTING)
@@ -632,6 +764,11 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 
 	switch_core_codec_destroy(&ch->read_codec);
 	switch_core_codec_destroy(&ch->write_codec);
+
+	if (ch->write_timer_inited) {
+		switch_core_timer_destroy(&ch->write_timer);
+		ch->write_timer_inited = SWITCH_FALSE;
+	}
 
 	/* Re-establish the standing IVP session so the matrix can dial again
 	 * without a module reload.  A brief delay lets the IVC card fully
@@ -875,6 +1012,7 @@ static switch_status_t load_config(void)
 		c->udp_port = IVC_UDP_PORT;
 		c->codec    = 'u';
 		c->ptime_ms = 20;
+		switch_copy_string(c->timer_name, "soft",     sizeof(c->timer_name));
 		switch_copy_string(c->context,   "default",   sizeof(c->context));
 		switch_copy_string(c->server_ip, "127.0.0.1", sizeof(c->server_ip));
 
@@ -889,6 +1027,7 @@ static switch_status_t load_config(void)
 			else if (!strcasecmp(n, "context"))        switch_copy_string(c->context,        v, sizeof(c->context));
 			else if (!strcasecmp(n, "codec"))          c->codec    = v[0];
 			else if (!strcasecmp(n, "ptime"))          c->ptime_ms = atoi(v);
+			else if (!strcasecmp(n, "timer-name"))     switch_copy_string(c->timer_name,     v, sizeof(c->timer_name));
 			else if (!strcasecmp(n, "encryption-key")) switch_copy_string(c->encryption_key, v, sizeof(c->encryption_key));
 			else if (!strcasecmp(n, "auth-key"))       switch_copy_string(c->auth_key,       v, sizeof(c->auth_key));
 			else if (!strcasecmp(n, "autoconnect"))    c->autoconnect = switch_true(v) ? SWITCH_TRUE : SWITCH_FALSE;

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * mod_ivcore.h
  *
  * FreeSWITCH endpoint module for IVC/IVP intercom protocol.
@@ -308,15 +308,20 @@ typedef struct {
 	 * Copied from ivcore_port_t.device_type; defaults to "lqsip".
 	 */
 	char     device_type[32];
+
+	/**
+	 * TX pacing timer name — copied from ivcore_card_t.timer_name.
+	 * "soft" (default), "none", or any FreeSWITCH timer module name.
+	 */
+	char     timer_name[32];
 } ivcore_conn_params_t;
 
 /* -----------------------------------------------------------------------
  * Per-channel structure
  *
  * Each active FreeSWITCH channel that routes through IVCore owns one of
- * these.  The IVP receive thread writes decoded PCM into rx_ring; the
- * FreeSWITCH read_frame callback drains it.  The write_frame callback
- * fills tx_ring; the IVP send thread drains it.
+ * these.  The IVP receive thread writes encoded audio into rx_ring;
+ * read_frame drains it.  write_frame calls ivp_send_media() directly.
  * --------------------------------------------------------------------- */
 
 typedef struct ivcore_channel_s {
@@ -327,6 +332,31 @@ typedef struct ivcore_channel_s {
 	switch_codec_t         write_codec;
 	switch_frame_t         read_frame;
 	uint8_t                read_frame_data[IVC_MAX_FRAME_BYTES];
+
+	/**
+	 * 20 ms wall-clock pacer for channel_write_frame.  FreeSWITCH can deliver
+	 * write frames much faster than ptime when the source is tone_stream or
+	 * playback (no read-leg back-pressure), which makes the matrix render the
+	 * audio "hurried/distorted".  switch_core_timer_next() blocks each write
+	 * call to the negotiated cadence — same pattern used by mod_sofia / RTP. */
+	switch_timer_t         write_timer;
+	switch_bool_t          write_timer_inited;
+
+	/* TX pacing diagnostics (only updated when ivcore_globals.debug is TRUE).
+	 * Inter-arrival = time between successive channel_write_frame() calls
+	 * BEFORE the pacer blocks (= how fast FS is delivering audio).
+	 * Sleep        = microseconds switch_core_timer_next() actually blocked
+	 *                (= how much pacing is being applied).
+	 * Stats are logged once per second and reset. */
+	switch_time_t          tx_dbg_last_entry_us;   /**< prev write entry timestamp */
+	switch_time_t          tx_dbg_last_log_us;     /**< when stats were last dumped */
+	uint32_t               tx_dbg_frames;          /**< writes since last log */
+	uint32_t               tx_dbg_arr_min_us;
+	uint32_t               tx_dbg_arr_max_us;
+	uint64_t               tx_dbg_arr_sum_us;
+	uint32_t               tx_dbg_sleep_min_us;
+	uint32_t               tx_dbg_sleep_max_us;
+	uint64_t               tx_dbg_sleep_sum_us;
 
 	/* Network */
 	ivcore_conn_params_t   params;
@@ -348,21 +378,23 @@ typedef struct ivcore_channel_s {
 	ivp_audio_codec_t      active_codec;
 	int                    sample_rate;  /**< 8000 or 16000 Hz */
 
-	/* Ring buffers — one per direction, PCM 16-bit signed */
+	/* Receive ring buffer — ivp_recv_loop writes, channel_read_frame reads.
+	 * No tx_ring needed: channel_write_frame calls ivp_send_media() directly. */
 	ivcore_ring_buffer_t   rx_ring;      /**< IVP → FreeSWITCH (inbound audio)  */
-	ivcore_ring_buffer_t   tx_ring;      /**< FreeSWITCH → IVP (outbound audio) */
 
-	/* Receive thread */
+	/* Receive / Transmit threads */
 	switch_thread_t       *rx_thread;
+	switch_thread_t       *tx_thread;  /**< Dedicated 8 ms TX pacer thread */
 	switch_bool_t          running;
 
 	/* Silence padding when rx_ring is starved */
-	uint32_t               ptime_ms;     /**< Packet time in ms (default 20)    */
+	uint32_t               ptime_ms;     /**< IVP wire cadence in ms (e.g. 8 for lqsip G.722) */
 
 	/** Timestamp (switch_micro_time_now) of the last real audio packet sent by
 	 *  channel_write_frame.  The recv-loop silence keep-alive checks this to
 	 *  avoid doubling the media rate when FreeSWITCH is actively sending audio. */
 	volatile switch_time_t last_write_us;
+
 
 	/* HDLC data-link state for the IVP Data channel (type=7 sub=1).
 	 * Forward-declared; defined in ivp_hdlc.h. */
@@ -388,10 +420,18 @@ typedef struct ivcore_channel_s {
 	switch_bool_t          dpi_dial_pending;       /**< TRUE when a complete 0xF1 dial string is ready to route */
 	switch_bool_t          dpi_dial_cont_active;   /**< TRUE while accumulating a multi-packet 0xF1 sequence (cont=1) */
 	volatile switch_bool_t hdlc_reset_pending;     /**< Set by HDLC SABME handler; cleared by recv loop to re-sync IVP in_sequence */
-	/* Stored HDLC send callback — set in ivp_transport.c when the HDLC link
-	 * comes up so that proactive DPI sends (e.g. 0xF1 ConnectReply on SIP
-	 * answer, 0x93 KeyStatusUpdate on hangup) can be issued from mod_ivcore.c
-	 * without access to the static ivp_send_data_frame. */
+	/* Stored HDLC send callback — set in ivp_transport.c when the first IVP
+	 * Data (HDLC) frame is received inside ivp_recv_loop.  Allows proactive
+	 * DPI sends (e.g. 0xF1 ConnectReply on SIP answer, 0x93 KeyStatusUpdate
+	 * on hangup) from mod_ivcore.c without access to the static
+	 * ivp_send_data_frame.
+	 *
+	 * MUST be initialised to NULL on channel allocation (ivcore_channel_alloc).
+	 * Every call site in mod_ivcore.c MUST guard with a NULL check — this
+	 * pointer is not valid until the HDLC link is established, and SIP
+	 * state-machine callbacks (answer, hangup) can fire before that point.
+	 * Calling an uninitialised pointer causes an 0xC0000005 access violation
+	 * in debug builds (MSVC fills unset memory with 0xCC). */
 	switch_status_t      (*dpi_send_cb)(struct ivcore_channel_s *ch,
 										const uint8_t *frame, int frame_len);
 
@@ -457,6 +497,21 @@ typedef struct {
 	char codec;                 /**< 'u'=µ-law 'a'=A-law 'g'=G.722 'p'=PCM  */
 	int  ptime_ms;              /**< Packetisation time in ms (default 20)    */
 
+	/**
+	 * TX pacing timer name — same semantics as mod_sofia's <param name="timer-name">.
+	 * Supported values:
+	 *   "soft"  (default) — software wall-clock timer; gates channel_write_frame
+	 *                       to the negotiated ptime, eliminating the "hurried"
+	 *                       symptom for tone_stream / playback sources.
+	 *   "none"            — no pacing; channel_write_frame sends as fast as
+	 *                       FreeSWITCH delivers.  Use only when the upstream
+	 *                       leg is already paced (e.g. bridged RTP) and the
+	 *                       extra timer overhead is undesirable.
+	 * Any other value is passed through to switch_core_timer_init() verbatim,
+	 * matching the full set of timer modules FreeSWITCH supports.
+	 */
+	char timer_name[32];
+
 	/* FreeSWITCH routing */
 	char context[64];           /**< Dialplan context for inbound calls       */
 
@@ -513,6 +568,7 @@ switch_status_t ivp_send_media(ivcore_channel_t *ch,
 								const uint8_t *payload, int payload_len);
 void            ivp_transport_close(ivcore_channel_t *ch);
 void           *ivp_recv_loop(switch_thread_t *thread, void *obj);
+void           *ivp_tx_loop(switch_thread_t *thread, void *obj);
 
 /* mod_ivcore.c — card/port lookup */
 const ivcore_card_t *ivcore_card_find(const char *card_name);

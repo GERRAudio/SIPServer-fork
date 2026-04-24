@@ -310,9 +310,21 @@ switch_status_t ivp_hdlc_on_data(ivcore_channel_t *ch,
 					ch->dpi_state = 1; /* IVP_SIP_STATE_ON_HOOK_ALLOCATED */
 
 				/* PanelReset (0x92) is the first thing a real device sends
-				 * after the HDLC link comes up.  Without it the matrix never
-				 * marks the port online or sends 0xF1 dial-out commands. */
-				ivp_dpi_send_panel_reset(ch, send_cb);
+					 * after the HDLC link comes up.  Without it the matrix never
+					 * marks the port online or sends 0xF1 dial-out commands. */
+					ivp_dpi_send_panel_reset(ch, send_cb);
+
+					/* Proactively clear any leftover SIP telephony state in
+					 * CPUApp's dial buffer.  If a previous IVP session ended
+					 * without a clean 0xF4 exchange (e.g. the HDLC channel
+					 * closed before our hangup DPI message was delivered),
+					 * CPUApp keeps the old dial string in memory.  The next
+					 * 0xF1 from the matrix would then prepend those stale
+					 * digits, doubling every dial string.  Sending 0xF4 here,
+					 * before any 0x80 PanelTypeRequest, resets CPUApp's state
+					 * machine unconditionally on every fresh HDLC link. */
+					ivp_dpi_send_disconnect_reply(ch,
+						(uint8_t)IVP_SIP_REASON_LOCAL_END, send_cb);
 			} else if (u == 0x63) {
 				/* UA — server acknowledged our SABME (we did not send one
 				 * but log for completeness). */

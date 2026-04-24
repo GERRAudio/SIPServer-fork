@@ -37,6 +37,10 @@
   │  context     FreeSWITCH dialplan context for inbound calls         │
   │  codec       u = G.711 µ-law  a = G.711 A-law  g = G.722  p = PCM │
   │  ptime       Packetisation time in ms   (default: 20)              │
+  │  timer-name  TX pacer (mod_sofia-style)  (default: soft)           │
+  │                soft   — software wall-clock (recommended)          │
+  │                none   — disable pacing; send as fast as FS delivers│
+  │                <other> — any installed FreeSWITCH timer module     │
   │  encryption-key  IVP encryption key (omit = none)                  │
   │  auth-key        IVP authentication key (omit = none)              │
   │                                                                     │
@@ -67,6 +71,7 @@
       <param name="context"   value="default"/>
       <param name="codec"     value="u"/>  <!-- G.711 µ-law -->
       <param name="ptime"     value="20"/>
+      <param name="timer-name" value="soft"/>  <!-- soft | none | <module> -->
 
       <port name="LQSIP1" username="lqsip1" password="password" type="lqsip"/>
     </card>

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -19,9 +19,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mod_ivcore</ProjectName>
-    <ProjectGuid>{A3B7C2D1-4E5F-4A6B-9C8D-0E1F2A3B4C5D}</ProjectGuid>
-    <RootNamespace>mod_ivcore</RootNamespace>
+    <ProjectName>mod_ptp_timer</ProjectName>
+    <ProjectGuid>{af98b743-b8f8-4f8b-a457-36a32688e463}</ProjectGuid>
+    <RootNamespace>mod_ptp_timer</RootNamespace>
     <Keyword>Win32Proj</Keyword>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -48,7 +48,6 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
-  <!-- Property sheets — same layout as all other FS endpoint modules -->
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\..\..\..\w32\module_release.props" />
@@ -69,98 +68,63 @@
   <PropertyGroup>
     <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
   </PropertyGroup>
-  <!-- ================================================================
-       Debug | Win32
-  ================================================================ -->
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;MOD_EXPORTS;ALLOW_SMP_DANGERS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>
       </PrecompiledHeader>
-      <DisableSpecificWarnings>4100;4101;4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <DataExecutionPrevention>
+      </DataExecutionPrevention>
     </Link>
   </ItemDefinitionGroup>
-  <!-- ================================================================
-       Debug | x64
-  ================================================================ -->
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Midl>
       <TargetEnvironment>X64</TargetEnvironment>
     </Midl>
     <ClCompile>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;MOD_EXPORTS;ALLOW_SMP_DANGERS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>
       </PrecompiledHeader>
-      <DisableSpecificWarnings>4100;4101;4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <DataExecutionPrevention>
+      </DataExecutionPrevention>
       <TargetMachine>MachineX64</TargetMachine>
     </Link>
   </ItemDefinitionGroup>
-  <!-- ================================================================
-       Release | Win32
-  ================================================================ -->
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>ALLOW_SMP_DANGERS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>
       </PrecompiledHeader>
-      <DisableSpecificWarnings>4100;4101;4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <DataExecutionPrevention>
+      </DataExecutionPrevention>
     </Link>
   </ItemDefinitionGroup>
-  <!-- ================================================================
-       Release | x64
-  ================================================================ -->
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Midl>
       <TargetEnvironment>X64</TargetEnvironment>
     </Midl>
     <ClCompile>
-      <PreprocessorDefinitions>ALLOW_SMP_DANGERS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>
       </PrecompiledHeader>
-      <DisableSpecificWarnings>4100;4101;4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <DataExecutionPrevention>
+      </DataExecutionPrevention>
       <TargetMachine>MachineX64</TargetMachine>
     </Link>
   </ItemDefinitionGroup>
-  <!-- ================================================================
-       Source / header files
-  ================================================================ -->
   <ItemGroup>
-    <ClCompile Include="ivp_dpi.c" />
-    <ClCompile Include="ivp_hdlc.c" />
-    <ClCompile Include="ivp_transport.c" />
-    <ClCompile Include="mod_ivcore.c" />
+    <ClCompile Include="mod_ptp_timer.c" />
+    <ClCompile Include="ptp_source_linux.c" />
+    <ClCompile Include="ptp_source_windows.c" />
   </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="ivp_dpi.h" />
-    <ClInclude Include="ivp_hdlc.h" />
-    <ClInclude Include="mod_ivcore.h" />
-    <ClInclude Include="ivp_transport.h" />
-  </ItemGroup>
-  <!-- Config file — shows up in Solution Explorer, not compiled -->
-  <ItemGroup>
-    <None Include="conf\ivcore.conf.xml" />
-    <None Include="DEBUGGING.md" />
-    <None Include="Makefile" />
-  </ItemGroup>
-  <!-- ================================================================
-       Project references — mirrors mod_portaudio pattern
-  ================================================================ -->
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\libs\win32\apr\libapr.2017.vcxproj">
       <Project>{f6c55d93-b927-4483-bb69-15aef3dd2dff}</Project>
@@ -170,6 +134,10 @@
       <Project>{202d7a4e-760d-4d0e-afa1-d7459ced30ff}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="mod_ptp_timer.h" />
+    <ClInclude Include="ptp_source.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

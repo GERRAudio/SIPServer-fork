@@ -1,0 +1,35 @@
+<configuration name="ptp_timer.conf" description="PTP-disciplined timer module">
+  <!--
+    mod_ptp_timer registers a single FreeSWITCH timer named "ptp".
+    Use it from any module that takes a timer-name parameter, e.g.:
+
+       <param name="timer-name" value="ptp"/>
+
+    On Linux it talks to ptp4l over its UDS management socket.
+    On Windows it prefers the native PTP provider (%windir%\system32\ptpprov.dll)
+    and falls back to a PTPSync-backed DLL if the native provider is absent.
+
+    Status is exposed via:
+       fs_cli> ptp status        (plain text)
+       fs_cli> ptp status json   (single-line JSON)
+       fs_cli> ptp debug on|off
+
+    Events (SWITCH_EVENT_CUSTOM):
+       ptp::status                  fired every poll
+       ptp::sync_acquired           UNKNOWN/NONE/HOLDOVER -> LOCKED
+       ptp::sync_lost               LOCKED -> HOLDOVER/NONE
+       ptp::grandmaster_changed     grandmaster ID changed while LOCKED
+  -->
+  <settings>
+    <!-- Linux: path to ptp4l's management UDS (uds_address option) -->
+    <param name="ptp4l-socket" value="/var/run/ptp4l"/>
+
+    <!-- Windows: filename of the PTPSync fallback DLL (must export
+         PTPSync_Initialize, PTPSync_GetStatus, PTPSync_Shutdown).
+         Searched via the normal LoadLibrary path. -->
+    <param name="ptpsync-dll" value="PTPSyncNative.dll"/>
+
+    <!-- Verbose per-tick logging. Equivalent to "ptp debug on" at runtime. -->
+    <param name="debug" value="false"/>
+  </settings>
+</configuration>

@@ -102,6 +102,16 @@ switch_status_t ivp_dpi_send_key_status_update(ivcore_channel_t *ch,
 												ivp_hdlc_send_data_cb send_cb);
 
 /**
+ * Send a 0xF4 DisconnectOutgoingReply proactively to CPUApp.
+ * This tells the matrix the call has ended and clears its dial buffer
+ * so it does not prepend old digits to the next dial attempt.
+ * Call this on hangup after the 0x93 KeyStatusUpdate pair.
+ */
+switch_status_t ivp_dpi_send_disconnect_reply(ivcore_channel_t *ch,
+											  uint8_t reason,
+											  ivp_hdlc_send_data_cb send_cb);
+
+/**
  * Decode one inbound CSO+DPI message from an HDLC I-frame payload.
  *
  *   ch          per-channel context (dpi_state, dpi_init_sent, etc.).

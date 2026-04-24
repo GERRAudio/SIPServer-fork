@@ -327,16 +327,49 @@ static switch_status_t send_connect_reply(ivcore_channel_t *ch,
 	return send_dpi_msg(ch, msg, (int)sizeof(msg), send_cb);
 }
 
-/* 0xF4 DisconnectOutboundReply: [0xF4][bSuccess] */
+/* 0xF4 DisconnectOutboundReply: [0xF4][bSuccess]
+ * Sent in response to a rack-initiated 0xF4 request. */
 static switch_status_t send_disconnect_outbound_reply(ivcore_channel_t *ch,
-													   uint8_t success,
-													   ivp_hdlc_send_data_cb send_cb)
+											   uint8_t success,
+											   ivp_hdlc_send_data_cb send_cb)
 {
 	uint8_t msg[2] = { (uint8_t)IVP_DPI_DISCONNECT_OUTGOING, success };
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
 		"mod_ivcore: DPI -> 0xF4 DisconnectOutboundReply success=%u\n",
 		(unsigned)success);
 	return send_dpi_msg(ch, msg, (int)sizeof(msg), send_cb);
+}
+
+/* 0xF4 panel-initiated disconnect: [0xF4][reason]
+ * This is the SipDisconnectOutboundPanelRequest form — sent panel→rack when
+ * the PANEL wants to signal to CPUApp that the call has ended.  CPUApp
+ * processes this and clears its internal dial buffer.  This is distinct from
+ * send_disconnect_outbound_reply() ([0xF4][success]) which is a reply to a
+ * rack-initiated request and is silently ignored if no request was pending. */
+static switch_status_t send_disconnect_outbound_request(ivcore_channel_t *ch,
+													   uint8_t reason,
+													   ivp_hdlc_send_data_cb send_cb)
+{
+	uint8_t msg[2] = { (uint8_t)IVP_DPI_DISCONNECT_OUTGOING, reason };
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+		"mod_ivcore: DPI -> 0xF4 DisconnectOutboundRequest reason=%u\n",
+		(unsigned)reason);
+	return send_dpi_msg(ch, msg, (int)sizeof(msg), send_cb);
+}
+
+/* Public: send a panel-initiated 0xF4 disconnect to CPUApp.
+ * Uses the request form [0xF4][reason] so CPUApp processes it and clears
+ * its dial buffer — not the reply form [0xF4][success] which CPUApp ignores
+ * when no rack-initiated request was pending. */
+switch_status_t ivp_dpi_send_disconnect_reply(ivcore_channel_t *ch,
+											  uint8_t reason,
+											  ivp_hdlc_send_data_cb send_cb)
+{
+	ch->dpi_state            = (uint8_t)IVP_SIP_STATE_ON_HOOK_ALLOCATED;
+	ch->dpi_dial_buffer[0]   = '\0';
+	ch->dpi_dial_cont_active = SWITCH_FALSE;
+	ch->dpi_dial_pending     = SWITCH_FALSE;
+	return send_disconnect_outbound_request(ch, reason, send_cb);
 }
 
 /* =====================================================================
@@ -497,6 +530,7 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 		ch->dpi_state = (uint8_t)IVP_SIP_STATE_ON_HOOK_ALLOCATED;
 		ch->dpi_dial_buffer[0] = '\0';
 		ch->dpi_dial_cont_active = SWITCH_FALSE;
+		/* Rack initiated: reply with the reply form [0xF4][success=1] */
 		send_disconnect_outbound_reply(ch, /*success*/ 1, send_cb);
 		/* Only hang up the FreeSWITCH session if the SIP call was
 		 * actually in progress (ConnectedOut or ConnectingOut).

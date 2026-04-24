@@ -593,13 +593,13 @@ switch_status_t ivp_udp_open(ivcore_channel_t *ch)
 
 #ifdef _WIN32
 	{
-		DWORD tv_ms = 50;
+		DWORD tv_ms = 4;
 		setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv_ms, sizeof(tv_ms));
 	}
 #else
 	{
 		struct timeval tv;
-		tv.tv_sec = 0; tv.tv_usec = 50000;
+		tv.tv_sec = 0; tv.tv_usec = 4000;  /* 4 ms — tight enough for 8 ms IVP cadence */
 		setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 	}
 #endif
@@ -803,7 +803,9 @@ switch_status_t ivp_send_media(ivcore_channel_t *ch,
 	mhdr.src_call_number       = ch->local_call_number;
 	mhdr.recovery_sequence     = 0;
 	mhdr.redundancy_layers     = 0;
-	mhdr.media_length          = (uint16_t)payload_len;
+	/* media_length includes 12 bytes of meta overhead, matching the matrix's
+	 * own TX packets (observed: 64-byte audio → media_length=76). */
+	mhdr.media_length          = (uint16_t)(payload_len + 12);
 	mhdr.media_sequence_number = ch->media_sequence_out++;
 	mhdr.src_nq                = 0;
 	mhdr.src_type              = 0;
@@ -839,6 +841,18 @@ void ivp_transport_close(ivcore_channel_t *ch)
 		ch->tcp_sock = -1;
 	}
 	ch->call_state = IVC_STATE_IDLE;
+}
+
+/* ivp_tx_loop is intentionally removed.
+ * Silence keepalive is handled inside ivp_recv_loop so that only one
+ * thread ever calls sendto() for media — eliminating the race between
+ * the pacer and channel_write_frame that corrupted the G.722 stream.
+ * This stub exists only to satisfy any remaining references during
+ * the transition; it should not be launched. */
+void *ivp_tx_loop(switch_thread_t *thread, void *obj)
+{
+    (void)thread; (void)obj;
+    return NULL;
 }
 
 /* =====================================================================
@@ -885,6 +899,12 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 
 	(void)thread;
 
+	/* Ensure the stored send-callback is NULL until the first HDLC Data
+	 * frame populates it.  In a debug build MSVC fills uninitialised struct
+	 * memory with 0xCC, so an unguarded call through this pointer before it
+	 * is set produces an 0xC0000005 access violation. */
+	ch->dpi_send_cb = NULL;
+
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
 		"mod_ivcore: recv loop started for channel %p\n", (void *)ch);
 
@@ -927,50 +947,26 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 			}
 		}
 
-		/* Silence media keep-alive while the call is UP.
-		 * ch->last_write_us is the single authoritative "last media sent"
-		 * clock, stamped by channel_write_frame() for real audio AND by
-		 * this path when silence is sent.  Using one clock guarantees
-		 * exactly one packet per interval regardless of which path fires,
-		 * preventing double-sends that make audio sound slow and repeated. */
+		/* Silence keepalive: if FreeSWITCH has not delivered real audio for
+		 * more than 200 ms, send one silence frame so the matrix media
+		 * watchdog does not hang up the call.  Only this thread (recv_loop)
+		 * calls ivp_send_media — channel_write_frame is the other sender but
+		 * it stamps last_write_us before calling ivp_send_media, so the
+		 * window below is always safe: if write_frame fires concurrently it
+		 * will have already updated last_write_us and we will skip. */
 		if (ch->call_state == IVC_STATE_UP) {
-			switch_time_t now = switch_micro_time_now();
-			uint32_t pkt_us = (ch->ptime_ms ? ch->ptime_ms : 20) * 1000;
-			switch_bool_t first_packet = (ch->last_write_us == 0);
-			if (first_packet || now - ch->last_write_us >= pkt_us) {
-				uint8_t silence[256];
-					int bytes;
-					uint8_t fill;
-					if (ch->active_codec == IVP_CODEC_G722) {
-						/* G.722 at 64 kbit/s, 20 ms → 160 bytes.
-						 * 0xFF is the G.722 idle/comfort-noise codeword
-						 * (matches IvpUdpTransport.cs silence sender). */
-						bytes = 160;
-						fill  = 0xFF;
-					} else if (ch->active_codec == IVP_CODEC_G711U ||
-							   ch->active_codec == IVP_CODEC_G711A) {
-						bytes = (int)ch->params.frame_size *
-								(int)ch->params.frames_per_packet;
-						fill  = 0x00;
-					} else {
-						bytes = (int)((ch->ptime_ms ? ch->ptime_ms : 20) * 8);
-						fill  = 0x00;
-					}
-					if (bytes <= 0) bytes = 160;
-					if (bytes > (int)sizeof(silence)) bytes = (int)sizeof(silence);
-					memset(silence, fill, (size_t)bytes);
-				{
-					switch_status_t mst = ivp_send_media(ch, silence, bytes);
-					if (first_packet) {
-						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-							"mod_ivcore: starting silence keep-alive (%d bytes / %u ms)\n",
-							bytes, (unsigned)(ch->ptime_ms ? ch->ptime_ms : 20));
-					} else if ((ch->media_sequence_out & 0x1F) == 0) {
-						IVC_LOG_DEBUG("mod_ivcore: TX silence mediaSeq=%u status=%d\n",
-							(unsigned)ch->media_sequence_out, (int)mst);
-					}
-				}
-				ch->last_write_us = now;
+			switch_time_t _now = switch_micro_time_now();
+			uint32_t _idle_us = (ch->ptime_ms ? ch->ptime_ms : 20) * 1000 * 10; /* 10 frames */
+			if (ch->last_write_us == 0 ||
+				(uint32_t)(_now - ch->last_write_us) >= _idle_us) {
+				int _pkt = (ch->params.frame_size > 0)
+					? (int)ch->params.frame_size : 160;
+				uint8_t _fill = (ch->active_codec == IVP_CODEC_G711U) ? 0xFF : 0x00;
+				uint8_t _sil[256];
+				if (_pkt > (int)sizeof(_sil)) _pkt = (int)sizeof(_sil);
+				memset(_sil, _fill, (size_t)_pkt);
+				ivp_send_media(ch, _sil, _pkt);
+				ch->last_write_us = _now;
 			}
 		}
 
@@ -1060,13 +1056,46 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 			if (hdr.frame_type == IVP_FRAME_PROTOCOL) {
 				switch ((ivp_proto_subclass_t)hdr.subclass) {
 
-				case IVP_PROTO_ACCEPT:
+				case IVP_PROTO_ACCEPT: {
+					int accept_payload_len = (int)n - IVP_PROTO_HEADER_SIZE;
 					ch->remote_call_number = hdr.src_call_number;
 					ch->call_state = IVC_STATE_UP;
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-						"mod_ivcore: ACCEPT received, remoteCallNo=0x%04X\n",
-						(unsigned)hdr.src_call_number);
+						"mod_ivcore: ACCEPT received, remoteCallNo=0x%04X payloadLen=%d\n",
+						(unsigned)hdr.src_call_number, accept_payload_len);
+					/* Parse IEs from ACCEPT to honour the matrix's negotiated
+					 * provisioning (frameSize / frameTime / framesPerPacket).
+					 * Mirrors ApplyNegotiatedProvisioning() in IvpUdpTransport.cs. */
+					if (accept_payload_len > 2) {
+						const uint8_t *ie = buf + IVP_PROTO_HEADER_SIZE;
+						const uint8_t *ie_end = ie + accept_payload_len;
+						while (ie + 2 <= ie_end) {
+							uint8_t ie_key = ie[0];
+							uint8_t ie_len = ie[1];
+							ie += 2;
+							if (ie + ie_len > ie_end) break;
+							if (ie_key == (uint8_t)IVP_IE_PROVISIONING && ie_len >= 6) {
+								uint16_t fs  = (uint16_t)(ie[0] | (ie[1] << 8)); /* LE */
+								uint16_t ft  = (uint16_t)(ie[2] | (ie[3] << 8));
+								uint16_t fpp = (uint16_t)(ie[4] | (ie[5] << 8));
+								switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+									"mod_ivcore: ACCEPT provisioning: frameSize=%u frameTime=%u fpp=%u "
+									"(was frameSize=%u frameTime=%u)\n",
+									(unsigned)fs, (unsigned)ft, (unsigned)fpp,
+									(unsigned)ch->params.frame_size,
+									(unsigned)ch->params.frame_time);
+								if (fs > 0)  ch->params.frame_size        = fs;
+								if (ft > 0)  ch->params.frame_time        = ft;
+								if (fpp > 0) ch->params.frames_per_packet = fpp;
+								ch->ptime_ms = (uint32_t)(ch->params.frame_time
+													* ch->params.frames_per_packet);
+								if (ch->ptime_ms == 0) ch->ptime_ms = 20;
+							}
+							ie += ie_len;
+						}
+					}
 					break;
+				}
 
 				case IVP_PROTO_HANGUP:
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
@@ -1139,7 +1168,11 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 			if (n < IVP_MEDIA_HEADER_SIZE) continue;
 
 			hdr_len = ivp_read_media_header(buf, &mhdr);
-			payload_len = (int)mhdr.media_length;
+			/* media_length on the wire includes 12 bytes of meta overhead
+			 * (matching what ivp_send_media adds on TX).  Subtract it to
+			 * get the actual audio payload length. */
+			payload_len = (int)mhdr.media_length - 12;
+			if (payload_len < 0) payload_len = 0;
 
 			if (hdr_len + payload_len > (int)n)
 				payload_len = (int)n - hdr_len;
