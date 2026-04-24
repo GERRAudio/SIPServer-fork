@@ -83,6 +83,12 @@ static void emit_one_packet(ravenna_stream_t *s, tx_state_t *st,
 	ravenna_net_send(s->tx_sock, &s->tx_dest,
 					 pktbuf, RAVENNA_RTP_HDR_SIZE + n);
 
+	/* ST 2022-7 — identical packet (same seq/ts/ssrc) to redundant path */
+	if (s->st2022_7 && s->tx2_sock != RAVENNA_INVALID_SOCKET) {
+		ravenna_net_send(s->tx2_sock, &s->tx2_dest,
+						 pktbuf, RAVENNA_RTP_HDR_SIZE + n);
+	}
+
 	s->tx_seq++;
 	s->tx_ts += (uint32_t)s->samples_per_packet;
 	s->tx_packets++;

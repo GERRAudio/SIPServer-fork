@@ -30,7 +30,9 @@
     <param name="rx-codec"          value="L24"/>
     <param name="tx-codec"          value="L24"/>
     <param name="rtp-payload-type"  value="98"/>
-    <param name="rtp-iface"         value="ens19"/>
+    <!-- Linux: interface name e.g. ens19, eth0
+         Windows: interface friendly-name e.g. "Ethernet 2", or dotted IPv4 -->
+    <param name="iface-primary"      value="ens19"/>
 
     <param name="debug"             value="false"/>
   </settings>
@@ -66,6 +68,45 @@
       <param name="tx-port"         value="5004"/>
       <param name="channels"        value="2"/>
       <param name="tx-codec"        value="L32"/>
+      <param name="ptime-ms"        value="1.0"/>
+    </stream>
+
+    <!--
+      SMPTE ST 2022-7 redundant stream example.
+
+      The transmitter sends identical RTP (same SSRC / seq / timestamp)
+      to two independent multicast groups on different network paths.
+      The receiver joins both; the dedup window drops the second copy of
+      any packet already delivered.  If one path fails, the other carries
+      the full stream transparently — no reconfiguration required.
+
+      Rules:
+        - st2022-7  must be "true"
+        - rx-address / rx-port   = primary multicast (path A)
+        - rx2-address / rx2-port = redundant multicast (path B)
+        - tx-address / tx-port   = primary TX destination
+        - tx2-address / tx2-port = redundant TX destination
+        - Both paths should be on physically separate switches/NICs.
+    -->
+    <stream name="st2022">
+      <param name="st2022-7"        value="true"/>
+      <!-- Path A — primary NIC.
+           Linux: ifname e.g. ens19    Windows: friendly-name e.g. "Ethernet 2" or dotted IP -->
+      <param name="iface-primary"   value="ens19"/>
+      <param name="rx-address"      value="239.69.10.1"/>
+      <param name="rx-port"         value="5004"/>
+      <param name="tx-address"      value="239.69.10.1"/>
+      <param name="tx-port"         value="5004"/>
+      <!-- Path B — secondary NIC (physically separate switch/plane).
+           Linux: ifname e.g. ens20    Windows: friendly-name e.g. "Ethernet 3" or dotted IP -->
+      <param name="iface-secondary" value="ens20"/>
+      <param name="rx2-address"     value="239.69.11.1"/>
+      <param name="rx2-port"        value="5004"/>
+      <param name="tx2-address"     value="239.69.11.1"/>
+      <param name="tx2-port"        value="5004"/>
+      <param name="channels"        value="2"/>
+      <param name="rx-codec"        value="L24"/>
+      <param name="tx-codec"        value="L24"/>
       <param name="ptime-ms"        value="1.0"/>
     </stream>
   </streams>

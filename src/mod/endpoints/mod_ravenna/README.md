@@ -165,13 +165,114 @@ Same procedure as `mod_ptp_timer`:
 
 ## Limits / TODO
 
-* No SAP discovery — streams are configured statically (matches AES67
-  module by design choice).
+* **IPv4 multicast only.**  AES67-2018 and the RAVENNA transport spec define
+  the session layer exclusively over IPv4 multicast (239.x.x.x, RFC 2365
+  administratively-scoped space).  No shipping AES67 or RAVENNA device uses
+  IPv6 multicast; IPv6 support is a deliberate non-goal.  `iface-primary` and
+  `iface-secondary` accept an IPv4 address on all platforms or a Linux
+  interface name on Linux — an IPv6 address will be silently ignored and
+  `INADDR_ANY` used instead.
 * No RTSP — multicast joins only.
 * L32 is non-standard for RTP and intended for routing trunks between
   cooperating instances.
-* Linux-side interface lookup accepts a dotted IP or an `ifname`. On
-  Windows, only a dotted IP is accepted today; an adapter-name lookup
-  via `GetAdaptersAddresses` is a clean follow-up.
+* Linux-side interface lookup accepts an interface name (`ens19`, `eth0`) or
+  a dotted IPv4 address. Windows accepts either an adapter friendly-name
+  (e.g. `"Ethernet 2"`), an adapter description, or a dotted IPv4 address;
+  lookup is case-insensitive via `GetAdaptersAddresses()`.
 * DTMF, hold-music injection, and per-call audio level reporting are
   not yet ported from `mod_aes67`.
+
+---
+
+## SMPTE ST 2022-7 Seamless Protection Switching
+
+SMPTE ST 2022-7 defines "Seamless Protection Switching of RTP Datagrams":
+an identical RTP stream is transmitted over **two independent network
+paths**. The receiver joins both; if a packet is lost on one path the
+duplicate from the other path carries it transparently.
+
+### How it works in mod_ravenna
+
+**Transmit side**
+
+Both paths share the same RTP session (same SSRC, sequence counter, and
+timestamp). `emit_one_packet()` in `ravenna_tx.c` sends the fully encoded
+buffer to `tx_dest` (path A) and then immediately to `tx2_dest` (path B)
+with a single additional `sendto()`. There is no re-encoding and no extra
+ring read — the same byte buffer is reused.
+
+**Receive side**
+
+`rx_sock` (path A) and `rx2_sock` (path B) are both added to the
+`poll()` / `WSAPoll()` reactor in `build_pollset()`. Both map to the same
+`ravenna_stream_t`. `handle_packet()` deduplicates by sequence number
+using a circular window (`dedup_win[RAVENNA_ST2022_WIN]`):
+
+```
+slot = seq % 2048
+if dedup_win[slot] == seq → duplicate, drop silently → increment rx_dedup_dropped
+else                       → dedup_win[slot] = seq, process normally
+```
+
+Window size 2048 comfortably exceeds the maximum expected inter-path
+latency difference at any practical network depth.
+
+**Failover**
+
+Fully automatic. If path A goes silent, all new `seq` values arrive on
+path B and are passed through unconditionally (their dedup slot has never
+been set). No configuration change, no reconnect, no state machine.
+
+### Configuration
+
+Add to a `<stream>` block:
+
+```xml
+<param name="st2022-7"        value="true"/>
+<!-- Path A — primary NIC
+     Linux: interface name (ens19, eth0 …)   Windows: dotted IPv4 (192.168.10.5) -->
+<param name="iface-primary"   value="ens19"/>
+<param name="rx-address"      value="239.69.10.1"/>
+<param name="rx-port"         value="5004"/>
+<param name="tx-address"      value="239.69.10.1"/>
+<param name="tx-port"         value="5004"/>
+<!-- Path B — secondary NIC (physically separate switch/plane)
+     Linux: interface name (ens20, eth1 …)   Windows: dotted IPv4 (192.168.11.5) -->
+<param name="iface-secondary" value="ens20"/>
+<param name="rx2-address"     value="239.69.11.1"/>
+<param name="rx2-port"        value="5004"/>
+<param name="tx2-address"     value="239.69.11.1"/>
+<param name="tx2-port"        value="5004"/>
+```
+
+A fully worked example is in `conf/ravenna.conf.xml` (stream `st2022`).
+
+If `st2022-7` is `false` (or omitted) the `rx2`/`tx2`/`iface-secondary` params are ignored
+and the stream operates as a single-path AES67 flow.
+
+If `iface-secondary` is omitted, path B sockets fall back to `rtp-iface` (same NIC as path A).
+This still deduplicates packets correctly but provides **no hardware redundancy** — both paths
+share the same NIC failure domain. Always set `iface-secondary` to a different physical adapter
+for real 2022-7 protection.
+
+### Diagnostics
+
+```
+ravenna streams
+```
+
+The `rx2-pkts` column shows packets received on path B.
+The `dedup-drop` column shows duplicates discarded (healthy 2022-7
+operation produces `dedup-drop ≈ rx2-pkts` when both paths are alive).
+
+### Network topology requirement
+
+For 2022-7 to provide real protection the two paths **must** be on
+physically independent infrastructure (separate switches, NICs, and — for
+broadcast facilities — separate SDN planes). Routing both multicast groups
+over the same switch defeats the redundancy.
+
+The standard recommends placing path A and path B on separate IP subnets
+with different multicast group addresses (as in the example above) rather
+than the same group on different interfaces.
+

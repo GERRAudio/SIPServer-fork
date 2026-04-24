@@ -99,6 +99,16 @@ typedef struct ravenna_endpoint_s ravenna_endpoint_t;
 typedef struct ravenna_session_s  ravenna_session_t;
 
 /* ------------------------------------------------------------------
+ *  SMPTE 2022-7 deduplication window
+ *
+ *  We keep a circular bitmap of recently-seen RTP sequence numbers.
+ *  Window size must be a power of two. 2048 covers the standard
+ *  2022-7 reorder depth (>>100 packets) with room to spare.
+ * ------------------------------------------------------------------ */
+#define RAVENNA_ST2022_WIN   2048     /* power of two */
+#define RAVENNA_ST2022_MASK  (RAVENNA_ST2022_WIN - 1)
+
+/* ------------------------------------------------------------------
  *  Stream — one multicast RTP flow (RX, TX, or both).
  * ------------------------------------------------------------------ */
 struct ravenna_stream_s {
@@ -141,8 +151,35 @@ struct ravenna_stream_s {
 	switch_time_t        tx_next_due_us;    /* heap key                */
 	uint64_t             tx_packets;
 
-	/* Interface (multicast iface IP / Linux ifname) */
+	/* Interface (multicast iface IP / Linux ifname) — path A (primary) */
 	char                 iface[RAVENNA_MAX_IFACE_LEN];
+
+	/* ------ SMPTE ST 2022-7 redundant path (optional) ------------- */
+	switch_bool_t        st2022_7;             /* feature enabled       */
+
+	/* Secondary interface — path B.  Falls back to `iface` if unset,
+	 * but real 2022-7 protection requires a physically separate NIC. */
+	char                 iface2[RAVENNA_MAX_IFACE_LEN];
+
+	/* RX path 2 */
+	char                 rx2_addr[RAVENNA_MAX_IP_LEN];
+	int                  rx2_port;
+	ravenna_socket_t     rx2_sock;
+
+	/* TX path 2 */
+	char                 tx2_addr[RAVENNA_MAX_IP_LEN];
+	int                  tx2_port;
+	ravenna_socket_t     tx2_sock;
+	struct sockaddr_in   tx2_dest;
+
+	/* Dedup table: tracks last RAVENNA_ST2022_WIN seq numbers.
+	 * Slot [seq & MASK] holds the seq value seen (0xFF…FF = empty). */
+	uint16_t             dedup_win[RAVENNA_ST2022_WIN];
+
+	/* Stats for path 2 */
+	uint64_t             rx2_packets;
+	uint64_t             rx2_drops;
+	uint64_t             rx_dedup_dropped;  /* packets discarded as dups */
 
 	/* Mutex for config-time mutation only; hot path is lock-free. */
 	switch_mutex_t      *mutex;

@@ -59,6 +59,17 @@ static int build_pollset(
 		pfds[n].revents = 0;
 		stream_for_idx[n] = s;
 		n++;
+
+		/* ST 2022-7 — add the redundant socket to the same pollset.
+		 * We reuse stream_for_idx so handle_packet runs on the same stream;
+		 * dedup happens inside handle_packet. */
+		if (s->st2022_7 && s->rx2_sock != RAVENNA_INVALID_SOCKET && n < max) {
+			pfds[n].fd      = s->rx2_sock;
+			pfds[n].events  = POLLIN;
+			pfds[n].revents = 0;
+			stream_for_idx[n] = s;
+			n++;
+		}
 	}
 	return n;
 }
@@ -87,6 +98,19 @@ static switch_status_t handle_packet(ravenna_stream_t *s,
 	s->rx_last_ts    = h.timestamp;
 	s->rx_seq_inited = SWITCH_TRUE;
 	s->rx_packets++;
+
+	/* ST 2022-7 deduplication — drop if this seq was already processed.
+	 * The dedup_win is a circular table: slot [seq & MASK] holds the last
+	 * seq stored there. A match means we have seen this exact seq before
+	 * (within the last RAVENNA_ST2022_WIN packets). */
+	if (s->st2022_7) {
+		uint16_t slot = h.seq & RAVENNA_ST2022_MASK;
+		if (s->dedup_win[slot] == h.seq) {
+			s->rx_dedup_dropped++;
+			return SWITCH_STATUS_SUCCESS;  /* duplicate — silently discard */
+		}
+		s->dedup_win[slot] = h.seq;
+	}
 
 	samples = ravenna_rtp_decode(pkt + h.payload_off, h.payload_len,
 								 s->rx_codec, s->channels,

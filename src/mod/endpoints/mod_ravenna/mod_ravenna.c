@@ -106,6 +106,23 @@ switch_status_t ravenna_stream_open_sockets(ravenna_stream_t *s)
 						  s->channels, s->ptime_ms);
 	}
 
+	/* ST 2022-7 RX path 2 */
+	if (s->st2022_7 && s->rx_enabled && s->rx2_addr[0] && s->rx2_port &&
+		s->rx2_sock == RAVENNA_INVALID_SOCKET) {
+		const char *iface2 = s->iface2[0] ? s->iface2 : s->iface;
+		st = ravenna_net_open_rx(&s->rx2_sock, s->rx2_addr, s->rx2_port, iface2);
+		if (st != SWITCH_STATUS_SUCCESS) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+							  "ravenna: stream '%s' rx2 open failed (single-path fallback)\n",
+							  s->name);
+			/* Non-fatal: degrade to single path */
+		} else {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+							  "ravenna: stream '%s' rx2 (ST2022-7) %s:%d iface=%s\n",
+							  s->name, s->rx2_addr, s->rx2_port, iface2);
+		}
+	}
+
 	if (s->tx_enabled && s->tx_sock == RAVENNA_INVALID_SOCKET) {
 		st = ravenna_net_open_tx(&s->tx_sock, &s->tx_dest,
 								 s->tx_addr, s->tx_port, s->iface, 16);
@@ -120,13 +137,33 @@ switch_status_t ravenna_stream_open_sockets(ravenna_stream_t *s)
 						  ravenna_codec_str(s->tx_codec),
 						  s->channels, s->ptime_ms);
 	}
+
+	/* ST 2022-7 TX path 2 */
+	if (s->st2022_7 && s->tx_enabled && s->tx2_addr[0] && s->tx2_port &&
+		s->tx2_sock == RAVENNA_INVALID_SOCKET) {
+		const char *iface2 = s->iface2[0] ? s->iface2 : s->iface;
+		st = ravenna_net_open_tx(&s->tx2_sock, &s->tx2_dest,
+								 s->tx2_addr, s->tx2_port, iface2, 16);
+		if (st != SWITCH_STATUS_SUCCESS) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+							  "ravenna: stream '%s' tx2 open failed (single-path fallback)\n",
+							  s->name);
+		} else {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+							  "ravenna: stream '%s' tx2 (ST2022-7) %s:%d iface=%s\n",
+							  s->name, s->tx2_addr, s->tx2_port, iface2);
+		}
+	}
+
 	return SWITCH_STATUS_SUCCESS;
 }
 
 void ravenna_stream_close_sockets(ravenna_stream_t *s)
 {
 	ravenna_net_close(&s->rx_sock);
+	ravenna_net_close(&s->rx2_sock);
 	ravenna_net_close(&s->tx_sock);
+	ravenna_net_close(&s->tx2_sock);
 }
 
 /* ==================================================================
@@ -145,7 +182,7 @@ static switch_status_t load_settings(switch_xml_t settings)
 		else if (!strcasecmp(var, "rx-codec"))    mod_ravenna_globals.default_rx_codec     = parse_codec(val, RAV_CODEC_L16);
 		else if (!strcasecmp(var, "tx-codec"))    mod_ravenna_globals.default_tx_codec     = parse_codec(val, RAV_CODEC_L16);
 		else if (!strcasecmp(var, "rtp-payload-type")) mod_ravenna_globals.default_payload_type = atoi(val);
-		else if (!strcasecmp(var, "rtp-iface"))   switch_set_string(mod_ravenna_globals.default_iface, val);
+		else if (!strcasecmp(var, "iface-primary")) switch_set_string(mod_ravenna_globals.default_iface, val);
 		else if (!strcasecmp(var, "dialplan"))    switch_set_string(mod_ravenna_globals.dialplan,    val);
 		else if (!strcasecmp(var, "cid-name"))    switch_set_string(mod_ravenna_globals.cid_name,    val);
 		else if (!strcasecmp(var, "cid-num"))     switch_set_string(mod_ravenna_globals.cid_num,     val);
@@ -171,8 +208,13 @@ static switch_status_t load_streams(switch_xml_t streams_xml)
 		s = switch_core_alloc(mod_ravenna_globals.pool, sizeof(*s));
 		memset(s, 0, sizeof(*s));
 		switch_set_string(s->name, name);
-		s->rx_sock = RAVENNA_INVALID_SOCKET;
-		s->tx_sock = RAVENNA_INVALID_SOCKET;
+		s->rx_sock          = RAVENNA_INVALID_SOCKET;
+		s->rx2_sock         = RAVENNA_INVALID_SOCKET;
+		s->tx_sock          = RAVENNA_INVALID_SOCKET;
+		s->tx2_sock         = RAVENNA_INVALID_SOCKET;
+
+		/* Pre-fill dedup window so seq 0 is not a false positive */
+		memset(s->dedup_win, 0xFF, sizeof(s->dedup_win));
 
 		s->channels         = mod_ravenna_globals.default_channels;
 		s->sample_rate      = mod_ravenna_globals.default_sample_rate;
@@ -188,15 +230,21 @@ static switch_status_t load_streams(switch_xml_t streams_xml)
 			const char *val = switch_xml_attr_soft(param, "value");
 			if (!strcasecmp(var, "rx-address"))         { switch_set_string(s->rx_addr, val); s->rx_enabled = SWITCH_TRUE; }
 			else if (!strcasecmp(var, "rx-port"))       { s->rx_port = atoi(val); s->rx_enabled = SWITCH_TRUE; }
+			else if (!strcasecmp(var, "rx2-address"))   { switch_set_string(s->rx2_addr, val); }
+			else if (!strcasecmp(var, "rx2-port"))      { s->rx2_port = atoi(val); }
 			else if (!strcasecmp(var, "tx-address"))    { switch_set_string(s->tx_addr, val); s->tx_enabled = SWITCH_TRUE; }
 			else if (!strcasecmp(var, "tx-port"))       { s->tx_port = atoi(val); s->tx_enabled = SWITCH_TRUE; }
+			else if (!strcasecmp(var, "tx2-address"))   { switch_set_string(s->tx2_addr, val); }
+			else if (!strcasecmp(var, "tx2-port"))      { s->tx2_port = atoi(val); }
+			else if (!strcasecmp(var, "st2022-7"))      { s->st2022_7 = switch_true(val) ? SWITCH_TRUE : SWITCH_FALSE; }
 			else if (!strcasecmp(var, "channels"))      s->channels    = atoi(val);
 			else if (!strcasecmp(var, "sample-rate"))   s->sample_rate = atoi(val);
 			else if (!strcasecmp(var, "ptime-ms"))      s->ptime_ms    = atof(val);
 			else if (!strcasecmp(var, "rx-codec"))      s->rx_codec    = parse_codec(val, s->rx_codec);
 			else if (!strcasecmp(var, "tx-codec"))      s->tx_codec    = parse_codec(val, s->tx_codec);
 			else if (!strcasecmp(var, "rtp-payload-type")) s->rtp_payload_type = atoi(val);
-			else if (!strcasecmp(var, "rtp-iface"))     switch_set_string(s->iface, val);
+			else if (!strcasecmp(var, "iface-primary"))    switch_set_string(s->iface, val);
+			else if (!strcasecmp(var, "iface-secondary")) switch_set_string(s->iface2, val);
 		}
 
 		if (s->channels < 1 || s->channels > RAVENNA_MAX_CHANNELS) {

@@ -1,6 +1,14 @@
 /*
  * ravenna_net.c — UDP / multicast helpers, Linux + Windows.
  *
+ * IPv4 ONLY.  AES67 (AES67-2018) and the RAVENNA transport specification
+ * define the session layer exclusively over IPv4 multicast (239.x.x.x,
+ * RFC 2365 administratively-scoped space).  IPv6 multicast is not used
+ * by any shipping AES67 or RAVENNA device and is therefore a deliberate
+ * non-goal for this module.  All sockets use AF_INET / struct sockaddr_in;
+ * iface-primary and iface-secondary accept an IPv4 address (all platforms)
+ * or a Linux interface name (Linux only).
+ *
  * No allocations on the hot path; all buffers belong to the caller.
  */
 
@@ -19,6 +27,9 @@
 #else
   /* in_addr_t is a POSIX typedef; Windows uses ULONG for IPv4 in_addr.s_addr. */
   typedef ULONG in_addr_t;
+  /* GetAdaptersAddresses is in iphlpapi. */
+  #include <iphlpapi.h>
+  #pragma comment(lib, "iphlpapi.lib")
 #endif
 
 /* ------------------------------------------------------------------
@@ -42,15 +53,17 @@ static int ravenna_set_int_opt(ravenna_socket_t s, int level, int name, int val)
 	return setsockopt(s, level, name, (const char *)&val, sizeof(val));
 }
 
-/* Resolve interface IP. iface may be:
- *   - empty       => INADDR_ANY
- *   - dotted IP   => use as-is
- *   - ifname (Linux) => look up via if_nametoindex+SIOCGIFADDR via getifaddrs
+/* Resolve interface IP from the iface-primary / iface-secondary config value.
  *
- * For simplicity (and to keep this file dependency-free) we accept
- * a dotted IP on Windows and either a dotted IP or an interface name
- * on Linux. Interface names on Windows would require GetAdaptersAddresses;
- * leaving that for a follow-up.
+ * Linux  : interface name  (e.g. "ens19", "eth0")  — preferred; resolved via
+ *          SIOCGIFADDR.  A dotted IPv4 address is also accepted as a fallback.
+ * Windows: interface name (e.g. "Ethernet 2", "Local Area Connection") OR
+ *          dotted IPv4 address (e.g. "192.168.10.5") — both accepted.
+ *          Name lookup uses GetAdaptersAddresses(); dotted IP tried first.
+ * Empty  : INADDR_ANY (OS picks the interface — usually wrong for multicast).
+ *
+ * On Linux, prefer the ifname in config files so the mapping is explicit even
+ * when multiple IPs share the same adapter.
  */
 static in_addr_t ravenna_iface_addr(const char *iface)
 {
@@ -77,7 +90,67 @@ static in_addr_t ravenna_iface_addr(const char *iface)
 #else
 	{
 		struct in_addr a;
+		/* Fast path: dotted IPv4 address */
 		if (inet_pton(AF_INET, iface, &a) == 1) return a.s_addr;
+
+		/* Slow path: adapter friendly-name or adapter description lookup.
+		 * We walk GetAdaptersAddresses() looking for an IPv4 unicast address
+		 * on an adapter whose FriendlyName or Description matches `iface`.
+		 * The comparison is case-insensitive. */
+		{
+			IP_ADAPTER_ADDRESSES *list = NULL, *cur;
+			ULONG buflen = 16 * 1024;
+			ULONG ret;
+			in_addr_t result = htonl(INADDR_ANY);
+
+			/* GetAdaptersAddresses may need more space on systems with many
+			 * adapters; retry once with the suggested size. */
+			list = (IP_ADAPTER_ADDRESSES *)malloc(buflen);
+			if (!list) return htonl(INADDR_ANY);
+
+			ret = GetAdaptersAddresses(AF_INET,
+				GAA_FLAG_SKIP_ANYCAST |
+				GAA_FLAG_SKIP_MULTICAST |
+				GAA_FLAG_SKIP_DNS_SERVER,
+				NULL, list, &buflen);
+
+			if (ret == ERROR_BUFFER_OVERFLOW) {
+				free(list);
+				list = (IP_ADAPTER_ADDRESSES *)malloc(buflen);
+				if (!list) return htonl(INADDR_ANY);
+				ret = GetAdaptersAddresses(AF_INET,
+					GAA_FLAG_SKIP_ANYCAST |
+					GAA_FLAG_SKIP_MULTICAST |
+					GAA_FLAG_SKIP_DNS_SERVER,
+					NULL, list, &buflen);
+			}
+
+			if (ret == NO_ERROR) {
+				for (cur = list; cur; cur = cur->Next) {
+					/* Convert wide FriendlyName / AdapterName to narrow for
+					 * comparison.  We use WideCharToMultiByte rather than
+					 * wcstombs so it works regardless of locale. */
+					char fname[256] = {0};
+					char aname[256] = {0};
+					WideCharToMultiByte(CP_UTF8, 0,
+						cur->FriendlyName, -1, fname, sizeof(fname) - 1, NULL, NULL);
+					WideCharToMultiByte(CP_UTF8, 0,
+						cur->Description,  -1, aname, sizeof(aname) - 1, NULL, NULL);
+
+					if (_stricmp(iface, fname) == 0 || _stricmp(iface, aname) == 0) {
+						IP_ADAPTER_UNICAST_ADDRESS *ua = cur->FirstUnicastAddress;
+						if (ua) {
+							result = ((struct sockaddr_in *)
+								ua->Address.lpSockaddr)->sin_addr.s_addr;
+						}
+						break;
+					}
+				}
+			}
+
+			free(list);
+			return result;
+		}
 	}
 #endif
 	return htonl(INADDR_ANY);
