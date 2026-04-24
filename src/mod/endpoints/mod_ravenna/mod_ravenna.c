@@ -719,6 +719,27 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_ravenna_load)
 	switch_core_hash_init(&mod_ravenna_globals.streams);
 	switch_core_hash_init(&mod_ravenna_globals.endpoints);
 
+	/* Ensure mod_ptp_timer is loaded — it provides the "ptp" timer that the
+	 * TX pacer requires.  If it is already loaded this is a cheap no-op.
+	 * If the load fails we refuse to start rather than silently falling back
+	 * to a non-PTP clock. */
+	if (switch_loadable_module_exists("mod_ptp_timer") != SWITCH_STATUS_SUCCESS) {
+		const char *err = NULL;
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+						  "mod_ravenna: mod_ptp_timer not loaded — attempting to load it\n");
+		if (switch_loadable_module_load_module((char *)SWITCH_GLOBAL_dirs.mod_dir,
+											   "mod_ptp_timer",
+											   SWITCH_TRUE, &err) != SWITCH_STATUS_SUCCESS) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT,
+							  "mod_ravenna: failed to load mod_ptp_timer (%s) — "
+							  "a working PTP timer is required\n",
+							  err ? err : "unknown error");
+			return SWITCH_STATUS_GENERR;
+		}
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+						  "mod_ravenna: mod_ptp_timer loaded successfully\n");
+	}
+
 	if (ravenna_load_config() != SWITCH_STATUS_SUCCESS) {
 		return SWITCH_STATUS_GENERR;
 	}
