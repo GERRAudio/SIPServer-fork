@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration name="ravenna.conf" description="Ravenna / AES67 endpoint module">
+  <!--
+    mod_ravenna is a lean, AES67-compatible multicast RTP endpoint.
+
+    Architecture:
+      * One shared RX reactor thread services every <stream> below.
+      * One shared TX pacer thread, driven by mod_ptp_timer, emits
+        every active <stream> at its configured ptime.
+      * Per-channel SPMC sample rings with multiple read cursors let
+        many <endpoint>s consume the same multicast source with no
+        extra packets and no extra threads ("audio fork").
+
+    Hard requirement: mod_ptp_timer must be loaded BEFORE this module
+    in modules.conf.xml.
+
+    Codecs supported: L16, L24, L32 (L16/L24 are AES67-compatible).
+  -->
+
+  <settings>
+    <param name="dialplan"          value="XML"/>
+    <param name="cid-name"          value="$${outbound_caller_name}"/>
+    <param name="cid-num"           value="$${outbound_caller_id}"/>
+    <param name="hold-file"         value="$${hold_music}"/>
+
+    <!-- Defaults inherited by every <stream> unless overridden -->
+    <param name="sample-rate"       value="48000"/>
+    <param name="ptime-ms"          value="1.0"/>
+    <param name="channels"          value="1"/>
+    <param name="rx-codec"          value="L24"/>
+    <param name="tx-codec"          value="L24"/>
+    <param name="rtp-payload-type"  value="98"/>
+    <param name="rtp-iface"         value="ens19"/>
+
+    <param name="debug"             value="false"/>
+  </settings>
+
+  <streams>
+    <!-- 4-channel L24 @ 48k, 1 ms ptime — classic AES67 layout -->
+    <stream name="udp1">
+      <param name="rx-address"      value="239.69.0.1"/>
+      <param name="rx-port"         value="5004"/>
+      <param name="tx-address"      value="239.69.1.1"/>
+      <param name="tx-port"         value="5004"/>
+      <param name="channels"        value="4"/>
+      <param name="rx-codec"        value="L24"/>
+      <param name="tx-codec"        value="L24"/>
+      <param name="ptime-ms"        value="1.0"/>
+    </stream>
+
+    <!-- High-rate stream: 8 channels, 125 µs ptime (8000 packets/s) -->
+    <stream name="hi">
+      <param name="rx-address"      value="239.69.0.2"/>
+      <param name="rx-port"         value="5004"/>
+      <param name="tx-address"      value="239.69.1.2"/>
+      <param name="tx-port"         value="5004"/>
+      <param name="channels"        value="8"/>
+      <param name="rx-codec"        value="L24"/>
+      <param name="tx-codec"        value="L24"/>
+      <param name="ptime-ms"        value="0.125"/>
+    </stream>
+
+    <!-- L32 routing trunk (non-AES67; full 32-bit precision) -->
+    <stream name="trunkL32">
+      <param name="tx-address"      value="239.69.2.1"/>
+      <param name="tx-port"         value="5004"/>
+      <param name="channels"        value="2"/>
+      <param name="tx-codec"        value="L32"/>
+      <param name="ptime-ms"        value="1.0"/>
+    </stream>
+  </streams>
+
+  <endpoints>
+    <!-- TX-only -->
+    <endpoint name="udp1-tx1"><param name="outstream" value="udp1:0"/></endpoint>
+    <endpoint name="udp1-tx2"><param name="outstream" value="udp1:1"/></endpoint>
+    <endpoint name="udp1-tx3"><param name="outstream" value="udp1:2"/></endpoint>
+    <endpoint name="udp1-tx4"><param name="outstream" value="udp1:3"/></endpoint>
+
+    <!-- RX-only — note multiple-listen lets many sessions fork the same
+         multicast source through independent fan-out cursors. -->
+    <endpoint name="udp1-rx1">
+      <param name="instream"        value="udp1:0"/>
+      <param name="multiple-listen" value="true"/>
+    </endpoint>
+    <endpoint name="udp1-rx2">
+      <param name="instream"        value="udp1:1"/>
+      <param name="multiple-listen" value="true"/>
+    </endpoint>
+
+    <!-- Bidirectional -->
+    <endpoint name="udp1-txrx1">
+      <param name="outstream"       value="udp1:0"/>
+      <param name="instream"        value="udp1:0"/>
+    </endpoint>
+  </endpoints>
+</configuration>
