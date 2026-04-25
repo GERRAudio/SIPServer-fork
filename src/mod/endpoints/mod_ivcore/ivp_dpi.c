@@ -59,7 +59,14 @@ static switch_status_t send_dpi_msg(ivcore_channel_t *ch,
 {
 	/* CSO header: MsgType(4 BE)=1, RouteDst=0, RouteSrc=0 */
 	uint8_t buf[IVP_DPI_CSO_HEADER_SIZE + 256];
-	uint8_t frame[512];
+	/* Worst-case HDLC stuffing of a max-size DPI payload:
+	 *   input  = IVP_DPI_CSO_HEADER_SIZE(6) + dpi_len(max 256) = 262 bytes
+	 *   raw    = addr(1) + ctl(1) + ext(1) + 262 + crc(2)      = 267 bytes
+	 *   stuffed = 0x7E + 2*267 + 0x7E                          = 536 bytes
+	 * 512 was too small by 24 bytes, causing a stack buffer overflow that
+	 * corrupted the return address and produced the 0xC0000005 AV at
+	 * 0x00007FFC00000000 (torn/overwritten instruction pointer). */
+	uint8_t frame[600];
 	int     total, n;
 
 	if (!ch || !dpi || dpi_len <= 0 || !send_cb) return SWITCH_STATUS_FALSE;
@@ -244,7 +251,7 @@ static void send_panel_init_sequence(ivcore_channel_t *ch,
 	ch->dpi_init_sent = SWITCH_TRUE;
 	ch->dpi_key_status_replies = 0;
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-		"mod_ivcore: DPI 0x80 PanelTypeRequest — sending full init sequence\n");
+		"mod_ivcore: DPI 0x80 PanelTypeRequest - sending full init sequence\n");
 
 	send_panel_type_reply(ch, send_cb);    /* 0x90 */
 	send_panel_sw_version(ch, send_cb);    /* 0x91 */
@@ -497,6 +504,28 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 		 * Always REPLACE the buffer — never append — so that intermediate
 		 * "still-typing" packets cannot concatenate with the final one
 		 * and produce a doubled number (e.g. "919891898" for "9198"). */
+		/* Reject an empty dial string — this is the matrix echoing back a
+		 * spurious 0xF4 that was sent while CPUApp had no pending dial state.
+		 * Accepting it would route an empty destination and leave the channel
+		 * stuck in ConnectingOut.
+		 *
+		 * We MUST still reply (success=0) even for empty strings.  The 0xF1
+		 * request/reply is a paired protocol handshake: if the panel never
+		 * replies, CPUApp stays in "waiting for ConnectReply" state and will
+		 * NOT send a real 0xF1 when the user actually dials, permanently
+		 * blocking dial-out on this port. */
+		if (dial[0] == '\0') {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+				"mod_ivcore: DPI <- 0xF1 DialOut with empty dial string — "
+				"replying failure to unblock matrix state machine\n");
+			send_connect_reply(ch,
+				/*success*/ 0,
+				/*reason */ (uint8_t)IVP_SIP_REASON_NOT_SET,
+				/*state  */ (uint8_t)IVP_SIP_STATE_ON_HOOK_ALLOCATED,
+				send_cb);
+			break;
+		}
+
 		switch_copy_string(ch->dpi_dial_buffer, dial, sizeof(ch->dpi_dial_buffer));
 		ch->dpi_dial_cont_active = (cont != 0) ? SWITCH_TRUE : SWITCH_FALSE;
 

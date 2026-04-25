@@ -328,6 +328,7 @@ typedef struct ivcore_channel_s {
 	/* FreeSWITCH handle */
 	switch_core_session_t *session;
 	switch_channel_t      *channel;
+	char                   session_uuid[SWITCH_UUID_FORMATTED_LENGTH + 1]; /**< Copy of session UUID for safe cross-thread lookup */
 	switch_codec_t         read_codec;
 	switch_codec_t         write_codec;
 	switch_frame_t         read_frame;

@@ -801,12 +801,8 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 	ch->session = NULL;
 	ch->channel = NULL;
 
-	/* Destroy codecs and timer BEFORE ivcore_channel_free() joins rx_thread
-	 * and returns.  switch_core_session_alloc() backs ch, so after free the
-	 * struct is owned by the session pool and (in Debug builds) filled with
-	 * 0xCC.  Calling codec/timer destroy on 0xCC-filled memory dereferences
-	 * a garbage vtable pointer — producing the 0xC0000005 crash at
-	 * 0x00007FFC00000000 seen in the debugger. */
+	ivcore_channel_free(ch);
+
 	switch_core_codec_destroy(&ch->read_codec);
 	switch_core_codec_destroy(&ch->write_codec);
 
@@ -814,8 +810,6 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 		switch_core_timer_destroy(&ch->write_timer);
 		ch->write_timer_inited = SWITCH_FALSE;
 	}
-
-	ivcore_channel_free(ch);
 
 	/* Re-establish the standing IVP session so the matrix can dial again
 	 * without a module reload.  A brief delay lets the IVC card fully

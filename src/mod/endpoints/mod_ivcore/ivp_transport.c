@@ -899,12 +899,9 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 
 	(void)thread;
 
-	/* Ensure the stored send-callback is NULL until the first HDLC Data
-	 * frame populates it.  In a debug build MSVC fills uninitialised struct
-	 * memory with 0xCC, so an unguarded call through this pointer before it
-	 * is set produces an 0xC0000005 access violation. */
-	ch->dpi_send_cb = NULL;
-
+	/* dpi_send_cb is explicitly NULLed in ivcore_channel_alloc() before this
+	 * thread is created, so no assignment is needed here.  It is set to
+	 * ivp_send_data_frame the first time an IVP Data (HDLC) frame arrives. */
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
 		"mod_ivcore: recv loop started for channel %p\n", (void *)ch);
 
@@ -933,10 +930,14 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 							IVP_NEW_MAX_RETRIES);
 						ch->call_state = IVC_STATE_HANGUP;
 						ch->running    = SWITCH_FALSE;
-						if (ch->session)
-							switch_channel_hangup(
-								switch_core_session_get_channel(ch->session),
-								SWITCH_CAUSE_NETWORK_OUT_OF_ORDER);
+						{
+							switch_core_session_t *s = switch_core_session_locate(ch->session_uuid);
+							if (s) {
+								switch_channel_hangup(switch_core_session_get_channel(s),
+									SWITCH_CAUSE_NETWORK_OUT_OF_ORDER);
+								switch_core_session_rwunlock(s);
+							}
+						}
 						break;
 					}
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
@@ -1102,10 +1103,13 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 						"mod_ivcore: HANGUP received from IVC card\n");
 					ch->call_state = IVC_STATE_HANGUP;
 					ch->running    = SWITCH_FALSE;
-					if (ch->session) {
-						switch_channel_hangup(
-							switch_core_session_get_channel(ch->session),
-							SWITCH_CAUSE_NORMAL_CLEARING);
+					{
+						switch_core_session_t *s = switch_core_session_locate(ch->session_uuid);
+						if (s) {
+							switch_channel_hangup(switch_core_session_get_channel(s),
+								SWITCH_CAUSE_NORMAL_CLEARING);
+							switch_core_session_rwunlock(s);
+						}
 					}
 					break;
 
@@ -1126,10 +1130,13 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 						"mod_ivcore: REJECT received from IVC card\n");
 					ch->call_state = IVC_STATE_HANGUP;
 					ch->running    = SWITCH_FALSE;
-					if (ch->session) {
-						switch_channel_hangup(
-							switch_core_session_get_channel(ch->session),
-							SWITCH_CAUSE_CALL_REJECTED);
+					{
+						switch_core_session_t *s = switch_core_session_locate(ch->session_uuid);
+						if (s) {
+							switch_channel_hangup(switch_core_session_get_channel(s),
+								SWITCH_CAUSE_CALL_REJECTED);
+							switch_core_session_rwunlock(s);
+						}
 					}
 					break;
 
@@ -1145,10 +1152,15 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 				if (hdlc_len > 0) {
 					/* Store send_cb so mod_ivcore.c can send DPI messages
 					 * proactively (e.g. 0xF1 ConnectReply on SIP answer,
-					 * 0x93 KeyStatusUpdate on hangup). */
+					 * 0x93 KeyStatusUpdate on hangup).
+					 * Guard the write with the global mutex so that readers
+					 * in channel_on_hangup / channel_receive_message (which
+					 * run on a different thread) never observe a torn pointer. */
+					switch_mutex_lock(ivcore_globals.mutex);
 					ch->dpi_send_cb = ivp_send_data_frame;
+					switch_mutex_unlock(ivcore_globals.mutex);
 					ivp_hdlc_on_data(ch, buf + IVP_PROTO_HEADER_SIZE,
-									 hdlc_len, ivp_send_data_frame);
+								 hdlc_len, ivp_send_data_frame);
 				}
 			} else if (hdr.frame_type == IVP_FRAME_CONTROL) {
 				int ctrl_len = (int)n - IVP_PROTO_HEADER_SIZE;
