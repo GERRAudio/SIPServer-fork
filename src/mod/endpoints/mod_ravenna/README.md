@@ -119,11 +119,6 @@ dialplans typically only need the `aes67/` → `ravenna/` rename.
 ravenna status              # one-line module summary
 ravenna streams             # per-stream stats (rx/tx packet counts, drops)
 ravenna endpoints           # endpoints and active session counts
-<<<<<<< Updated upstream
-ravenna debug on|off        # verbose per-tick logging
-```
-
-=======
 ravenna reload              # live config reload (see below)
 ravenna debug on|off        # verbose per-tick logging
 ```
@@ -160,7 +155,6 @@ XML reload: OK
 +OK reload complete: 1 added, 0 removed, 1 restarted, 2 unchanged
 ```
 
->>>>>>> Stashed changes
 ## Building on Linux
 
 ```sh

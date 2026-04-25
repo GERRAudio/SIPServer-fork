@@ -125,7 +125,7 @@
     <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>..\..\..\libs\portaudio\src\hostapi\asio\ASIOSDK\common;..\..\..\libs\portaudio\src\os\win;..\..\..\libs\portaudio\include;$(IncludePath)</IncludePath>
+    <IncludePath>..\..\..\libs\portaudio\src\hostapi\ASIOSDK\common;..\..\..\libs\portaudio\src\hostapi\ASIOSDK\asio;..\..\..\libs\portaudio\src\common;..\..\..\libs\portaudio\src\os\win;..\..\..\libs\portaudio\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">
     <IncludePath>..\..\..\libs\portaudio\src\os\win;..\..\..\libs\portaudio\include;$(IncludePath)</IncludePath>
@@ -271,7 +271,7 @@
     </Midl>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>..\..\portaudio\src\hostapi\asio\ASIOSDK\common;..\..\portaudio\src\hostapi\asio\ASIOSDK\asio;..\..\portaudio\src\common;..\..\portaudio\include;.\;..\..\portaudio\src\os\win;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\portaudio\src\hostapi\ASIOSDK\common;..\..\portaudio\src\hostapi\ASIOSDK\asio;..\..\portaudio\src\common;..\..\portaudio\include;.\;..\..\portaudio\src\os\win;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_DEBUG;_USRDLL;PA_ENABLE_DEBUG_OUTPUT;_CRT_SECURE_NO_DEPRECATE;PA_USE_DS;PAWIN_USE_WDMKS_DEVICE_INFO;PAWIN_WDMKS_NO_KSGUID_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>true</MinimalRebuild>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
@@ -525,211 +525,211 @@
     </ClCompile>
     <ClCompile Include="..\..\portaudio\src\hostapi\asio\pa_asio.cpp">
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
 
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="..\..\portaudio\src\hostapi\asio\ASIOSDK\common\asio.cpp">
+    <ClCompile Include="..\..\portaudio\src\hostapi\ASIOSDK\common\asio.cpp">
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
 
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DeploymentContent>false</DeploymentContent>
     </ClCompile>
-    <ClCompile Include="..\..\portaudio\src\hostapi\asio\ASIOSDK\host\ASIOConvertSamples.cpp">
+    <ClCompile Include="..\..\portaudio\src\hostapi\ASIOSDK\host\ASIOConvertSamples.cpp">
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
 
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="..\..\portaudio\src\hostapi\asio\ASIOSDK\host\asiodrivers.cpp">
+    <ClCompile Include="..\..\portaudio\src\hostapi\ASIOSDK\host\asiodrivers.cpp">
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
 
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc\asiolist.cpp">
+    <ClCompile Include="..\..\portaudio\src\hostapi\ASIOSDK\host\pc\asiolist.cpp">
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
 
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="..\..\portaudio\src\hostapi\asio\ASIOSDK\common\combase.cpp">
+    <ClCompile Include="..\..\portaudio\src\hostapi\ASIOSDK\common\combase.cpp">
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
 
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="..\..\portaudio\src\hostapi\asio\ASIOSDK\common\debugmessage.cpp">
+    <ClCompile Include="..\..\portaudio\src\hostapi\ASIOSDK\common\debugmessage.cpp">
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
 
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <ClCompile Include="..\..\portaudio\src\hostapi\asio\ASIOSDK\common\register.cpp">
+    <ClCompile Include="..\..\portaudio\src\hostapi\ASIOSDK\common\register.cpp">
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
 
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release DirectSound|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
      
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\asio\ASIOSDK\host;..\..\portaudio\src\hostapi\asio\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\asio\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\portaudio\src\hostapi\ASIOSDK\host;..\..\portaudio\src\hostapi\ASIOSDK\host\pc;..\..\portaudio\src\hostapi\ASIOSDK\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <ClCompile Include="..\..\portaudio\src\hostapi\dsound\pa_win_ds.c">

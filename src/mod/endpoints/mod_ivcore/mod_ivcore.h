@@ -417,8 +417,8 @@ typedef struct ivcore_channel_s {
 	char                   dpi_dial_buffer[160];   /**< Last 0xF1 dial string seen */
 	switch_bool_t          dpi_init_sent;          /**< TRUE after PanelTypeReply init sequence sent */
 	uint8_t                dpi_key_status_replies; /**< Count of 0x8B KeyStatusReply messages sent */
-	switch_bool_t          dpi_dial_pending;       /**< TRUE when a complete 0xF1 dial string is ready to route */
-	switch_bool_t          dpi_dial_cont_active;   /**< TRUE while accumulating a multi-packet 0xF1 sequence (cont=1) */
+	volatile switch_bool_t dpi_dial_pending;       /**< TRUE when a complete 0xF1 dial string is ready to route */
+	volatile switch_bool_t dpi_dial_cont_active;   /**< TRUE while accumulating a multi-packet 0xF1 sequence (cont=1) */
 	volatile switch_bool_t hdlc_reset_pending;     /**< Set by HDLC SABME handler; cleared by recv loop to re-sync IVP in_sequence */
 	/* Stored HDLC send callback — set in ivp_transport.c when the first IVP
 	 * Data (HDLC) frame is received inside ivp_recv_loop.  Allows proactive

@@ -167,8 +167,6 @@ void ravenna_stream_close_sockets(ravenna_stream_t *s)
 }
 
 /* ==================================================================
-<<<<<<< Updated upstream
-=======
  *  Stream comparison — used by reload diff
  * ================================================================== */
 
@@ -201,18 +199,15 @@ static switch_bool_t stream_equal(const ravenna_stream_t *a,
 }
 
 /* ==================================================================
->>>>>>> Stashed changes
  *  Configuration loader
  * ================================================================== */
 
 static switch_status_t load_settings(switch_xml_t settings)
 {
 	switch_xml_t param;
-<<<<<<< Updated upstream
-	for (param = switch_xml_child(settings, "param"); param; param = param->next) {
-=======
 
->>>>>>> Stashed changes
+	for (param = switch_xml_child(settings, "param"); param; param = param->next) {
+
 		const char *var = switch_xml_attr_soft(param, "name");
 		const char *val = switch_xml_attr_soft(param, "value");
 		if (!strcasecmp(var, "sample-rate"))      mod_ravenna_globals.default_sample_rate  = atoi(val);
@@ -694,12 +689,6 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 }
 
 /* ==================================================================
-<<<<<<< Updated upstream
- *  API: ravenna status [json] | streams | debug on|off
- * ================================================================== */
-
-#define RAVENNA_API_SYNTAX "status [json] | streams | endpoints | debug on|off"
-=======
  *  Reload — live config diff and stream reconciliation
  * ================================================================== */
 
@@ -916,7 +905,6 @@ switch_status_t ravenna_reload(switch_stream_handle_t *stream)
  * ================================================================== */
 
 #define RAVENNA_API_SYNTAX "status [json] | streams | endpoints | reload | debug on|off"
->>>>>>> Stashed changes
 
 SWITCH_STANDARD_API(ravenna_api_function)
 {
@@ -934,22 +922,19 @@ SWITCH_STANDARD_API(ravenna_api_function)
 		goto done;
 	}
 
-<<<<<<< Updated upstream
-=======
-	if (!strcasecmp(argv[0], "reload")) {
-		return ravenna_reload(stream);
-	}
+if (!strcasecmp(argv[0], "reload")) {
+	return ravenna_reload(stream);
+}
 
->>>>>>> Stashed changes
-	if (!strcasecmp(argv[0], "debug")) {
-		if (argc >= 2) {
-			mod_ravenna_globals.debug =
-				!strcasecmp(argv[1], "on") ? SWITCH_TRUE : SWITCH_FALSE;
-		}
-		stream->write_function(stream, "+OK ravenna debug %s\n",
-							   mod_ravenna_globals.debug ? "on" : "off");
-		goto done;
+if (!strcasecmp(argv[0], "debug")) {
+	if (argc >= 2) {
+		mod_ravenna_globals.debug =
+			!strcasecmp(argv[1], "on") ? SWITCH_TRUE : SWITCH_FALSE;
 	}
+	stream->write_function(stream, "+OK ravenna debug %s\n",
+						   mod_ravenna_globals.debug ? "on" : "off");
+	goto done;
+}
 
 	if (!strcasecmp(argv[0], "streams")) {
 		switch_hash_index_t *hi;

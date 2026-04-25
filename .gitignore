@@ -291,3 +291,8 @@ src/mod/endpoints/mod_sofia/test/sipp-based-tests
 /src/mod/endpoints/mod_aes67/aes67_api.c.bak
 /src/mod/endpoints/mod_aes67/aes67_api.c.bak.bak
 /src/mod/endpoints/mod_aes67/mod_aes67.c.bak
+/libs/win32/ffmpeg/x64
+/SIPServer/obj
+/SIPServer/obj
+/src/mod/languages/mod_managed/x64
+/tools/KeygenMetadataGenerator/obj

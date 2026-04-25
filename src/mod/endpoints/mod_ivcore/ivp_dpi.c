@@ -523,26 +523,35 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 	}
 
 	case IVP_DPI_DISCONNECT_OUTGOING: {
-		uint8_t reason = (dpi_len >= 2) ? dpi[1] : 0;
+		uint8_t reason        = (dpi_len >= 2) ? dpi[1] : 0;
+		uint8_t old_dpi_state = ch->dpi_state; /* save before reset */
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-			"mod_ivcore: DPI <- 0xF4 DisconnectOutgoing reason=%u\n",
-			(unsigned)reason);
-		ch->dpi_state = (uint8_t)IVP_SIP_STATE_ON_HOOK_ALLOCATED;
-		ch->dpi_dial_buffer[0] = '\0';
+			"mod_ivcore: DPI <- 0xF4 DisconnectOutgoing reason=%u dpi_state=%u\n",
+			(unsigned)reason, (unsigned)old_dpi_state);
+		ch->dpi_state            = (uint8_t)IVP_SIP_STATE_ON_HOOK_ALLOCATED;
+		ch->dpi_dial_buffer[0]   = '\0';
 		ch->dpi_dial_cont_active = SWITCH_FALSE;
+		ch->dpi_dial_pending     = SWITCH_FALSE;
 		/* Rack initiated: reply with the reply form [0xF4][success=1] */
 		send_disconnect_outbound_reply(ch, /*success*/ 1, send_cb);
-		/* Only hang up the FreeSWITCH session if the SIP call was
-		 * actually in progress (ConnectedOut or ConnectingOut).
-		 * If the matrix sends 0xF4 to reset state before a new dial
-		 * (while we are still in exchange_media / OnHookAllocated),
-		 * do NOT hang up — the IVP session must stay alive so the
-		 * next 0xF1 DialOut can route through it. */
+		/* Only hang up the FreeSWITCH session if a SIP call was actually
+		 * in progress.  Use the DPI state (not ch->call_state) because
+		 * IVC_STATE_UP is set as soon as the matrix sends ACCEPT — i.e.
+		 * it is always UP for a waiting autoconnect session.  Checking it
+		 * caused every routine 0xF4 cleanup from the matrix to kill the
+		 * standing session before any 0xF1 DialOut could arrive.
+		 *
+		 * The IVP session must stay alive in OnHookAllocated so the next
+		 * 0xF1 DialOut can route through it.  Kill it only when the DPI
+		 * state shows a real call was in flight, or when the reason field
+		 * explicitly requests a teardown. */
 		if (ch->session &&
 			(reason == (uint8_t)IVP_SIP_REASON_FAR_END ||
 			 reason == (uint8_t)IVP_SIP_REASON_LOCAL_END ||
-			 ch->call_state == IVC_STATE_UP ||
-			 ch->call_state == IVC_STATE_RINGING)) {
+			 old_dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_OUT ||
+			 old_dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_OUT  ||
+			 old_dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_IN  ||
+			 old_dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_IN)) {
 			switch_channel_hangup(
 				switch_core_session_get_channel(ch->session),
 				SWITCH_CAUSE_NORMAL_CLEARING);

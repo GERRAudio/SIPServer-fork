@@ -290,7 +290,13 @@ static switch_status_t ivcore_setup_codecs(switch_core_session_t *session,
 
     /* Fixed 20 ms — matches the IVP wire cadence exactly (160 bytes/frame for
      * G.722, 160 bytes/frame for G.711).  write_frame therefore delivers one
-     * complete IVP packet per callback with no accumulation needed. */
+     * complete IVP packet per callback with no accumulation needed.
+     *
+     * G.722 NOTE: FreeSWITCH (following RFC 3551) registers G.722 at 8000 Hz
+     * even though the codec internally runs at 16 kHz.  read_frame must
+     * therefore set .rate=8000 and .samples=160 (not 16000/320) so that the
+     * media core does not treat each 20 ms frame as a 10 ms frame and run the
+     * audio at double speed on the bridged leg. */
     codec_ms = 20;
     if (switch_core_codec_init(&ch->read_codec, codec_name, NULL,
             NULL, rate, codec_ms, 1,
@@ -331,7 +337,7 @@ static switch_status_t ivcore_setup_codecs(switch_core_session_t *session,
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
                 "mod_ivcore: TX pacing disabled (timer-name=none)\n");
         } else {
-            int samples_per_tick = (rate / 1000) * codec_ms;
+            int samples_per_tick = (rate / 1000) * codec_ms;  /* 8000/1000 × 20 = 160 */
             if (switch_core_timer_init(&ch->write_timer, tname, codec_ms,
                     samples_per_tick,
                     switch_core_session_get_pool(session)) == SWITCH_STATUS_SUCCESS) {
@@ -526,8 +532,8 @@ static switch_status_t channel_read_frame(switch_core_session_t *session,
 		ch->read_frame.data    = ch->read_frame_data;
 		ch->read_frame.datalen = 160;
 		ch->read_frame.buflen  = (uint32_t)sizeof(ch->read_frame_data);
-		ch->read_frame.samples = 320;   /* G.722: 20 ms × 16 kHz */
-		ch->read_frame.rate    = 16000;
+		ch->read_frame.samples = 160;   /* G.722: 20 ms × 8 kHz RTP clock (RFC 3551) */
+		ch->read_frame.rate    = 8000;
 		ch->read_frame.codec   = &ch->read_codec;
 		ch->read_frame.flags   = SFF_CNG;
 		*frame = &ch->read_frame;
@@ -552,8 +558,8 @@ static switch_status_t channel_read_frame(switch_core_session_t *session,
 	ch->read_frame.data    = ch->read_frame_data;
 	ch->read_frame.datalen = frame_bytes;
 	ch->read_frame.buflen  = (uint32_t)sizeof(ch->read_frame_data);
-	ch->read_frame.samples = 320;   /* G.722: 20 ms × 16 kHz */
-	ch->read_frame.rate    = 16000;
+	ch->read_frame.samples = 160;   /* G.722: 20 ms × 8 kHz RTP clock (RFC 3551) */
+	ch->read_frame.rate    = 8000;
 	ch->read_frame.codec   = &ch->read_codec;
 
 	*frame = &ch->read_frame;

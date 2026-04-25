@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+  <metadata>
+    <id>x64sentry-native</id>
+    <version>0.6.1</version>
+    <authors>Sentry</authors>
+    <owners>Nicolas Noble</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <license type="expression">MIT</license>
+    <licenseUrl>https://licenses.nuget.org/MIT</licenseUrl>
+    <projectUrl>https://docs.sentry.io/platforms/native/</projectUrl>
+    <description>Headers, import libraries, and runtime dlls for Sentry native, for x64 only.</description>
+    <summary>Headers, import libraries, and runtime dlls for Sentry native, for x64 only.</summary>
+    <tags>sentry native nativepackage</tags>
+  </metadata>
+</package>

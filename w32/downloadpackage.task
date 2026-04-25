@@ -5,8 +5,8 @@
   </ImportGroup>
 
   <UsingTask TaskName="DownloadPackageTask" 
-             TaskFactory="CodeTaskFactory"  
-             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.v4.0.dll" >  
+             TaskFactory="RoslynCodeTaskFactory"  
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll" >
              <ParameterGroup>  
                 <package Required="true" />   
                 <expectfileordirectory Required="true" />   

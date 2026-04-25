@@ -107,7 +107,7 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <EnablePREfast>true</EnablePREfast>
-      <DisableSpecificWarnings>28251;6031;6340;6246;6011;6387;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <DisableSpecificWarnings>28251;6031;6340;6246;6011;6387;6101;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -137,7 +137,7 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <EnablePREfast>true</EnablePREfast>
-      <DisableSpecificWarnings>28251;6031;6340;6246;6011;6387;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <DisableSpecificWarnings>28251;6031;6340;6246;6011;6387;6101;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -161,7 +161,7 @@
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <DisableSpecificWarnings>28251;6031;6340;6246;6011;6387;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <DisableSpecificWarnings>28251;6031;6340;6246;6011;6387;6101;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -189,7 +189,7 @@
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <DisableSpecificWarnings>28251;6031;6340;6246;6011;6387;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <DisableSpecificWarnings>28251;6031;6340;6246;6011;6387;6101;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -211,7 +211,7 @@
     <ClCompile Include="..\..\src\switch.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\sentry-native\include\sentry.h" />
+    <ClInclude Include="..\..\packages\x64sentry-native.0.6.1\build\include\sentry.h" />
     <ClInclude Include="..\..\src\include\switch.h" />
     <ClInclude Include="..\..\src\include\switch_buffer.h" />
     <ClInclude Include="..\..\src\include\switch_caller.h" />
@@ -228,11 +228,13 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\libs\win32\apr\libapr.2017.vcxproj">
-      <Project>{f6c55d93-b927-4483-bb69-15aef3dd2dff}</Project>
+      <Project>{f6c55d93-b927-4483-bb69-15aef3dd2dff}
+</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\Library\FreeSwitchCore.2017.vcxproj">
-      <Project>{202d7a4e-760d-4d0e-afa1-d7459ced30ff}</Project>
+      <Project>{202d7a4e-760d-4d0e-afa1-d7459ced30ff}
+</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>
@@ -256,10 +258,6 @@
     <Link>Product Keys\Templates\status.html.template</Link>
     <DeploymentContent>true</DeploymentContent>
   </None>
-    <None Include="sentry.dll">
-	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <DeploymentContent>true</DeploymentContent>
-    </None>
     <None Include="switch_version.rc2" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
@@ -272,4 +270,5 @@
     </PropertyGroup>
     <Error Condition="!Exists('..\..\packages\x64sentry-native.0.6.1\build\x64sentry-native.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\packages\x64sentry-native.0.6.1\build\x64sentry-native.targets'))" />
   </Target>
+<Target Name="CopySentryBinaries" AfterTargets="Build"><ItemGroup><SentryBin Include="$(SolutionDir)w32\packages\x64sentry-native.0.6.1\build\bin\*.*" /></ItemGroup><Copy SourceFiles="@(SentryBin)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" /></Target>
 </Project>

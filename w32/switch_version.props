@@ -124,6 +124,11 @@ using Microsoft.Build.Framework;
              </Task>  
   </UsingTask>  
 
+  <PropertyGroup>
+    <GitCommit Condition="'$(GitCommit)' == ''">0000000</GitCommit>
+    <GitCommits Condition="'$(GitCommits)' == ''">0</GitCommits>
+  </PropertyGroup>
+
   <Target Name="SwitchVersionTarget" BeforeTargets="CustomBuild;Build">  
       <SwitchVersionTask commits="$(GitCommits)" revision="$(GitCommit)">
       </SwitchVersionTask>         
