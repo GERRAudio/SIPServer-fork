@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 <?xml version="1.0" encoding="utf-8"?>
 <configuration name="ravenna.conf" description="Ravenna / AES67 endpoint module">
   <!--
@@ -136,3 +137,36 @@
     </endpoint>
   </endpoints>
 </configuration>
+=======
+﻿<?xml version="1.0" encoding="utf-8"?>
+<configuration name="ravenna.conf" description="Ravenna / AES67 endpoint module">
+  <settings>
+    <param name="dialplan" value="XML" />
+    <param name="cid-name" value="$${outbound_caller_name}" />
+    <param name="cid-num" value="$${outbound_caller_id}" />
+    <param name="hold-file" value="$${hold_music}" />
+    <param name="sample-rate" value="48000" />
+    <param name="ptime-ms" value="1.0" />
+    <param name="channels" value="1" />
+    <param name="rx-codec" value="L24" />
+    <param name="tx-codec" value="L24" />
+    <param name="rtp-payload-type" value="98" />
+    <param name="iface-primary" value="192.168.1.226" />
+    <param name="debug" value="false" />
+  </settings>
+  <streams>
+    <stream name="NABNY32">
+      <param name="rx-address" value="239.69.218.95" />
+      <param name="tx-address" value="239.69.218.95" />
+      <param name="rx-port" value="5004" />
+      <param name="tx-port" value="5004" />
+      <param name="rx-codec" value="L24" />
+      <param name="tx-codec" value="L24" />
+      <param name="channels" value="8" />
+      <param name="sample-rate" value="48000" />
+      <param name="ptime-ms" value="1" />
+    </stream>
+  </streams>
+  <endpoints />
+</configuration>
+>>>>>>> Stashed changes

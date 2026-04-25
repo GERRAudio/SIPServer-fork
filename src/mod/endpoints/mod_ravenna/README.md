@@ -119,9 +119,48 @@ dialplans typically only need the `aes67/` → `ravenna/` rename.
 ravenna status              # one-line module summary
 ravenna streams             # per-stream stats (rx/tx packet counts, drops)
 ravenna endpoints           # endpoints and active session counts
+<<<<<<< Updated upstream
 ravenna debug on|off        # verbose per-tick logging
 ```
 
+=======
+ravenna reload              # live config reload (see below)
+ravenna debug on|off        # verbose per-tick logging
+```
+
+### ravenna reload
+
+Performs a non-destructive live reload without restarting the module or
+dropping any currently-running FS sessions:
+
+1. Calls FreeSWITCH's internal `switch_xml_reload()` to refresh the XML
+   source — works identically whether config comes from disk,
+   `mod_xml_curl`, `mod_xml_ldap`, or any other bound XML provider.
+2. Re-parses `ravenna.conf` in a temporary memory pool.
+3. Diffs the new config against the running state:
+
+   | Situation | Action |
+   |---|---|
+   | Stream in current, absent in new | Sockets closed; stream removed |
+   | Stream in both, config unchanged | No-op |
+   | Stream in both, config changed | Sockets closed and reopened with new params |
+   | Stream in new, absent in current | New sockets opened; stream added |
+
+4. Replaces the endpoint table (endpoints are cheap config references,
+   not sockets — always replaced wholesale).
+5. Wakes the RX reactor to rebuild its `poll()` set.
+
+Active sessions on a removed or changed stream are **not** forcibly hung
+up. Their cursors stop receiving new samples, read silence, and the
+session eventually times out via the normal media-timeout path.
+
+```
+freeswitch> ravenna reload
+XML reload: OK
++OK reload complete: 1 added, 0 removed, 1 restarted, 2 unchanged
+```
+
+>>>>>>> Stashed changes
 ## Building on Linux
 
 ```sh

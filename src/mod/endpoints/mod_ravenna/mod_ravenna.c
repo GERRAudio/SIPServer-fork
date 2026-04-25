@@ -167,13 +167,52 @@ void ravenna_stream_close_sockets(ravenna_stream_t *s)
 }
 
 /* ==================================================================
+<<<<<<< Updated upstream
+=======
+ *  Stream comparison — used by reload diff
+ * ================================================================== */
+
+/* Returns SWITCH_TRUE if all socket-affecting parameters are identical.
+ * Internal state (stats, rings, sequence numbers) is intentionally
+ * excluded — those are runtime, not config. */
+static switch_bool_t stream_equal(const ravenna_stream_t *a,
+								  const ravenna_stream_t *b)
+{
+	if (a->channels    != b->channels)    return SWITCH_FALSE;
+	if (a->sample_rate != b->sample_rate) return SWITCH_FALSE;
+	if (a->ptime_ms    != b->ptime_ms)    return SWITCH_FALSE;
+	if (a->rx_enabled  != b->rx_enabled)  return SWITCH_FALSE;
+	if (a->tx_enabled  != b->tx_enabled)  return SWITCH_FALSE;
+	if (a->rx_codec    != b->rx_codec)    return SWITCH_FALSE;
+	if (a->tx_codec    != b->tx_codec)    return SWITCH_FALSE;
+	if (a->rtp_payload_type != b->rtp_payload_type) return SWITCH_FALSE;
+	if (a->st2022_7    != b->st2022_7)    return SWITCH_FALSE;
+	if (strcmp(a->rx_addr,  b->rx_addr))  return SWITCH_FALSE;
+	if (strcmp(a->tx_addr,  b->tx_addr))  return SWITCH_FALSE;
+	if (strcmp(a->rx2_addr, b->rx2_addr)) return SWITCH_FALSE;
+	if (strcmp(a->tx2_addr, b->tx2_addr)) return SWITCH_FALSE;
+	if (a->rx_port  != b->rx_port)        return SWITCH_FALSE;
+	if (a->tx_port  != b->tx_port)        return SWITCH_FALSE;
+	if (a->rx2_port != b->rx2_port)       return SWITCH_FALSE;
+	if (a->tx2_port != b->tx2_port)       return SWITCH_FALSE;
+	if (strcmp(a->iface,  b->iface))      return SWITCH_FALSE;
+	if (strcmp(a->iface2, b->iface2))     return SWITCH_FALSE;
+	return SWITCH_TRUE;
+}
+
+/* ==================================================================
+>>>>>>> Stashed changes
  *  Configuration loader
  * ================================================================== */
 
 static switch_status_t load_settings(switch_xml_t settings)
 {
 	switch_xml_t param;
+<<<<<<< Updated upstream
 	for (param = switch_xml_child(settings, "param"); param; param = param->next) {
+=======
+
+>>>>>>> Stashed changes
 		const char *var = switch_xml_attr_soft(param, "name");
 		const char *val = switch_xml_attr_soft(param, "value");
 		if (!strcasecmp(var, "sample-rate"))      mod_ravenna_globals.default_sample_rate  = atoi(val);
@@ -655,10 +694,229 @@ static switch_call_cause_t channel_outgoing_channel(switch_core_session_t *sessi
 }
 
 /* ==================================================================
+<<<<<<< Updated upstream
  *  API: ravenna status [json] | streams | debug on|off
  * ================================================================== */
 
 #define RAVENNA_API_SYNTAX "status [json] | streams | endpoints | debug on|off"
+=======
+ *  Reload — live config diff and stream reconciliation
+ * ================================================================== */
+
+/*
+ * ravenna_reload() performs a non-destructive live reload:
+ *
+ *  1. Ask FreeSWITCH to refresh its XML source (switch_xml_reload).
+ *     This is the same mechanism used by 'reloadxml' on the console
+ *     and works regardless of whether config comes from disk, XML
+ *     curl, XML LDAP, or any other bound XML source.
+ *
+ *  2. Parse ravenna.conf into a TEMPORARY set of stream/endpoint
+ *     hashes using the existing load_streams()/load_endpoints()
+ *     helpers, but pointed at a fresh pool so we never touch live
+ *     data until the diff is complete.
+ *
+ *  3. Diff new vs current:
+ *       - Streams present in current but absent in new  → REMOVE
+ *       - Streams present in both but config changed    → RESTART
+ *       - Streams present in new but absent in current  → ADD
+ *       - Streams identical in both                     → KEEP (no-op)
+ *     Endpoints are always replaced wholesale after streams settle,
+ *     because they are purely config references (no sockets, no rings).
+ *
+ *  4. For REMOVE/RESTART streams: close sockets.  Active FS sessions
+ *     that hold cursors continue to run; their cursors will drain to
+ *     zero and read silence, which is the same behaviour as a network
+ *     outage — the session is not forcibly hung up here.
+ *
+ *  5. For ADD/RESTART streams: copy the new ravenna_stream_t into
+ *     the module pool, open its sockets, and insert into the live
+ *     hash.
+ *
+ *  6. Wake the RX reactor so it rebuilds its pollset.
+ */
+switch_status_t ravenna_reload(switch_stream_handle_t *stream)
+{
+    switch_xml_t         cfg, xml, settings_xml, streams_xml, endpoints_xml;
+    switch_hash_t       *new_streams   = NULL;
+    switch_hash_t       *new_endpoints = NULL;
+    switch_memory_pool_t *tmp_pool     = NULL;
+    const char          *cf            = "ravenna.conf";
+    const char          *xml_err       = NULL;
+    switch_hash_index_t *hi;
+    int added = 0, removed = 0, changed = 0, kept = 0;
+
+    /* --- Step 1: refresh FS XML source -------------------------------- */
+    switch_xml_reload(&xml_err);
+    if (stream) {
+        stream->write_function(stream, "XML reload: %s\n",
+            xml_err ? xml_err : "OK");
+    }
+
+    /* --- Step 2: parse new config into a temporary pool/hashes -------- */
+    if (switch_core_new_memory_pool(&tmp_pool) != SWITCH_STATUS_SUCCESS) {
+        if (stream) stream->write_function(stream, "-ERR failed to create temp pool\n");
+        return SWITCH_STATUS_GENERR;
+    }
+    switch_core_hash_init(&new_streams);
+    switch_core_hash_init(&new_endpoints);
+
+    if (!(xml = switch_xml_open_cfg(cf, &cfg, NULL))) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+                          "ravenna reload: %s not found\n", cf);
+        /* Treat as "all streams removed" — fall through with empty hashes */
+    } else {
+        /* Temporarily point globals at the tmp pool/hashes so the existing
+         * loaders write into them. */
+        switch_hash_t       *save_streams   = mod_ravenna_globals.streams;
+        switch_hash_t       *save_endpoints = mod_ravenna_globals.endpoints;
+        switch_memory_pool_t *save_pool     = mod_ravenna_globals.pool;
+
+        mod_ravenna_globals.streams   = new_streams;
+        mod_ravenna_globals.endpoints = new_endpoints;
+        mod_ravenna_globals.pool      = tmp_pool;
+
+        if ((settings_xml  = switch_xml_child(cfg, "settings")))  load_settings(settings_xml);
+        if ((streams_xml   = switch_xml_child(cfg, "streams")))    load_streams(streams_xml);
+        if ((endpoints_xml = switch_xml_child(cfg, "endpoints")))  load_endpoints(endpoints_xml);
+
+        mod_ravenna_globals.streams   = save_streams;
+        mod_ravenna_globals.endpoints = save_endpoints;
+        mod_ravenna_globals.pool      = save_pool;
+
+        switch_xml_free(xml);
+    }
+
+    /* --- Step 3+4: diff and reconcile under the global mutex ----------- */
+    switch_mutex_lock(mod_ravenna_globals.mutex);
+
+    /* REMOVE or RESTART: walk current streams */
+    for (hi = switch_core_hash_first(mod_ravenna_globals.streams); hi;
+         hi = switch_core_hash_next(&hi)) {
+        const void *k; void *v; switch_ssize_t klen;
+        ravenna_stream_t *cur, *nw;
+        switch_core_hash_this(hi, &k, &klen, &v);
+        cur = (ravenna_stream_t *)v;
+        nw  = (ravenna_stream_t *)switch_core_hash_find(new_streams, cur->name);
+
+        if (!nw) {
+            /* REMOVE */
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+                              "ravenna reload: removing stream '%s'\n", cur->name);
+            ravenna_stream_close_sockets(cur);
+            switch_core_hash_delete(mod_ravenna_globals.streams, cur->name);
+            removed++;
+        } else if (!stream_equal(cur, nw)) {
+            /* RESTART — close old sockets; the new version is added below */
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+                              "ravenna reload: restarting stream '%s' (config changed)\n",
+                              cur->name);
+            ravenna_stream_close_sockets(cur);
+            switch_core_hash_delete(mod_ravenna_globals.streams, cur->name);
+            changed++;
+        } else {
+            kept++;
+        }
+    }
+
+    /* ADD or complete RESTART: walk new streams */
+    for (hi = switch_core_hash_first(new_streams); hi;
+         hi = switch_core_hash_next(&hi)) {
+        const void *k; void *v; switch_ssize_t klen;
+        ravenna_stream_t *nw, *live;
+        switch_core_hash_this(hi, &k, &klen, &v);
+        nw = (ravenna_stream_t *)v;
+
+        if (switch_core_hash_find(mod_ravenna_globals.streams, nw->name)) {
+            continue; /* still present (kept) */
+        }
+
+        /* Copy into the module's permanent pool */
+        live = switch_core_alloc(mod_ravenna_globals.pool, sizeof(*live));
+        memcpy(live, nw, sizeof(*live));
+        /* Reset runtime state that was copied from the template */
+        live->rx_sock = RAVENNA_INVALID_SOCKET;
+        live->rx2_sock = RAVENNA_INVALID_SOCKET;
+        live->tx_sock = RAVENNA_INVALID_SOCKET;
+        live->tx2_sock = RAVENNA_INVALID_SOCKET;
+        live->rx_packets = 0; live->rx_drops = 0; live->rx_seq_gaps = 0;
+        live->tx_packets = 0;
+        live->rx2_packets = 0; live->rx2_drops = 0; live->rx_dedup_dropped = 0;
+        live->rx_seq_inited = SWITCH_FALSE;
+        memset(live->dedup_win, 0xFF, sizeof(live->dedup_win));
+        switch_mutex_init(&live->mutex, SWITCH_MUTEX_NESTED, mod_ravenna_globals.pool);
+
+        /* Recreate rings — ring pointers from the tmp pool are invalid */
+        {
+            int ch;
+            for (ch = 0; ch < live->channels; ch++) {
+                uint32_t cap = (uint32_t)live->samples_per_packet * RAVENNA_RING_PACKETS_DEFAULT;
+                live->rx_rings[ch] = NULL;
+                live->tx_rings[ch] = NULL;
+                if (live->rx_enabled) ravenna_ring_create(&live->rx_rings[ch], mod_ravenna_globals.pool, cap);
+                if (live->tx_enabled) ravenna_ring_create(&live->tx_rings[ch], mod_ravenna_globals.pool, cap);
+            }
+        }
+
+        ravenna_stream_open_sockets(live);
+        switch_core_hash_insert(mod_ravenna_globals.streams, live->name, live);
+
+        if (changed > 0 &&
+            !switch_core_hash_find(new_streams, live->name)) {
+            /* came from a restart */
+        } else {
+            added++;
+        }
+    }
+
+    /* Replace endpoints wholesale */
+    switch_core_hash_destroy(&mod_ravenna_globals.endpoints);
+    switch_core_hash_init(&mod_ravenna_globals.endpoints);
+    for (hi = switch_core_hash_first(new_endpoints); hi;
+         hi = switch_core_hash_next(&hi)) {
+        const void *k; void *v; switch_ssize_t klen;
+        ravenna_endpoint_t *ne, *live_ep;
+        switch_core_hash_this(hi, &k, &klen, &v);
+        ne = (ravenna_endpoint_t *)v;
+
+        live_ep = switch_core_alloc(mod_ravenna_globals.pool, sizeof(*live_ep));
+        memcpy(live_ep, ne, sizeof(*live_ep));
+        /* Re-resolve stream pointers to the live hash */
+        live_ep->in_stream  = ne->in_stream  ?
+            switch_core_hash_find(mod_ravenna_globals.streams, ne->in_stream->name)  : NULL;
+        live_ep->out_stream = ne->out_stream ?
+            switch_core_hash_find(mod_ravenna_globals.streams, ne->out_stream->name) : NULL;
+        switch_mutex_init(&live_ep->mutex, SWITCH_MUTEX_NESTED, mod_ravenna_globals.pool);
+        switch_core_hash_insert(mod_ravenna_globals.endpoints, live_ep->name, live_ep);
+    }
+
+    switch_mutex_unlock(mod_ravenna_globals.mutex);
+
+    /* Wake RX reactor to rebuild its pollset */
+    ravenna_net_wake(mod_ravenna_globals.rx_wake_w);
+
+    /* --- Cleanup temp resources --------------------------------------- */
+    switch_core_hash_destroy(&new_streams);
+    switch_core_hash_destroy(&new_endpoints);
+    switch_core_destroy_memory_pool(&tmp_pool);
+
+    if (stream) {
+        stream->write_function(stream,
+            "+OK reload complete: %d added, %d removed, %d restarted, %d unchanged\n",
+            added, removed, changed, kept);
+    }
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+                      "ravenna reload: +%d -%d ~%d =%d streams; endpoints replaced\n",
+                      added, removed, changed, kept);
+    return SWITCH_STATUS_SUCCESS;
+}
+
+/* ==================================================================
+ *  API: ravenna status [json] | streams | debug on|off
+ * ================================================================== */
+
+#define RAVENNA_API_SYNTAX "status [json] | streams | endpoints | reload | debug on|off"
+>>>>>>> Stashed changes
 
 SWITCH_STANDARD_API(ravenna_api_function)
 {
@@ -676,6 +934,13 @@ SWITCH_STANDARD_API(ravenna_api_function)
 		goto done;
 	}
 
+<<<<<<< Updated upstream
+=======
+	if (!strcasecmp(argv[0], "reload")) {
+		return ravenna_reload(stream);
+	}
+
+>>>>>>> Stashed changes
 	if (!strcasecmp(argv[0], "debug")) {
 		if (argc >= 2) {
 			mod_ravenna_globals.debug =

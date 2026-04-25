@@ -278,6 +278,10 @@ void *SWITCH_THREAD_FUNC ravenna_tx_thread_run(switch_thread_t *t, void *obj);
 
 switch_status_t ravenna_load_config(void);
 void            ravenna_unload_config(void);
+<<<<<<< Updated upstream
+=======
+switch_status_t ravenna_reload(switch_stream_handle_t *stream);
+>>>>>>> Stashed changes
 
 /* Stream lifecycle */
 switch_status_t ravenna_stream_open_sockets(ravenna_stream_t *s);
