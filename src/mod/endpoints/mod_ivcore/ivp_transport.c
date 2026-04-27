@@ -1226,8 +1226,22 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 	 * fire time is spread evenly across one ptime window. */
 	static volatile LONG s_tx_seq = 0;
 
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-	{
+	/* Autoconnect standby channels only send silence to keep the IVP link alive
+	 * and do not carry real audio.  Running them at THREAD_PRIORITY_TIME_CRITICAL
+	 * starves mod_sofia's RTP delivery thread when several standby channels are
+	 * active simultaneously — each 20 ms timer burst causes a thundering-herd of
+	 * TIME_CRITICAL threads that delays the active lqsip1 write path.
+	 * Standby channels are downgraded to ABOVE_NORMAL; active call legs that
+	 * carry real audio keep TIME_CRITICAL so they still get precise pacing. */
+	if (ch->is_autoconnect) {
+		SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+	} else {
+		SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+	}
+	/* Only enlist in the MMCSS "Pro Audio" task for real call legs.
+	 * MMCSS independently boosts scheduling priority and would re-elevate
+	 * autoconnect standby threads even after SetThreadPriority(ABOVE_NORMAL). */
+	if (!ch->is_autoconnect) {
 		HMODULE avrt = GetModuleHandleW(L"avrt.dll");
 		if (!avrt) avrt = LoadLibraryW(L"avrt.dll");
 		if (avrt) {
