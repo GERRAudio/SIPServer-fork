@@ -264,6 +264,9 @@ switch_status_t ivp_hdlc_on_data(ivcore_channel_t *ch,
 									raw, (int)sizeof(raw), &consumed);
 		if (raw_len <= 0) {
 			/* Not a complete frame in this packet — stop. */
+			IVC_LOG_DEBUG("mod_ivcore: HDLC unstuff no complete frame "
+				"(off=%d payload_len=%d consumed=%d)\n",
+				off, payload_len, consumed);
 			break;
 		}
 		off += consumed;
@@ -284,9 +287,13 @@ switch_status_t ivp_hdlc_on_data(ivcore_channel_t *ch,
 				uint8_t ua[16];
 				int n;
 				ch->hdlc.sabme_count++;
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-					"mod_ivcore: HDLC SABME received (#%u), sending UA\n",
-					(unsigned)ch->hdlc.sabme_count);
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+					"mod_ivcore: HDLC SABME #%u — resetting v_r=%u v_s=%u "
+					"dpi_state=%u dpi_dial_pending=%d dpi_dial_buffer='%s'\n",
+					(unsigned)ch->hdlc.sabme_count,
+					(unsigned)ch->hdlc.v_r, (unsigned)ch->hdlc.v_s,
+					(unsigned)ch->dpi_state,
+					(int)ch->dpi_dial_pending, ch->dpi_dial_buffer);
 				n = ivp_hdlc_build_ua(ua, (int)sizeof(ua));
 				if (n > 0 && send_cb) send_cb(ch, ua, n);
 
@@ -345,20 +352,26 @@ switch_status_t ivp_hdlc_on_data(ivcore_channel_t *ch,
 			/* I-frame.  Update v_r so our next RR/UA ackSeq advances. */
 			uint8_t send_seq = (uint8_t)((ctl >> 1) & 0x7F);
 			ch->hdlc.iframe_count++;
-			IVC_LOG_DEBUG("mod_ivcore: HDLC I-frame send_seq=%u payloadLen=%d (#%u)\n",
-				(unsigned)send_seq, frame_payload_len,
-				(unsigned)ch->hdlc.iframe_count);
+			IVC_LOG_DEBUG("mod_ivcore: HDLC I-frame #%u send_seq=%u v_r=%u payloadLen=%d %s\n",
+				(unsigned)ch->hdlc.iframe_count,
+				(unsigned)send_seq, (unsigned)ch->hdlc.v_r,
+				frame_payload_len,
+				(send_seq == ch->hdlc.v_r) ? "ACCEPTED" : "SEQ-MISMATCH-DROPPED");
 
 			/* Accept if it matches v_r; advance v_r for ack. */
 			if (send_seq == ch->hdlc.v_r) {
 				ch->hdlc.v_r = (uint8_t)((ch->hdlc.v_r + 1) & 0x7F);
 
 				/* Hand the I-frame payload to the DPI decoder so we
-				 * can see dial strings, DTMF, state queries, etc. */
-				if (frame_payload_len > 0) {
-					ivp_dpi_on_message(ch, frame_payload,
-									   frame_payload_len, send_cb);
-				}
+					 * can see dial strings, DTMF, state queries, etc. */
+					if (frame_payload_len > 0) {
+						IVC_LOG_DEBUG("mod_ivcore: HDLC I-frame -> ivp_dpi_on_message payloadLen=%d "
+							"firstByte=0x%02X\n",
+							frame_payload_len,
+							(frame_payload_len > 0) ? frame_payload[0] : 0);
+						ivp_dpi_on_message(ch, frame_payload,
+										   frame_payload_len, send_cb);
+					}
 			}
 
 			/* Acknowledge with an immediate RR so the server's window

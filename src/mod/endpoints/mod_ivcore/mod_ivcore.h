@@ -343,6 +343,15 @@ typedef struct ivcore_channel_s {
 	switch_timer_t         write_timer;
 	switch_bool_t          write_timer_inited;
 
+#ifdef _WIN32
+	/* High-precision TX pacer: hybrid Sleep+QPC-spin replaces soft timer.
+	 * next_tx_qpc = QPC deadline for the next frame transmission.
+	 * tx_qpc_interval = frame interval in QPC counts (cached at codec setup). */
+	LARGE_INTEGER          next_tx_qpc;
+	LARGE_INTEGER          tx_qpc_interval;
+	switch_bool_t          tx_qpc_inited;
+#endif
+
 	/* TX pacing diagnostics (only updated when ivcore_globals.debug is TRUE).
 	 * Inter-arrival = time between successive channel_write_frame() calls
 	 * BEFORE the pacer blocks (= how fast FS is delivering audio).
@@ -379,14 +388,22 @@ typedef struct ivcore_channel_s {
 	ivp_audio_codec_t      active_codec;
 	int                    sample_rate;  /**< 8000 or 16000 Hz */
 
-	/* Receive ring buffer — ivp_recv_loop writes, channel_read_frame reads.
-	 * No tx_ring needed: channel_write_frame calls ivp_send_media() directly. */
+	/* Receive ring buffer — ivp_recv_loop writes, channel_read_frame reads. */
 	ivcore_ring_buffer_t   rx_ring;      /**< IVP → FreeSWITCH (inbound audio)  */
+
+	/* TX ring buffer — channel_write_frame writes, ivp_tx_loop reads.
+	 * Decouples FS session-thread scheduling from wire cadence: the dedicated
+	 * TX thread owns pacing and drains the ring at exactly the right intervals.
+	 * SPSC: single producer (FS write_frame callback), single consumer (tx_thread). */
+	ivcore_ring_buffer_t   tx_ring;      /**< FreeSWITCH → IVP (outbound audio) */
+
+	/* Silence frame sent by the TX thread when tx_ring is empty. */
+	uint8_t                tx_silence_buf[IVC_MAX_FRAME_BYTES];
 
 	/* Receive / Transmit threads */
 	switch_thread_t       *rx_thread;
-	switch_thread_t       *tx_thread;  /**< Dedicated 8 ms TX pacer thread */
-	switch_bool_t          running;
+	switch_thread_t       *tx_thread;  /**< Dedicated TX pacer thread — owns pacing & ivp_send_media */
+	volatile switch_bool_t running;
 
 	/* Silence padding when rx_ring is starved */
 	uint32_t               ptime_ms;     /**< IVP wire cadence in ms (e.g. 8 for lqsip G.722) */
@@ -418,9 +435,23 @@ typedef struct ivcore_channel_s {
 	char                   dpi_dial_buffer[160];   /**< Last 0xF1 dial string seen */
 	switch_bool_t          dpi_init_sent;          /**< TRUE after PanelTypeReply init sequence sent */
 	uint8_t                dpi_key_status_replies; /**< Count of 0x8B KeyStatusReply messages sent */
-	switch_bool_t          dpi_dial_pending;       /**< TRUE when a complete 0xF1 dial string is ready to route */
+	volatile switch_bool_t dpi_dial_pending;       /**< TRUE when a complete 0xF1 dial string is ready to route */
 	switch_bool_t          dpi_dial_cont_active;   /**< TRUE while accumulating a multi-packet 0xF1 sequence (cont=1) */
 	volatile switch_bool_t hdlc_reset_pending;     /**< Set by HDLC SABME handler; cleared by recv loop to re-sync IVP in_sequence */
+
+	/* ---------------------------------------------------------------
+	 * Dial diagnostics — populated by ivp_dpi.c as dial packets arrive.
+	 * Stamped as channel variables (ivc_*) by channel_on_exchange_media()
+	 * immediately before switch_ivr_session_transfer() so the FreeSWITCH
+	 * dialplan, CDR, and ESL event listeners can inspect the full
+	 * context of every dial-out without needing to parse log files.
+	 * --------------------------------------------------------------- */
+	uint8_t        diag_dial_source;        /**< DPI msg ID that triggered routing: 0xF1 or 0xF5 */
+	char           diag_dial_raw[160];      /**< Raw dial string exactly as received from matrix  */
+	uint32_t       diag_dial_cont_packets;  /**< Number of cont=1 0xF1 packets accumulated        */
+	switch_time_t  diag_dial_first_us;      /**< switch_micro_time_now() of first 0xF1 received   */
+	switch_time_t  diag_dial_final_us;      /**< switch_micro_time_now() of the routing packet     */
+
 	/* Stored HDLC send callback — set in ivp_transport.c when the first IVP
 	 * Data (HDLC) frame is received inside ivp_recv_loop.  Allows proactive
 	 * DPI sends (e.g. 0xF1 ConnectReply on SIP answer, 0x93 KeyStatusUpdate

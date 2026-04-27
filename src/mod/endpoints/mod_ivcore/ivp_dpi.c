@@ -19,7 +19,7 @@
  *   0xF0  GetState          → reply with current call state + cliInfo
  *   0xF1  DialOut request   → log dial number, reply connect success (stub)
  *   0xF4  DisconnectOutbound → reply success (stub)
- *   0xF5  DialInfo           → log DTMF digits
+ *   0xF5  DialInfo           → treat as definitive dial string, reply 0xF1 success, trigger dialplan
  *
  * Reference: tools/IVCore/Devices/IvcDeviceBase.cs
  *            tools/IVCore/Protocol/DpiMessages.cs
@@ -29,6 +29,12 @@
 
 #include <switch.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#define IVC_DBGOUT(buf) OutputDebugStringA(buf)
+#else
+#define IVC_DBGOUT(buf) ((void)0)
+#endif
 
 /* =====================================================================
  * SIP telephone panel identity constants
@@ -481,6 +487,7 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 				(unsigned)ch->dpi_state, (int)ch->call_state);
 			ch->dpi_state = (uint8_t)IVP_SIP_STATE_ON_HOOK_ALLOCATED;
 		}
+		IVC_DBGOUT("[IVC-SIP] 0xF0 GetState\n");
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
 			"mod_ivcore: DPI <- 0xF0 GetState\n");
 		send_get_state_reply(ch, send_cb);
@@ -497,6 +504,14 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 		}
 		copy_ascii(dial, (int)sizeof(dial), dpi + 1, 80);
 		if (dpi_len >= 1 + 80 + 1) cont = dpi[1 + 80];
+		{
+			char _dbg[256];
+			switch_snprintf(_dbg, sizeof(_dbg),
+				"[IVC-SIP] 0xF1 DialOut dial='%s' cont=%u ch=0x%lX pending=%d\n",
+				dial, (unsigned)cont, (unsigned long)(uintptr_t)ch,
+				(int)ch->dpi_dial_pending);
+			IVC_DBGOUT(_dbg);
+		}
 
 		/* Each 0xF1 packet contains the COMPLETE dial string accumulated
 		 * so far (not just new incremental digits).  cont=1 means the
@@ -515,63 +530,208 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 		 * NOT send a real 0xF1 when the user actually dials, permanently
 		 * blocking dial-out on this port. */
 		if (dial[0] == '\0') {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-				"mod_ivcore: DPI <- 0xF1 DialOut with empty dial string — "
-				"replying failure to unblock matrix state machine\n");
-			send_connect_reply(ch,
-				/*success*/ 0,
-				/*reason */ (uint8_t)IVP_SIP_REASON_NOT_SET,
-				/*state  */ (uint8_t)IVP_SIP_STATE_ON_HOOK_ALLOCATED,
-				send_cb);
-			break;
-		}
-
-		switch_copy_string(ch->dpi_dial_buffer, dial, sizeof(ch->dpi_dial_buffer));
-		ch->dpi_dial_cont_active = (cont != 0) ? SWITCH_TRUE : SWITCH_FALSE;
-
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-			"mod_ivcore: DPI <- 0xF1 DialOut dial='%s' cont=%u buffer='%s'\n",
-			dial, (unsigned)cont, ch->dpi_dial_buffer);
-
-		if (cont == 0) {
-			/* Final segment — acknowledge success so the matrix marks the
-			 * call as connecting-out.  Signal the exchange_media loop that
-			 * a dialplan transfer is needed; it will call
-			 * switch_ivr_session_transfer() using dpi_dial_buffer. */
+			/* Empty 0xF1 is an off-hook notification: the matrix signals that
+			 * the user has gone off-hook but hasn't finished dialing yet.
+			 * The actual number will arrive in a 0xF5 DialInfo.
+			 *
+			 * We must reply success=1 (ConnectingOut) — NOT success=0 —
+			 * because success=0 causes CPUApp to treat this as a REJECTED
+			 * call attempt.  It then sends a second ConnectReply internally
+			 * when 0xF5 arrives, resulting in the matrix displaying the number
+			 * twice (e.g. "91989198" for a single dial of "9198").
+			 *
+			 * By replying success=1 here AND setting dpi_dial_pending=TRUE with
+			 * an empty buffer, the 0xF5 path will update the buffer and skip
+			 * its own ConnectReply — guaranteeing exactly one ConnectReply per
+			 * dial session.  exchange_media won't route because it checks
+			 * dpi_dial_buffer[0] before transferring. */
+			{
+				char _dbg[128];
+				switch_snprintf(_dbg, sizeof(_dbg),
+					"[IVC] 0xF1 empty dial (off-hook) — success=1 pending=TRUE ch=0x%lX\n",
+					(unsigned long)(uintptr_t)ch);
+				IVC_DBGOUT(_dbg);
+			}
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+				"mod_ivcore: DPI <- 0xF1 empty dial (off-hook notification) — "
+				"replying success=1 ConnectingOut, waiting for 0xF5\n");
+			/* Reset dial diagnostics so a subsequent 0xF5 starts fresh. */
+			ch->diag_dial_cont_packets = 0;
+			ch->diag_dial_first_us     = switch_micro_time_now();
+			ch->diag_dial_final_us     = 0;
+			ch->diag_dial_raw[0]       = '\0';
+			ch->diag_dial_source       = 0xF1;
+			ch->dpi_dial_buffer[0]     = '\0';   /* empty — 0xF5 will fill it */
 			ch->dpi_state = (uint8_t)IVP_SIP_STATE_CONNECTING_OUT;
 			send_connect_reply(ch,
 				/*success*/ 1,
 				/*reason */ (uint8_t)IVP_SIP_REASON_NOT_SET,
 				/*state  */ ch->dpi_state,
 				send_cb);
-			/* dpi_dial_buffer is intentionally NOT cleared here — the
-			 * exchange_media loop reads it and clears it after transfer. */
+			ch->dpi_dial_pending = SWITCH_TRUE;  /* suppresses 0xF5 ConnectReply */
+			break;
+		}
+
+		switch_copy_string(ch->dpi_dial_buffer, dial, sizeof(ch->dpi_dial_buffer));
+		ch->dpi_dial_cont_active = (cont != 0) ? SWITCH_TRUE : SWITCH_FALSE;
+
+		/* --- Dial diagnostics ----------------------------------------
+		 * Track the full lifecycle of each dial sequence so that
+		 * channel_on_exchange_media() can stamp ivc_* channel variables
+		 * before handing the session to the FreeSWITCH dialplan.
+		 * diag_dial_first_us is set only on the very first packet of a
+		 * new dial sequence (when cont_packets was 0 before this one). */
+		if (ch->diag_dial_cont_packets == 0) {
+			/* First packet of this dial sequence. */
+			ch->diag_dial_source     = 0xF1;
+			ch->diag_dial_first_us   = switch_micro_time_now();
+			switch_copy_string(ch->diag_dial_raw, dial, sizeof(ch->diag_dial_raw));
+		}
+		if (cont != 0) {
+			/* Continuation packet — matrix is still accumulating digits. */
+			ch->diag_dial_cont_packets++;
+			/* Keep diag_dial_raw up to date with the latest complete
+			 * string the matrix has sent so far. */
+			switch_copy_string(ch->diag_dial_raw, dial, sizeof(ch->diag_dial_raw));
+		} else {
+			/* Final/only packet — stamp completion time. */
+			ch->diag_dial_final_us = switch_micro_time_now();
+			switch_copy_string(ch->diag_dial_raw, dial, sizeof(ch->diag_dial_raw));
+		}
+		/* -------------------------------------------------------------- */
+
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+			"mod_ivcore: DPI <- 0xF1 DialOut dial='%s' cont=%u buffer='%s' "
+			"cont_packets=%u first_us=%" SWITCH_TIME_T_FMT " final_us=%" SWITCH_TIME_T_FMT "\n",
+			dial, (unsigned)cont, ch->dpi_dial_buffer,
+			(unsigned)ch->diag_dial_cont_packets,
+			ch->diag_dial_first_us, ch->diag_dial_final_us);
+
+		if (cont == 0) {
+			/* Final segment — acknowledge success and signal the
+			 * exchange_media loop.
+			 *
+			 * LOCKING NOTE: switch_core_session_run holds the session
+			 * write-lock for the entire duration of channel_on_exchange_media.
+			 * Any cross-thread call that tries to acquire even a read-lock
+			 * on the session (e.g. switch_core_session_locate) will block
+			 * indefinitely, freezing this recv thread.  Therefore we MUST NOT
+			 * call any switch_core_session_locate / switch_ivr_session_transfer
+			 * from here.
+			 *
+			 * The correct pattern is:
+			 *   1. Set dpi_dial_pending (volatile — seen by session thread).
+			 *   2. Call switch_channel_set_flag(CF_BREAK) — uses only the
+			 *      channel's flag-mutex, not the session rwlock — so it is
+			 *      safe from any thread.
+			 *   3. switch_core_session_read_frame returns SWITCH_STATUS_BREAK,
+			 *      which SWITCH_READ_ACCEPTABLE treats as success.
+			 *   4. The session thread loops, sees dpi_dial_pending, and calls
+			 *      switch_ivr_session_transfer on its own stack — no deadlock. */
+			ch->dpi_state        = (uint8_t)IVP_SIP_STATE_CONNECTING_OUT;
 			ch->dpi_dial_pending = SWITCH_TRUE;
+			{
+				char _dbg[256];
+				switch_snprintf(_dbg, sizeof(_dbg),
+					"[IVC] 0xF1 sending ConnectReply success=1 ch=0x%lX dial='%s'\n",
+					(unsigned long)(uintptr_t)ch, ch->dpi_dial_buffer);
+				IVC_DBGOUT(_dbg);
+			}
+			send_connect_reply(ch,
+				/*success*/ 1,
+				/*reason */ (uint8_t)IVP_SIP_REASON_NOT_SET,
+				/*state  */ ch->dpi_state,
+				send_cb);
+			if (ch->channel) {
+				switch_channel_state_t cs =
+					switch_channel_get_state(ch->channel);
+				switch_bool_t ready = switch_channel_ready(ch->channel);
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+					"mod_ivcore: DPI 0xF1 pending set — channel state=%d ready=%d "
+					"running=%d\n",
+					(int)cs, (int)ready, (int)ch->running);
+			} else {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+					"mod_ivcore: DPI 0xF1 pending set but ch->channel is NULL\n");
+			}
 		}
 		break;
 	}
 
 	case IVP_DPI_DISCONNECT_OUTGOING: {
 		uint8_t reason = (dpi_len >= 2) ? dpi[1] : 0;
+		{
+			char _dbg[128];
+			switch_snprintf(_dbg, sizeof(_dbg),
+				"[IVC-SIP] 0xF4 DisconnectOutgoing reason=%u\n", (unsigned)reason);
+			IVC_DBGOUT(_dbg);
+		}
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
 			"mod_ivcore: DPI <- 0xF4 DisconnectOutgoing reason=%u\n",
 			(unsigned)reason);
+
+		/* If a dial is already queued and waiting for the exchange_media loop
+		 * to route it, do NOT clear the buffer or hang up.  Some matrix firmware
+		 * versions send a 0xF4 reason=NOT_SET immediately after 0xF5 DialInfo as
+		 * a CPUApp state-reset.  Honouring it here would wipe dpi_dial_buffer
+		 * before channel_on_exchange_media's ~20 ms poll can consume it, silently
+		 * aborting the pending dial-out.  We already committed to the call by
+		 * replying 0xF1 success=1 — ack the 0xF4 and let the dial proceed. */
+		if (ch->dpi_dial_pending && ch->dpi_dial_buffer[0]) {
+			{
+				char _dbg[192];
+				switch_snprintf(_dbg, sizeof(_dbg),
+					"[IVC] 0xF4 reason=%u SUPPRESSED dial='%s' ch=0x%lX\n",
+					(unsigned)reason, ch->dpi_dial_buffer, (unsigned long)(uintptr_t)ch);
+				IVC_DBGOUT(_dbg);
+			}
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+				"mod_ivcore: DPI 0xF4 reason=%u suppressed — dial pending for '%s', "
+				"acking without clearing state\n",
+				(unsigned)reason, ch->dpi_dial_buffer);
+			send_disconnect_outbound_reply(ch, /*success*/ 1, send_cb);
+			break;
+		}
+		{
+			char _dbg[128];
+			switch_snprintf(_dbg, sizeof(_dbg),
+				"[IVC] 0xF4 reason=%u NORMAL teardown ch=0x%lX call_state=%d\n",
+				(unsigned)reason, (unsigned long)(uintptr_t)ch, (int)ch->call_state);
+			IVC_DBGOUT(_dbg);
+		}
+
 		ch->dpi_state = (uint8_t)IVP_SIP_STATE_ON_HOOK_ALLOCATED;
-		ch->dpi_dial_buffer[0] = '\0';
-		ch->dpi_dial_cont_active = SWITCH_FALSE;
+		ch->dpi_dial_buffer[0]     = '\0';
+		ch->dpi_dial_cont_active   = SWITCH_FALSE;
+		/* Reset dial diagnostics so next dial sequence starts clean. */
+		ch->diag_dial_cont_packets = 0;
+		ch->diag_dial_first_us     = 0;
+		ch->diag_dial_final_us     = 0;
+		ch->diag_dial_raw[0]       = '\0';
+		ch->diag_dial_source       = 0;
 		/* Rack initiated: reply with the reply form [0xF4][success=1] */
 		send_disconnect_outbound_reply(ch, /*success*/ 1, send_cb);
-		/* Only hang up the FreeSWITCH session if the SIP call was
-		 * actually in progress (ConnectedOut or ConnectingOut).
-		 * If the matrix sends 0xF4 to reset state before a new dial
-		 * (while we are still in exchange_media / OnHookAllocated),
-		 * do NOT hang up — the IVP session must stay alive so the
-		 * next 0xF1 DialOut can route through it. */
+		/* Only hang up the FreeSWITCH session on an explicit disconnect reason
+		 * (FarEnd = remote SIP hung up, LocalEnd = panel user hung up).
+		 *
+		 * Do NOT hang up when reason=NOT_SET (0).  The matrix sends 0xF4
+		 * reason=0 as a benign pre-dial state-reset while the IVP session is
+		 * sitting idle in exchange_media (IVC_STATE_UP / OnHookAllocated).
+		 * Treating that as a teardown kills the session before the user's
+		 * 0xF1/0xF5 dial arrives, leaving the port dead until the next
+		 * autoconnect respawn (500 ms later).
+		 *
+		 * The dpi_state is the authoritative indicator of an active SIP call;
+		 * IVC_STATE_UP only reflects the IVP transport connection, not the
+		 * SIP leg. */
 		if (ch->session &&
 			(reason == (uint8_t)IVP_SIP_REASON_FAR_END ||
-			 reason == (uint8_t)IVP_SIP_REASON_LOCAL_END ||
-			 ch->call_state == IVC_STATE_UP ||
-			 ch->call_state == IVC_STATE_RINGING)) {
+			 reason == (uint8_t)IVP_SIP_REASON_LOCAL_END)) {
+			char _dbg2[128];
+			switch_snprintf(_dbg2, sizeof(_dbg2),
+				"[IVC] 0xF4 reason=%u triggering hangup ch=0x%lX\n",
+				(unsigned)reason, (unsigned long)(uintptr_t)ch);
+			IVC_DBGOUT(_dbg2);
 			switch_channel_hangup(
 				switch_core_session_get_channel(ch->session),
 				SWITCH_CAUSE_NORMAL_CLEARING);
@@ -580,7 +740,14 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 	}
 
 	case IVP_DPI_DIAL_INFO: {
-		/* [msgId][len][80 ASCII] */
+		/* [msgId][len][80 ASCII]
+		 * Some matrices use a two-step dial flow:
+		 *   1. 0xF1 DialOut with empty string (off-hook notification only)
+		 *   2. 0xF5 DialInfo carrying the complete dialed number
+		 * When 0xF5 arrives with a non-empty number we treat it as the
+		 * definitive dial string, reply 0xF1 ConnectReply success=1 so the
+		 * matrix advances to ConnectingOut, then signal the exchange_media
+		 * loop to run the dialplan transfer. */
 		char    digits[96];
 		uint8_t len      = (dpi_len >= 2) ? dpi[1] : 0;
 		int     copy_len = len;
@@ -588,10 +755,51 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 		if (copy_len > dpi_len - 2) copy_len = dpi_len - 2;
 		if (copy_len < 0) copy_len = 0;
 		copy_ascii(digits, (int)sizeof(digits), dpi + 2, copy_len);
+		{
+			char _dbg[256];
+			switch_snprintf(_dbg, sizeof(_dbg),
+				"[IVC-SIP] 0xF5 DialInfo len=%u digits='%s'\n",
+				(unsigned)len, digits);
+			IVC_DBGOUT(_dbg);
+		}
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
 			"mod_ivcore: DPI <- 0xF5 DialInfo len=%u digits='%s'\n",
 			(unsigned)len, digits);
-		/* TODO: switch_channel_queue_dtmf for each digit. */
+
+		if (digits[0] != '\0') {
+			/* Always update the buffer with 0xF5's authoritative number.
+			 * If 0xF1 already sent ConnectReply (dpi_dial_pending==TRUE),
+			 * do NOT send a second ConnectReply — that would make CPUApp
+			 * concatenate the number ("91989198").  Just update the buffer
+			 * and re-kick the exchange_media loop via CF_BREAK. */
+			switch_copy_string(ch->dpi_dial_buffer, digits, sizeof(ch->dpi_dial_buffer));
+			ch->dpi_dial_cont_active = SWITCH_FALSE;
+			if (ch->diag_dial_first_us == 0)
+				ch->diag_dial_first_us = switch_micro_time_now();
+			ch->diag_dial_final_us = switch_micro_time_now();
+			ch->diag_dial_source   = 0xF5;
+			switch_copy_string(ch->diag_dial_raw, digits, sizeof(ch->diag_dial_raw));
+			ch->dpi_state = (uint8_t)IVP_SIP_STATE_CONNECTING_OUT;
+
+			if (!ch->dpi_dial_pending) {
+				/* 0xF1 did not already send ConnectReply — send it now. */
+				send_connect_reply(ch,
+					/*success*/ 1,
+					/*reason */ (uint8_t)IVP_SIP_REASON_NOT_SET,
+					/*state  */ ch->dpi_state,
+					send_cb);
+			}
+
+			/* Signal the exchange_media loop — same safe pattern as 0xF1. */
+			ch->dpi_dial_pending = SWITCH_TRUE;
+			{
+				char _dbg[128];
+				switch_snprintf(_dbg, sizeof(_dbg),
+					"[IVC] 0xF5 dpi_dial_pending=TRUE CF_BREAK set buffer='%s' ch=0x%lX\n",
+					ch->dpi_dial_buffer, (unsigned long)(uintptr_t)ch);
+				IVC_DBGOUT(_dbg);
+			}
+		}
 		break;
 	}
 
