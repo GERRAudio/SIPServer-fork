@@ -1193,10 +1193,7 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 {
 	ivcore_channel_t *ch = (ivcore_channel_t *)obj;
 	int frame_bytes;
-	switch_timer_t timer = { 0 };
-	switch_memory_pool_t *pool = NULL;
 	uint32_t ptime_ms;
-	int timer_ok = 0;
 
 	/* Jitter diagnostics (only accumulated when ivcore_globals.debug == TRUE).
 	 * We track how late/early each timer tick fires vs. the ideal deadline.
@@ -1209,15 +1206,23 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 	switch_time_t dbg_last_log_us  = 0;
 	uint32_t      dbg_silence_run  = 0;    /* consecutive silence-substitution frames */
 
-	/* Boost this thread so it is not starved by normal-priority threads when
-	 * waiting on the winmm condvar broadcast.  Without this the scheduler can
-	 * delay wakeup by tens of milliseconds even though the waitable-timer
-	 * fires on time. */
 #ifdef _WIN32
+	/* On Windows each TX thread gets its own private high-resolution waitable
+	 * timer.  This avoids the shared condvar thundering-herd that occurs when
+	 * mod_timer_winmm broadcasts to ALL waiting TX threads simultaneously:
+	 * with N channels they all unblock at once, compete for the CPU, and the
+	 * last one to run is delayed by (N-1) × dispatch latency — which empties
+	 * the TX ring and causes silence substitution / audible stutter.
+	 *
+	 * A private timer per channel means each thread wakes independently at its
+	 * own absolute deadline, with natural phase stagger.  The FS condvar path
+	 * is still used on non-Windows platforms. */
+	HANDLE  win_timer  = NULL;
+	int     timer_ok   = 0;
+	LARGE_INTEGER due;
+
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 	{
-		/* Also enroll in MMCSS "Pro Audio" if available so the thread
-		 * survives Windows multimedia scheduler throttling. */
 		HMODULE avrt = GetModuleHandleW(L"avrt.dll");
 		if (!avrt) avrt = LoadLibraryW(L"avrt.dll");
 		if (avrt) {
@@ -1229,6 +1234,10 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 			}
 		}
 	}
+#else
+	switch_timer_t timer = { 0 };
+	switch_memory_pool_t *pool = NULL;
+	int timer_ok = 0;
 #endif
 
 	/* Wait until codec setup has run so frame_size and ptime are valid. */
@@ -1237,9 +1246,6 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 
 	frame_bytes = (ch->params.frame_size > 0) ? (int)ch->params.frame_size : 320;
 	if (frame_bytes > IVC_MAX_FRAME_BYTES) frame_bytes = IVC_MAX_FRAME_BYTES;
-	/* 20 ms matches the wire ptime negotiated with the matrix and is the
-	 * sweet spot for the high-resolution waitable timer (well under the
-	 * Windows scheduler period, so the timer quirk never trips). */
 	ptime_ms = ch->ptime_ms ? ch->ptime_ms : 20;
 
 	/* Pre-fill the silence buffer. */
@@ -1248,46 +1254,57 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 		memset(ch->tx_silence_buf, fill, (size_t)frame_bytes);
 	}
 
-	/* Set up a FreeSWITCH timer so we automatically benefit from
-	 * mod_timer_winmm on Windows (waitable timer + MMCSS "Pro Audio"
-	 * thread boost, zero spin) and mod_posix_timer / softtimer elsewhere.
-	 * samples_per_packet = ptime_ms * 8 (matches 8 kHz G.711 / G.722). */
+#ifdef _WIN32
+	/* Create a private synchronisation-timer (non-manual-reset, so it
+	 * auto-resets after WaitForSingleObject returns — no spurious wakeups). */
+	win_timer = CreateWaitableTimerExW(NULL, NULL, 0, TIMER_ALL_ACCESS);
+	if (win_timer) {
+		/* First deadline: one ptime interval from now (100-ns units, negative
+		 * = relative).  Subsequent deadlines are re-armed as absolute values
+		 * to prevent drift accumulation. */
+		due.QuadPart = -(LONGLONG)ptime_ms * 10000LL;
+		if (SetWaitableTimer(win_timer, &due, 0, NULL, NULL, FALSE)) {
+			timer_ok = 1;
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+				"mod_ivcore: TX ch=%p using private waitable timer, "
+				"ptime=%u ms frame=%d bytes\n",
+				(void *)ch, ptime_ms, frame_bytes);
+		} else {
+			CloseHandle(win_timer);
+			win_timer = NULL;
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+				"mod_ivcore: TX ch=%p SetWaitableTimer failed (%lu), "
+				"falling back to switch_sleep\n",
+				(void *)ch, GetLastError());
+		}
+	} else {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+			"mod_ivcore: TX ch=%p CreateWaitableTimerExW failed (%lu), "
+			"falling back to switch_sleep\n",
+			(void *)ch, GetLastError());
+	}
+#else
+	/* Non-Windows: use the FS timer subsystem (posix timer / softtimer). */
 	switch_core_new_memory_pool(&pool);
 	{
 		uint32_t samples = ptime_ms * 8;
-		const char *requested = "winmm";
-		switch_timer_interface_t *want =
-			switch_loadable_module_get_timer_interface(requested);
-		const char *timer_name = requested;
+		const char *requested = "soft";
 
-		/* switch_core_timer_init() will silently fall back to 'soft' (Sleep-
-		 * based on Windows) when the requested module is not loaded, and it
-		 * still returns SWITCH_STATUS_SUCCESS.  Probe explicitly so we log
-		 * loudly and pick a sane name instead of pretending winmm is active. */
-		if (!want) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-				"mod_ivcore: timer '%s' is NOT loaded -- falling back to 'soft' "
-				"(Sleep-based, expect 10 ms/s drift on Windows). "
-				"Load mod_timer_winmm in modules.conf.xml for a high-resolution "
-				"waitable timer.\n",
-				requested);
-			timer_name = "soft";
-		}
-
-		if (switch_core_timer_init(&timer, timer_name,
+		if (switch_core_timer_init(&timer, requested,
 								   (int)ptime_ms, (int)samples, pool)
 				== SWITCH_STATUS_SUCCESS) {
 			timer_ok = 1;
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
 				"mod_ivcore: TX thread using '%s' timer, ptime=%u ms frame=%d bytes\n",
-				timer_name, ptime_ms, frame_bytes);
+				requested, ptime_ms, frame_bytes);
 		} else {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
 				"mod_ivcore: '%s' timer init failed, falling back to switch_sleep. "
 				"ptime=%u ms frame=%d bytes\n",
-				timer_name, ptime_ms, frame_bytes);
+				requested, ptime_ms, frame_bytes);
 		}
 	}
+#endif
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
 		"mod_ivcore: TX thread started, frame=%d bytes ptime=%u ms\n",
@@ -1295,8 +1312,8 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 
 	/* Initialise jitter baseline.  The deadline is anchored on the first
 	 * timer fire (see below), not on entry to the loop, so the startup
-	 * cost of switch_core_timer_init() / first wait is not counted as
-	 * jitter.  dbg_deadline_us == 0 means "anchor on next tick". */
+	 * cost of timer init / first wait is not counted as jitter.
+	 * dbg_deadline_us == 0 means "anchor on next tick". */
 	dbg_last_log_us = switch_micro_time_now();
 	dbg_deadline_us = 0;
 
@@ -1305,16 +1322,46 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 		const uint8_t *send_buf;
 		switch_time_t now_us;
 
-		/* --- Pace to the negotiated ptime via the FS timer subsystem --- */
+		/* --- Pace to the negotiated ptime --- */
+#ifdef _WIN32
+		if (timer_ok) {
+			/* Block until the private per-channel waitable timer fires. */
+			WaitForSingleObject(win_timer, (DWORD)(ptime_ms * 3));
+
+			/* Re-arm for the next absolute deadline.  We use the ideal
+			 * deadline (dbg_deadline_us) when the baseline has been set so
+			 * that any late wakeup is automatically corrected on the next
+			 * tick without accumulating drift.  Before the first tick the
+			 * deadline is not yet set, so use a relative period instead. */
+			if (dbg_deadline_us != 0) {
+				/* Convert FS microsecond absolute time to FILETIME 100-ns units.
+				 * switch_micro_time_now() is QPC-based; FILETIME epoch is
+				 * 1601-01-01.  We approximate the next absolute fire time as
+				 * (deadline_us + ptime_us) expressed as a relative offset from
+				 * now so we do not need to know the epoch offset. */
+				LONGLONG next_rel_100ns =
+					-(LONGLONG)((switch_time_t)ptime_ms * 1000 -
+								(int64_t)(switch_micro_time_now() - dbg_deadline_us)) * 10LL;
+				/* Clamp: if we are already past the deadline, fire immediately. */
+				if (next_rel_100ns > -1000LL) next_rel_100ns = -1000LL;
+				due.QuadPart = next_rel_100ns;
+			} else {
+				due.QuadPart = -(LONGLONG)ptime_ms * 10000LL;
+			}
+			SetWaitableTimer(win_timer, &due, 0, NULL, NULL, FALSE);
+		} else {
+			switch_sleep(ptime_ms * 1000);
+		}
+#else
 		if (timer_ok) {
 			if (switch_core_timer_next(&timer) != SWITCH_STATUS_SUCCESS) {
-				/* Timer destroyed under us (unlikely) — fall back to sleep. */
 				timer_ok = 0;
 			}
 		}
 		if (!timer_ok) {
 			switch_sleep(ptime_ms * 1000);
 		}
+#endif
 
 		now_us = switch_micro_time_now();
 
@@ -1416,11 +1463,19 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
 		"mod_ivcore: TX thread exited for channel %p\n", (void *)ch);
 
+#ifdef _WIN32
+	if (win_timer) {
+		CancelWaitableTimer(win_timer);
+		CloseHandle(win_timer);
+		win_timer = NULL;
+	}
+#else
 	if (timer_ok) {
 		switch_core_timer_destroy(&timer);
 	}
 	if (pool) {
 		switch_core_destroy_memory_pool(&pool);
 	}
+#endif
 	return NULL;
 }
