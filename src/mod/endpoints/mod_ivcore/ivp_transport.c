@@ -1274,8 +1274,28 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 
 #ifdef _WIN32
 	/* Create a private synchronisation-timer (non-manual-reset, so it
-	 * auto-resets after WaitForSingleObject returns — no spurious wakeups). */
-	win_timer = CreateWaitableTimerExW(NULL, NULL, 0, TIMER_ALL_ACCESS);
+	 * auto-resets after WaitForSingleObject returns — no spurious wakeups).
+	 * Prefer CREATE_WAITABLE_TIMER_HIGH_RESOLUTION (Windows 10 1803+, value
+	 * 0x2) which gives ~100 µs resolution without touching the system-wide
+	 * timer period via timeBeginPeriod().  Fall back to standard resolution
+	 * (flag 0) on older Windows where the flag is not recognised. */
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
+#endif
+	win_timer = CreateWaitableTimerExW(NULL, NULL,
+		CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+	{
+		int hi_res = (win_timer != NULL);
+		if (!win_timer) {
+			/* Older Windows — standard resolution (~15.6 ms quantum). */
+			win_timer = CreateWaitableTimerExW(NULL, NULL, 0, TIMER_ALL_ACCESS);
+		}
+		if (win_timer) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+				"mod_ivcore: TX ch=%p waitable timer created (%s resolution)\n",
+				(void *)ch, hi_res ? "HIGH" : "standard");
+		}
+	}
 	if (win_timer) {
 		/* Stagger the initial phase: claim a slot in [0, ptime_ms) so that
 		 * channels started together fire at different points in the ptime
