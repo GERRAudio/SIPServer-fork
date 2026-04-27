@@ -910,8 +910,16 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 #ifdef _WIN32
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 	{
-		DWORD task_index = 0;
-		AvSetMmThreadCharacteristicsW(L"Pro Audio", &task_index);
+		HMODULE avrt = GetModuleHandleW(L"avrt.dll");
+		if (!avrt) avrt = LoadLibraryW(L"avrt.dll");
+		if (avrt) {
+			typedef HANDLE (WINAPI *PFN_AvSet)(LPCWSTR, LPDWORD);
+			PFN_AvSet fn = (PFN_AvSet)GetProcAddress(avrt, "AvSetMmThreadCharacteristicsW");
+			if (fn) {
+				DWORD task_index = 0;
+				fn(L"Pro Audio", &task_index);
+			}
+		}
 	}
 #endif
 
