@@ -1207,6 +1207,13 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 	uint32_t      dbg_silence_run  = 0;    /* consecutive silence-substitution frames */
 
 #ifdef _WIN32
+	/* Tracks whether this thread has been elevated to TIME_CRITICAL.
+	 * Starts FALSE (ABOVE_NORMAL); set TRUE the first frame real audio is
+	 * seen; cleared back to FALSE when tx_ring drains to silence again. */
+	int           tx_is_elevated  = 0;
+#endif
+
+#ifdef _WIN32
 	/* On Windows each TX thread gets its own private high-resolution waitable
 	 * timer.  This avoids the shared condvar thundering-herd that occurs when
 	 * mod_timer_winmm broadcasts to ALL waiting TX threads simultaneously:
@@ -1226,22 +1233,13 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 	 * fire time is spread evenly across one ptime window. */
 	static volatile LONG s_tx_seq = 0;
 
-	/* Autoconnect standby channels only send silence to keep the IVP link alive
-	 * and do not carry real audio.  Running them at THREAD_PRIORITY_TIME_CRITICAL
-	 * starves mod_sofia's RTP delivery thread when several standby channels are
-	 * active simultaneously — each 20 ms timer burst causes a thundering-herd of
-	 * TIME_CRITICAL threads that delays the active lqsip1 write path.
-	 * Standby channels are downgraded to ABOVE_NORMAL; active call legs that
-	 * carry real audio keep TIME_CRITICAL so they still get precise pacing. */
-	if (ch->is_autoconnect) {
-		SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-	} else {
-		SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-	}
-	/* Only enlist in the MMCSS "Pro Audio" task for real call legs.
-	 * MMCSS independently boosts scheduling priority and would re-elevate
-	 * autoconnect standby threads even after SetThreadPriority(ABOVE_NORMAL). */
-	if (!ch->is_autoconnect) {
+	/* Start all TX threads at ABOVE_NORMAL.  The thread dynamically escalates
+	 * to TIME_CRITICAL when real audio arrives in tx_ring and drops back when
+	 * the ring drains to silence.  This prevents idle standby channels (which
+	 * only send keepalive silence) from preempting the active call channel's
+	 * RTP delivery thread — the root cause of the lqsip1 audio delays. */
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+	{
 		HMODULE avrt = GetModuleHandleW(L"avrt.dll");
 		if (!avrt) avrt = LoadLibraryW(L"avrt.dll");
 		if (avrt) {
@@ -1253,6 +1251,7 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 			}
 		}
 	}
+
 #else
 	switch_timer_t timer = { 0 };
 	switch_memory_pool_t *pool = NULL;
@@ -1466,6 +1465,14 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 				ring_read(&ch->tx_ring, frame_buf, (uint32_t)frame_bytes);
 				send_buf = frame_buf;
 				dbg_silence_run = 0; /* reset consecutive-silence counter */
+#ifdef _WIN32
+				/* Elevate to TIME_CRITICAL the moment real audio arrives so
+				 * this channel's pacing is precise for the duration of the call. */
+				if (!tx_is_elevated) {
+					SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+					tx_is_elevated = 1;
+				}
+#endif
 			} else {
 				/* Ring empty or partial — send silence.
 				 * Log under debug to diagnose stutter: consecutive silence frames
@@ -1478,6 +1485,14 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 						(void *)ch, avail, frame_bytes,
 						(dbg_deadline_us ? (int64_t)(now_us - (dbg_deadline_us - (switch_time_t)ptime_ms * 1000)) : 0));
 				}
+#ifdef _WIN32
+				/* Drop back to ABOVE_NORMAL when the ring empties so idle
+				 * standby channels do not preempt channels with active audio. */
+				if (tx_is_elevated) {
+					SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+					tx_is_elevated = 0;
+				}
+#endif
 			}
 
 		if (ch->call_state == IVC_STATE_UP) {
