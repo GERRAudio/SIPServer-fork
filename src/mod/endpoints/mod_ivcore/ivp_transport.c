@@ -1230,6 +1230,9 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 	 * debug flag) so the re-arm calculation is always correct.
 	 * 0 = not yet anchored (first tick sets it). */
 	switch_time_t tx_next_deadline_us = 0;
+	/* QPC frequency — queried once at startup for the busy-spin clock. */
+	LARGE_INTEGER qpc_freq;
+	QueryPerformanceFrequency(&qpc_freq);
 #endif
 
 #ifdef _WIN32
@@ -1509,21 +1512,29 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 		 * The FS write clock and this TX timer clock are independent and drift
 		 * relative to each other.  When the TX timer fires just before the FS
 		 * write arrives, the ring is momentarily empty even though audio is
-		 * flowing.  A brief spin-wait (up to ~2ms) absorbs this phase drift
-		 * before falling back to silence, eliminating isolated 1-frame gaps
-		 * that are heard as clicks or choppiness at the far end. */
+		 * flowing.  A brief busy-spin absorbs this phase drift before falling
+		 * back to silence — but ONLY when we are actively in an audio call
+		 * (tx_is_elevated, meaning real audio was seen last tick).  On
+		 * permanently-silent channels the ring is always empty and spinning
+		 * would add latency to every TX tick. */
 			avail = ring_available(&ch->tx_ring);
-			if (avail < (uint32_t)frame_bytes) {
-				/* Spin for up to 2 ms in 100 µs steps waiting for the FS
-				 * write thread to catch up.  This is safe: we are already past
-				 * the timer deadline, so a short busy-yield here does not
-				 * affect pacing — we send the frame as soon as it arrives. */
-				int spin;
-				for (spin = 0; spin < 20 && avail < (uint32_t)frame_bytes; spin++) {
-					switch_sleep(100); /* 100 µs */
+#ifdef _WIN32
+			if (avail < (uint32_t)frame_bytes && tx_is_elevated) {
+				/* Busy-spin for up to 2 ms using QPC so we never call Sleep()
+				 * (which rounds up to the OS timer quantum and is far too long).
+				 * YieldProcessor() hints the CPU to give up its hyper-thread
+				 * slot so the FS write thread can run and fill the ring. */
+				LARGE_INTEGER spin_start, spin_now;
+				QueryPerformanceCounter(&spin_start);
+				LONGLONG spin_limit = qpc_freq.QuadPart * 2 / 1000; /* 2 ms in QPC ticks */
+				do {
+					YieldProcessor();
 					avail = ring_available(&ch->tx_ring);
-				}
+					if (avail >= (uint32_t)frame_bytes) break;
+					QueryPerformanceCounter(&spin_now);
+				} while ((spin_now.QuadPart - spin_start.QuadPart) < spin_limit);
 			}
+#endif
 			if (avail >= (uint32_t)frame_bytes) {
 				/* Read directly from ring into send buffer.
 				 * ring_read handles wrap-around. */
