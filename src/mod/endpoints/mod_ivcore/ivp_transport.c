@@ -1201,12 +1201,13 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 	/* Jitter diagnostics (only accumulated when ivcore_globals.debug == TRUE).
 	 * We track how late/early each timer tick fires vs. the ideal deadline.
 	 * Positive jitter_us = late, negative = early. */
-	switch_time_t dbg_deadline_us = 0;     /* expected fire time of next tick    */
-	int64_t       dbg_jitter_min  = 0;
-	int64_t       dbg_jitter_max  = 0;
-	int64_t       dbg_jitter_sum  = 0;
-	uint32_t      dbg_frames      = 0;
-	switch_time_t dbg_last_log_us = 0;
+	switch_time_t dbg_deadline_us  = 0;     /* expected fire time of next tick    */
+	int64_t       dbg_jitter_min   = 0;
+	int64_t       dbg_jitter_max   = 0;
+	int64_t       dbg_jitter_sum   = 0;
+	uint32_t      dbg_frames       = 0;
+	switch_time_t dbg_last_log_us  = 0;
+	uint32_t      dbg_silence_run  = 0;    /* consecutive silence-substitution frames */
 
 	/* Boost this thread so it is not starved by normal-priority threads when
 	 * waiting on the winmm condvar broadcast.  Without this the scheduler can
@@ -1343,13 +1344,16 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 				int64_t avg = dbg_frames ? dbg_jitter_sum / (int64_t)dbg_frames : 0;
 				IVC_LOG_DEBUG(
 					"[IVC-TX] ch=%p timer jitter over %u frames: "
-					"min=%+" PRId64 " avg=%+" PRId64 " max=%+" PRId64 " us\n",
+					"min=%+" PRId64 " avg=%+" PRId64 " max=%+" PRId64 " us"
+					" silence=%u\n",
 					(void *)ch, dbg_frames,
-					dbg_jitter_min, avg, dbg_jitter_max);
+					dbg_jitter_min, avg, dbg_jitter_max,
+					dbg_silence_run);
 				dbg_jitter_min = 0;
 				dbg_jitter_max = 0;
 				dbg_jitter_sum = 0;
-				dbg_frames     = 0;
+				dbg_frames      = 0;
+				dbg_silence_run = 0;
 				dbg_last_log_us = now_us;
 			}
 			/* Advance ideal deadline by one ptime interval.  This is the
@@ -1381,17 +1385,27 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 		if (!ch->running) break;
 
 		/* Drain one frame from tx_ring, or use silence. */
-		avail = ring_available(&ch->tx_ring);
-		if (avail >= (uint32_t)frame_bytes) {
-			/* Read directly from ring into send buffer.
-			 * ring_read handles wrap-around. */
-			uint8_t frame_buf[IVC_MAX_FRAME_BYTES];
-			ring_read(&ch->tx_ring, frame_buf, (uint32_t)frame_bytes);
-			send_buf = frame_buf;
-		} else {
-			/* Ring empty or partial — send silence. */
-			send_buf = ch->tx_silence_buf;
-		}
+			avail = ring_available(&ch->tx_ring);
+			if (avail >= (uint32_t)frame_bytes) {
+				/* Read directly from ring into send buffer.
+				 * ring_read handles wrap-around. */
+				uint8_t frame_buf[IVC_MAX_FRAME_BYTES];
+				ring_read(&ch->tx_ring, frame_buf, (uint32_t)frame_bytes);
+				send_buf = frame_buf;
+				dbg_silence_run = 0; /* reset consecutive-silence counter */
+			} else {
+				/* Ring empty or partial — send silence.
+				 * Log under debug to diagnose stutter: consecutive silence frames
+				 * are the audible glitch, not HDLC or jitter. */
+				send_buf = ch->tx_silence_buf;
+				dbg_silence_run++;
+				if (ivcore_globals.debug == SWITCH_TRUE && dbg_silence_run == 1) {
+					IVC_LOG_DEBUG("[IVC-TX] ch=%p ring underrun: silence substituted "
+						"(avail=%u need=%d jitter=%" PRId64 " us)\n",
+						(void *)ch, avail, frame_bytes,
+						(dbg_deadline_us ? (int64_t)(now_us - (dbg_deadline_us - (switch_time_t)ptime_ms * 1000)) : 0));
+				}
+			}
 
 		if (ch->call_state == IVC_STATE_UP) {
 			ch->last_write_us = switch_micro_time_now();
