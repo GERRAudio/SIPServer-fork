@@ -1215,11 +1215,16 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 	 * the TX ring and causes silence substitution / audible stutter.
 	 *
 	 * A private timer per channel means each thread wakes independently at its
-	 * own absolute deadline, with natural phase stagger.  The FS condvar path
-	 * is still used on non-Windows platforms. */
+	 * own absolute deadline.  A per-process sequence number staggers the
+	 * initial phase so channels started at the same time do NOT converge on the
+	 * same fire instant even when they all use the same ptime.  The FS condvar
+	 * path is still used on non-Windows platforms. */
 	HANDLE  win_timer  = NULL;
 	int     timer_ok   = 0;
 	LARGE_INTEGER due;
+	/* Global sequence counter — each TX thread claims one slot so the initial
+	 * fire time is spread evenly across one ptime window. */
+	static volatile LONG s_tx_seq = 0;
 
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 	{
@@ -1259,16 +1264,23 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 	 * auto-resets after WaitForSingleObject returns — no spurious wakeups). */
 	win_timer = CreateWaitableTimerExW(NULL, NULL, 0, TIMER_ALL_ACCESS);
 	if (win_timer) {
-		/* First deadline: one ptime interval from now (100-ns units, negative
-		 * = relative).  Subsequent deadlines are re-armed as absolute values
-		 * to prevent drift accumulation. */
-		due.QuadPart = -(LONGLONG)ptime_ms * 10000LL;
+		/* Stagger the initial phase: claim a slot in [0, ptime_ms) so that
+		 * channels started together fire at different points in the ptime
+		 * window.  With 10 channels at 20 ms ptime the slots are 2 ms apart.
+		 * The modulus wraps every ptime_ms channels, which is fine — even with
+		 * many channels a 2ms stagger window is enough to avoid contention. */
+		LONG my_seq = InterlockedIncrement(&s_tx_seq) - 1;
+		LONGLONG stagger_100ns = (LONGLONG)(my_seq % (LONG)ptime_ms) * 1000LL * 10LL; /* ms→100ns */
+		LONGLONG first_100ns   = (LONGLONG)ptime_ms * 10000LL + stagger_100ns;
+		due.QuadPart = -first_100ns;   /* negative = relative */
 		if (SetWaitableTimer(win_timer, &due, 0, NULL, NULL, FALSE)) {
 			timer_ok = 1;
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
 				"mod_ivcore: TX ch=%p using private waitable timer, "
-				"ptime=%u ms frame=%d bytes\n",
-				(void *)ch, ptime_ms, frame_bytes);
+				"ptime=%u ms frame=%d bytes phase_slot=%ld (+%lld ms)\n",
+				(void *)ch, ptime_ms, frame_bytes,
+				(long)(my_seq % (LONG)ptime_ms),
+				(long long)(stagger_100ns / 10000LL));
 		} else {
 			CloseHandle(win_timer);
 			win_timer = NULL;
