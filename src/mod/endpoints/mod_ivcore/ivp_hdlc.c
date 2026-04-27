@@ -286,11 +286,24 @@ switch_status_t ivp_hdlc_on_data(ivcore_channel_t *ch,
 				/* SABME (0b01101111).  Reply with UA. */
 				uint8_t ua[16];
 				int n;
+				switch_time_t now_us = switch_micro_time_now();
+				/* Debounce: if SABME arrives within 2 s of the previous one
+				 * AND the link was already up, the card is retrying because it
+				 * didn't receive our UA — just re-send UA and update sequence
+				 * state without tearing down DPI/PanelReset.  This prevents
+				 * the once-per-second PanelReset that causes audio stutter. */
+				switch_bool_t full_reset =
+					!ch->hdlc.link_up ||
+					(ch->hdlc.last_sabme_us == 0) ||
+					(now_us - ch->hdlc.last_sabme_us >= 2000000);
 				ch->hdlc.sabme_count++;
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-					"mod_ivcore: HDLC SABME #%u — resetting v_r=%u v_s=%u "
+				ch->hdlc.last_sabme_us = now_us;
+				switch_log_printf(SWITCH_CHANNEL_LOG,
+					full_reset ? SWITCH_LOG_NOTICE : SWITCH_LOG_DEBUG,
+					"mod_ivcore: HDLC SABME #%u (%s) v_r=%u v_s=%u "
 					"dpi_state=%u dpi_dial_pending=%d dpi_dial_buffer='%s'\n",
 					(unsigned)ch->hdlc.sabme_count,
+					full_reset ? "full-reset" : "debounced",
 					(unsigned)ch->hdlc.v_r, (unsigned)ch->hdlc.v_s,
 					(unsigned)ch->dpi_state,
 					(int)ch->dpi_dial_pending, ch->dpi_dial_buffer);
@@ -298,25 +311,29 @@ switch_status_t ivp_hdlc_on_data(ivcore_channel_t *ch,
 				if (n > 0 && send_cb) send_cb(ch, ua, n);
 
 				ch->hdlc.v_s = 0;
-					ch->hdlc.v_r = 0;
-					ch->hdlc.link_up = SWITCH_TRUE;
-					ch->hdlc.last_rr_us = switch_micro_time_now();
+				ch->hdlc.v_r = 0;
+				ch->hdlc.link_up = SWITCH_TRUE;
+				ch->hdlc.last_rr_us = now_us;
+				ch->hdlc_reset_pending = SWITCH_TRUE;
+
+				if (!full_reset) {
+					/* Re-send our last RR immediately after UA so the card's
+					 * receiver window re-opens without waiting for the next
+					 * I-frame.  This is the only response needed on a retry. */
+					uint8_t rr[16];
+					int rr_len = ivp_hdlc_build_rr(ch, rr, (int)sizeof(rr));
+					if (rr_len > 0 && send_cb) send_cb(ch, rr, rr_len);
+				} else {
+					/* Full link reset: reinitialise DPI state. */
 					ch->dpi_init_sent = SWITCH_FALSE;
 					ch->dpi_key_status_replies = 0;
-					/* Signal the IVP recv loop to reset its in_sequence counter
-					 * so that the IVP-level dedup re-syncs with the fresh HDLC
-					 * link.  Without this, HDLC v_r resets to 0 but the IVP
-					 * layer still thinks it has already seen those sequence
-					 * numbers and silently drops the re-sent I-frames — OR the
-					 * IVP layer re-processes them and doubles the dial string. */
-					ch->hdlc_reset_pending = SWITCH_TRUE;
 
-				/* Set allocated-but-idle so a 0xF0 GetState reply is
-				 * meaningful before the first 0x80 PanelTypeRequest. */
-				if (ch->dpi_state == 0)
-					ch->dpi_state = 1; /* IVP_SIP_STATE_ON_HOOK_ALLOCATED */
+					/* Set allocated-but-idle so a 0xF0 GetState reply is
+					 * meaningful before the first 0x80 PanelTypeRequest. */
+					if (ch->dpi_state == 0)
+						ch->dpi_state = 1; /* IVP_SIP_STATE_ON_HOOK_ALLOCATED */
 
-				/* PanelReset (0x92) is the first thing a real device sends
+					/* PanelReset (0x92) is the first thing a real device sends
 					 * after the HDLC link comes up.  Without it the matrix never
 					 * marks the port online or sends 0xF1 dial-out commands. */
 					ivp_dpi_send_panel_reset(ch, send_cb);
@@ -326,13 +343,14 @@ switch_status_t ivp_hdlc_on_data(ivcore_channel_t *ch,
 					 * Only send 0xF4 when dpi_state indicates an active call;
 					 * sending it in OnHookAllocated (state=1) would cause CPUApp
 					 * to echo back an empty 0xF1 DialOut that stalls dial-out. */
-						if (ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_OUT ||
-							ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_OUT  ||
-							ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_IN  ||
-							ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_IN) {
-							ivp_dpi_send_disconnect_reply(ch,
-								(uint8_t)IVP_SIP_REASON_LOCAL_END, send_cb);
-						}
+					if (ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_OUT ||
+						ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_OUT  ||
+						ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_IN  ||
+						ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_IN) {
+						ivp_dpi_send_disconnect_reply(ch,
+							(uint8_t)IVP_SIP_REASON_LOCAL_END, send_cb);
+					}
+				}
 			} else if (u == 0x63) {
 				/* UA — server acknowledged our SABME (we did not send one
 				 * but log for completeness). */

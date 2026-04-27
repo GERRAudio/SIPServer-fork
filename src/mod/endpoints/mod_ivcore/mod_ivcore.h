@@ -421,6 +421,7 @@ typedef struct ivcore_channel_s {
 		uint8_t       v_s;
 		uint8_t       v_r;
 		switch_time_t last_rr_us;
+		switch_time_t last_sabme_us; /**< timestamp of most recent SABME for debounce */
 		uint32_t      sabme_count;
 		uint32_t      iframe_count;
 	} hdlc;
