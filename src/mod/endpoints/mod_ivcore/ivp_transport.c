@@ -1210,7 +1210,12 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 	/* Tracks whether this thread has been elevated to TIME_CRITICAL.
 	 * Starts FALSE (ABOVE_NORMAL); set TRUE the first frame real audio is
 	 * seen; cleared back to FALSE when tx_ring drains to silence again. */
-	int           tx_is_elevated  = 0;
+	int           tx_is_elevated      = 0;
+	/* Absolute deadline for the NEXT timer fire, in switch_micro_time_now()
+	 * units (microseconds).  Maintained unconditionally (not gated on the
+	 * debug flag) so the re-arm calculation is always correct.
+	 * 0 = not yet anchored (first tick sets it). */
+	switch_time_t tx_next_deadline_us = 0;
 #endif
 
 #ifdef _WIN32
@@ -1361,6 +1366,9 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 	 * dbg_deadline_us == 0 means "anchor on next tick". */
 	dbg_last_log_us = switch_micro_time_now();
 	dbg_deadline_us = 0;
+#ifdef _WIN32
+	tx_next_deadline_us = 0;
+#endif
 
 	while (ch->running) {
 		uint32_t avail;
@@ -1373,25 +1381,34 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 			/* Block until the private per-channel waitable timer fires. */
 			WaitForSingleObject(win_timer, (DWORD)(ptime_ms * 3));
 
-			/* Re-arm for the next absolute deadline.  We use the ideal
-			 * deadline (dbg_deadline_us) when the baseline has been set so
-			 * that any late wakeup is automatically corrected on the next
-			 * tick without accumulating drift.  Before the first tick the
-			 * deadline is not yet set, so use a relative period instead. */
-			if (dbg_deadline_us != 0) {
-				/* Convert FS microsecond absolute time to FILETIME 100-ns units.
-				 * switch_micro_time_now() is QPC-based; FILETIME epoch is
-				 * 1601-01-01.  We approximate the next absolute fire time as
-				 * (deadline_us + ptime_us) expressed as a relative offset from
-				 * now so we do not need to know the epoch offset. */
+			/* Capture the current time immediately after waking so the
+			 * deadline advance and re-arm are based on the same instant. */
+			now_us = switch_micro_time_now();
+
+			/* Advance the absolute deadline by one ptime.  This MUST happen
+			 * before re-arming so the re-arm always targets the NEXT tick,
+			 * not the tick that just fired (off-by-one that caused ±10ms
+			 * alternating jitter). */
+			if (tx_next_deadline_us == 0) {
+				/* First tick: anchor the deadline on actual wake time. */
+				tx_next_deadline_us = now_us + (switch_time_t)ptime_ms * 1000;
+			} else {
+				tx_next_deadline_us += (switch_time_t)ptime_ms * 1000;
+				/* Last-resort resync: if we have fallen more than 250 ms behind
+				 * (debugger pause, host sleep/resume), re-anchor to now. */
+				if ((int64_t)(now_us - tx_next_deadline_us) > 250000) {
+					tx_next_deadline_us = now_us + (switch_time_t)ptime_ms * 1000;
+				}
+			}
+
+			/* Re-arm: fire at tx_next_deadline_us expressed as a relative
+			 * offset from now (negative = relative in FILETIME units). */
+			{
 				LONGLONG next_rel_100ns =
-					-(LONGLONG)((switch_time_t)ptime_ms * 1000 -
-								(int64_t)(switch_micro_time_now() - dbg_deadline_us)) * 10LL;
-				/* Clamp: if we are already past the deadline, fire immediately. */
+					-(LONGLONG)((int64_t)(tx_next_deadline_us - now_us)) * 10LL;
+				/* Clamp: if already past, fire in 100 µs to avoid spin. */
 				if (next_rel_100ns > -1000LL) next_rel_100ns = -1000LL;
 				due.QuadPart = next_rel_100ns;
-			} else {
-				due.QuadPart = -(LONGLONG)ptime_ms * 10000LL;
 			}
 			SetWaitableTimer(win_timer, &due, 0, NULL, NULL, FALSE);
 		} else {
@@ -1408,7 +1425,11 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 		}
 #endif
 
+		#ifndef _WIN32
+		/* On Windows now_us was already captured right after WaitForSingleObject
+		 * above; on other platforms capture it here. */
 		now_us = switch_micro_time_now();
+#endif
 
 		/* --- Jitter accounting (under debug flag to avoid cache-line churn) --- */
 		if (ivcore_globals.debug == SWITCH_TRUE) {
@@ -1448,18 +1469,10 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 				dbg_silence_run = 0;
 				dbg_last_log_us = now_us;
 			}
-			/* Advance ideal deadline by one ptime interval.  This is the
-			 * correct, drift-free formula: real lateness accumulates into
-			 * the jitter readout instead of being silently absorbed. */
+			/* Advance ideal deadline by one ptime interval. */
 			dbg_deadline_us += (switch_time_t)ptime_ms * 1000;
 
-			/* Last-resort resync: only trip on truly pathological gaps
-			 * (debugger break, host sleep/resume, watchdog stall).  In
-			 * normal operation -- including 50-100 ms of drift caused by
-			 * Windows timer-resolution coalescing -- we do NOT snap, so
-			 * the jitter readout keeps showing the true drift instead of
-			 * papering over it.  When we do snap, log a WARNING (not
-			 * DEBUG) so the event is visible even with debug disabled. */
+			/* Last-resort resync for the debug counter only. */
 			{
 				const switch_time_t resync_threshold_us = 250000; /* 250 ms */
 				int64_t lateness_us = (int64_t)(now_us - dbg_deadline_us);
