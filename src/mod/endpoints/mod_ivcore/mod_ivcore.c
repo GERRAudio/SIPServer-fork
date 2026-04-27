@@ -32,6 +32,11 @@
 #include <mmsystem.h>
 #pragma comment(lib, "winmm.lib")
 #define IVC_DBGOUT(buf) OutputDebugStringA(buf)
+/* NtSetTimerResolution: undocumented NT API, widely used (Chrome, DAWs) for
+ * sub-ms timer resolution without the 1ms floor of timeBeginPeriod(1).
+ * 5000 = 500 µs (in 100-ns units). Stable since NT 5.0. */
+typedef LONG (NTAPI *PFN_NtSetTimerResolution)(ULONG, BOOLEAN, PULONG);
+static PFN_NtSetTimerResolution s_NtSetTimerResolution = NULL;
 #else
 #define IVC_DBGOUT(buf) ((void)0)
 #endif
@@ -1899,6 +1904,33 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_ivcore_load)
 	#ifdef _WIN32
 		timeBeginPeriod(1);  /* raise Windows timer resolution to 1 ms for soft timer accuracy */
 
+		/* Request 500 µs timer resolution via NtSetTimerResolution.
+		 * This is finer than timeBeginPeriod(1)'s 1 ms floor AND it disables
+		 * Windows timer coalescing, which is the root cause of the ±10 ms
+		 * jitter spikes seen even when CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+		 * handles are in use.  Coalescing groups timer fires to save power;
+		 * disabling it ensures each waitable timer fires at its exact deadline.
+		 * Chrome, Firefox, and most DAWs use this same pattern. */
+		{
+			HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+			if (ntdll) {
+				s_NtSetTimerResolution = (PFN_NtSetTimerResolution)
+					GetProcAddress(ntdll, "NtSetTimerResolution");
+			}
+			if (s_NtSetTimerResolution) {
+				ULONG actual_100ns = 0;
+				LONG status = s_NtSetTimerResolution(5000, TRUE, &actual_100ns);
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+					"mod_ivcore: NtSetTimerResolution(500µs) status=0x%08lX "
+					"actual=%lu00ns\n", (unsigned long)status,
+					(unsigned long)actual_100ns);
+			} else {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+					"mod_ivcore: NtSetTimerResolution not available; "
+					"timer coalescing may cause jitter\n");
+			}
+		}
+
 		/* Auto-load mod_timer_winmm if not already loaded. Without it, the
 		 * default softtimer falls back to Sleep() which has ~15.6 ms
 		 * granularity on Windows, causing audio dropouts. */
@@ -1964,6 +1996,10 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_ivcore_shutdown)
 	switch_mutex_destroy(ivcore_globals.mutex);
 
 	#ifdef _WIN32
+		if (s_NtSetTimerResolution) {
+			ULONG actual_100ns = 0;
+			s_NtSetTimerResolution(5000, FALSE, &actual_100ns);
+		}
 		timeEndPeriod(1);
 	#endif
 
