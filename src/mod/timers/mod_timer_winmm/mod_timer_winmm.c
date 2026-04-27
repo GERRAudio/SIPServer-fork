@@ -69,6 +69,23 @@ typedef HANDLE (WINAPI *PFN_CreateWaitableTimerExW)(LPSECURITY_ATTRIBUTES, LPCWS
 /* MMCSS (avrt.dll) -- optional, resolved at runtime */
 typedef HANDLE (WINAPI *PFN_AvSetMmThreadCharacteristicsW)(LPCWSTR, LPDWORD);
 typedef BOOL   (WINAPI *PFN_AvRevertMmThreadCharacteristics)(HANDLE);
+typedef BOOL   (WINAPI *PFN_AvSetMmThreadPriority)(HANDLE, int);
+
+/* AVRT_PRIORITY values (from avrt.h; define locally so we build without the
+ * Windows SDK Multimedia extension headers). */
+#ifndef AVRT_PRIORITY_CRITICAL
+#define AVRT_PRIORITY_LOW      (-1)
+#define AVRT_PRIORITY_NORMAL     0
+#define AVRT_PRIORITY_HIGH       1
+#define AVRT_PRIORITY_CRITICAL   2
+#endif
+
+/* NtSetTimerResolution: undocumented NT API, stable since NT 5.0, widely used
+ * (Chrome, Firefox, DAWs) to request 500 µs (5000 * 100ns) timer granularity
+ * rather than the 1000 µs floor of timeBeginPeriod(1). */
+typedef LONG (NTAPI *PFN_NtSetTimerResolution)(ULONG DesiredResolution,
+                                               BOOLEAN SetResolution,
+                                               PULONG CurrentResolution);
 
 /**
  * Per-interval timer state. One of these exists for every active
@@ -106,7 +123,7 @@ typedef struct {
 
 static struct {
 	switch_memory_pool_t *pool;
-	int shutdown;
+	volatile int shutdown;              /* read by timer threads; must be volatile */
 
 	/* timer slots indexed by [interval_ms][slot] */
 	interval_timer_t interval_timers[MAX_INTERVAL + 1][TIMERS_PER_INTERVAL];
@@ -122,6 +139,12 @@ static struct {
 	HMODULE avrt_dll;
 	PFN_AvSetMmThreadCharacteristicsW pAvSetMmThreadCharacteristicsW;
 	PFN_AvRevertMmThreadCharacteristics pAvRevertMmThreadCharacteristics;
+	PFN_AvSetMmThreadPriority pAvSetMmThreadPriority;
+
+	/* NT high-resolution timer (optional, 500 µs) */
+	HMODULE ntdll;
+	PFN_NtSetTimerResolution pNtSetTimerResolution;
+	int nt_resolution_active;
 } globals;
 
 
@@ -173,6 +196,10 @@ static DWORD WINAPI interval_timer_thread(LPVOID arg)
 
 	if (globals.pAvSetMmThreadCharacteristicsW) {
 		mmcss_handle = globals.pAvSetMmThreadCharacteristicsW(L"Pro Audio", &mmcss_task_index);
+		/* Elevate to the highest MMCSS scheduling tier once enrolled. */
+		if (mmcss_handle && globals.pAvSetMmThreadPriority) {
+			globals.pAvSetMmThreadPriority(mmcss_handle, AVRT_PRIORITY_CRITICAL);
+		}
 	}
 
 	while (it->running && !globals.shutdown) {
@@ -235,8 +262,6 @@ static switch_status_t interval_timer_start(interval_timer_t *it, int interval)
 	}
 
 	if (it->users <= 0) {
-		LARGE_INTEGER due;
-
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
 			"starting %d ms timer #%d (%s)\n",
 			interval, it->num + 1,
@@ -289,8 +314,6 @@ static switch_status_t interval_timer_start(interval_timer_t *it, int interval)
 			it->htimer = NULL;
 			return SWITCH_STATUS_GENERR;
 		}
-		(void)due; /* legacy local kept to minimise diff churn */
-
 		it->thread = CreateThread(NULL, 0, interval_timer_thread, it, 0, NULL);
 		if (!it->thread) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -405,7 +428,10 @@ static switch_status_t mod_timer_winmm_next(switch_timer_t *timer)
 
 	switch_mutex_lock(it->mutex);
 	while ((int)(timer->tick - it->tick) > 0 && !globals.shutdown && it->running) {
-		switch_thread_cond_timedwait(it->cond, it->mutex, 20 * 1000);
+		/* Watchdog: wait at most 2× the interval so short-interval timers
+		 * (e.g. 10 ms, 5 ms) are not held up by a stale 20 ms hard-code. */
+		switch_thread_cond_timedwait(it->cond, it->mutex,
+			(switch_interval_time_t)it->interval * 1000 * 2);
 	}
 	switch_mutex_unlock(it->mutex);
 
@@ -485,6 +511,30 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_timer_winmm_load)
 			(PFN_AvSetMmThreadCharacteristicsW)GetProcAddress(globals.avrt_dll, "AvSetMmThreadCharacteristicsW");
 		globals.pAvRevertMmThreadCharacteristics =
 			(PFN_AvRevertMmThreadCharacteristics)GetProcAddress(globals.avrt_dll, "AvRevertMmThreadCharacteristics");
+		globals.pAvSetMmThreadPriority =
+			(PFN_AvSetMmThreadPriority)GetProcAddress(globals.avrt_dll, "AvSetMmThreadPriority");
+	}
+
+	/* Optional NtSetTimerResolution: request 500 µs (5000 × 100ns) per-process
+	 * timer granularity -- twice as fine as timeBeginPeriod(1).  The NT API is
+	 * per-process (not system-wide) since Windows 10 2004, so it does not
+	 * penalise other processes.  We call timeBeginPeriod(1) below as well so
+	 * that older Windows still gets 1 ms resolution on the legacy path. */
+	{
+		HMODULE hntdll = GetModuleHandleA("ntdll.dll");
+		if (hntdll) {
+			globals.pNtSetTimerResolution =
+				(PFN_NtSetTimerResolution)GetProcAddress(hntdll, "NtSetTimerResolution");
+		}
+	}
+	if (globals.pNtSetTimerResolution) {
+		ULONG cur = 0;
+		/* 5000 × 100ns = 500 µs.  STATUS_SUCCESS == 0. */
+		if (globals.pNtSetTimerResolution(5000, TRUE, &cur) == 0) {
+			globals.nt_resolution_active = 1;
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+				"NtSetTimerResolution: current resolution %lu × 100ns\n", cur);
+		}
 	}
 
 	/* Bump the system tick to 1 ms unconditionally for as long as the module
@@ -521,10 +571,13 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_timer_winmm_load)
 	timer_interface->timer_destroy = mod_timer_winmm_destroy;
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-		"mod_timer_winmm loaded (CreateWaitableTimerExW=%s, MMCSS=%s, timeBeginPeriod=%s)\n",
-		globals.pCreateWaitableTimerExW ? "yes" : "no",
+		"mod_timer_winmm loaded (CreateWaitableTimerExW=%s, MMCSS=%s, MMCSS_CRITICAL=%s, "
+		"NtTimerRes500us=%s, timeBeginPeriod1=%s)\n",
+		globals.pCreateWaitableTimerExW      ? "yes" : "no",
 		globals.pAvSetMmThreadCharacteristicsW ? "yes" : "no",
-		globals.timebeginperiod_active ? "yes" : "no");
+		globals.pAvSetMmThreadPriority        ? "yes" : "no",
+		globals.nt_resolution_active          ? "yes" : "no",
+		globals.timebeginperiod_active        ? "yes" : "no");
 
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -544,6 +597,12 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_timer_winmm_shutdown)
 		}
 	}
 	switch_mutex_unlock(globals.interval_timers_mutex);
+
+	if (globals.nt_resolution_active && globals.pNtSetTimerResolution) {
+		ULONG cur = 0;
+		globals.pNtSetTimerResolution(5000, FALSE, &cur);
+		globals.nt_resolution_active = 0;
+	}
 
 	if (globals.timebeginperiod_active) {
 		timeEndPeriod(1);
