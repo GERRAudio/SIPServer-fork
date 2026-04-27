@@ -594,13 +594,13 @@ static switch_status_t channel_read_frame(switch_core_session_t *session,
 
 	avail = ring_available(&ch->rx_ring);
 	if (avail < frame_bytes) {
-		/* Not enough audio yet.  Slice the ptime wait into ~2 ms steps so
-		 * we can return promptly when dpi_dial_pending is signalled by the
-		 * recv thread.  Return a CNG frame in both cases — FS treats CNG as
-		 * SWITCH_STATUS_SUCCESS and hands control back to the exchange_media
-		 * loop, which then sees dpi_dial_pending and calls the transfer. */
-		uint32_t step_us   = 2 * 1000;
-		uint32_t total_us  = ptime_ms * 1000;
+		/* Not enough audio yet.  Wait at most half a frame interval so we
+		 * return promptly rather than stalling for a full ptime on underrun
+		 * (which would double the gap heard on the FS side).  Slice into
+		 * 1 ms steps so we react quickly when the recv thread fills the ring,
+		 * and bail out early if dpi_dial_pending is set by the recv thread. */
+		uint32_t step_us   = 1000;
+		uint32_t total_us  = (ptime_ms * 1000) / 2;
 		uint32_t waited_us = 0;
 		while (waited_us < total_us) {
 			switch_yield(step_us);
@@ -618,6 +618,10 @@ static switch_status_t channel_read_frame(switch_core_session_t *session,
 		ch->read_frame.flags   = 0;
 		ch->read_frame.datalen = frame_bytes;
 	} else {
+		if (ivcore_globals.debug == SWITCH_TRUE) {
+			IVC_LOG_DEBUG("[IVC-RX] ch=%p rx_ring underrun: avail=%u need=%u -> CNG\n",
+				(void *)ch, avail, frame_bytes);
+		}
 		goto return_cng;
 	}
 

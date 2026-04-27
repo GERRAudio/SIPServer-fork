@@ -902,6 +902,19 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 	/* dpi_send_cb is explicitly NULLed in ivcore_channel_alloc() before this
 	 * thread is created, so no assignment is needed here.  It is set to
 	 * ivp_send_data_frame the first time an IVP Data (HDLC) frame arrives. */
+
+	/* Boost the recv thread so it is not preempted by normal-priority threads
+	 * when draining incoming UDP packets into rx_ring.  Without this the recv
+	 * thread can be starved while the TX thread runs at ABOVE_NORMAL/TIME_CRITICAL,
+	 * causing rx_ring underruns that manifest as choppy audio on the FS side. */
+#ifdef _WIN32
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+	{
+		DWORD task_index = 0;
+		AvSetMmThreadCharacteristicsW(L"Pro Audio", &task_index);
+	}
+#endif
+
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
 		"mod_ivcore: recv loop started for channel %p\n", (void *)ch);
 
@@ -1205,6 +1218,7 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 	uint32_t      dbg_frames       = 0;
 	switch_time_t dbg_last_log_us  = 0;
 	uint32_t      dbg_silence_run  = 0;    /* consecutive silence-substitution frames */
+	uint32_t      dbg_silence_total = 0;   /* total silence frames in current 1s window */
 
 #ifdef _WIN32
 	/* Tracks whether this thread has been elevated to TIME_CRITICAL.
@@ -1458,16 +1472,17 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 				IVC_LOG_DEBUG(
 					"[IVC-TX] ch=%p timer jitter over %u frames: "
 					"min=%+" PRId64 " avg=%+" PRId64 " max=%+" PRId64 " us"
-					" silence=%u\n",
+					" silence=%u/%u\n",
 					(void *)ch, dbg_frames,
 					dbg_jitter_min, avg, dbg_jitter_max,
-					dbg_silence_run);
-				dbg_jitter_min = 0;
-				dbg_jitter_max = 0;
-				dbg_jitter_sum = 0;
-				dbg_frames      = 0;
-				dbg_silence_run = 0;
-				dbg_last_log_us = now_us;
+					dbg_silence_run, dbg_silence_total);
+				dbg_jitter_min  = 0;
+				dbg_jitter_max  = 0;
+				dbg_jitter_sum  = 0;
+				dbg_frames       = 0;
+				dbg_silence_run  = 0;
+				dbg_silence_total = 0;
+				dbg_last_log_us  = now_us;
 			}
 			/* Advance ideal deadline by one ptime interval. */
 			dbg_deadline_us += (switch_time_t)ptime_ms * 1000;
@@ -1489,8 +1504,26 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 
 		if (!ch->running) break;
 
-		/* Drain one frame from tx_ring, or use silence. */
+		/* Drain one frame from tx_ring, or use silence.
+		 *
+		 * The FS write clock and this TX timer clock are independent and drift
+		 * relative to each other.  When the TX timer fires just before the FS
+		 * write arrives, the ring is momentarily empty even though audio is
+		 * flowing.  A brief spin-wait (up to ~2ms) absorbs this phase drift
+		 * before falling back to silence, eliminating isolated 1-frame gaps
+		 * that are heard as clicks or choppiness at the far end. */
 			avail = ring_available(&ch->tx_ring);
+			if (avail < (uint32_t)frame_bytes) {
+				/* Spin for up to 2 ms in 100 µs steps waiting for the FS
+				 * write thread to catch up.  This is safe: we are already past
+				 * the timer deadline, so a short busy-yield here does not
+				 * affect pacing — we send the frame as soon as it arrives. */
+				int spin;
+				for (spin = 0; spin < 20 && avail < (uint32_t)frame_bytes; spin++) {
+					switch_sleep(100); /* 100 µs */
+					avail = ring_available(&ch->tx_ring);
+				}
+			}
 			if (avail >= (uint32_t)frame_bytes) {
 				/* Read directly from ring into send buffer.
 				 * ring_read handles wrap-around. */
@@ -1507,11 +1540,10 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 				}
 #endif
 			} else {
-				/* Ring empty or partial — send silence.
-				 * Log under debug to diagnose stutter: consecutive silence frames
-				 * are the audible glitch, not HDLC or jitter. */
+				/* Ring still empty after spin-wait — fall back to silence. */
 				send_buf = ch->tx_silence_buf;
 				dbg_silence_run++;
+				dbg_silence_total++;
 				if (ivcore_globals.debug == SWITCH_TRUE && dbg_silence_run == 1) {
 					IVC_LOG_DEBUG("[IVC-TX] ch=%p ring underrun: silence substituted "
 						"(avail=%u need=%d jitter=%" PRId64 " us)\n",
