@@ -315,8 +315,10 @@ static switch_status_t ivcore_setup_codecs(switch_core_session_t *session,
 
     /* Derive ptime from the negotiated provisioning parameters so all codec
      * types get the right frame size:
-     *   G.722  → frame_time=40 ms, 320 bytes/frame
-     *   G.711u → frame_time=1  ms, fpp=20 → 20 ms, 160 bytes/frame
+     *   G.722  → frame_time=20 ms, frame_size=160 bytes (64 kbps × 20 ms = 160 B)
+     *            FreeSWITCH registers G.722 at 8 kHz RTP clock rate; 160 samples
+     *            at that clock = 20 ms, which is the correct framing.
+     *   G.711u → frame_time=1  ms, fpp=20 → ptime=20 ms, 160 bytes/frame
      * Fall back to 20 ms for any codec that has no ptime_ms set yet. */
     codec_ms = (ch->ptime_ms > 0) ? (int)ch->ptime_ms : 20;
     if (switch_core_codec_init(&ch->read_codec, codec_name, NULL,
@@ -671,6 +673,157 @@ static switch_status_t channel_write_frame(switch_core_session_t *session,
 static void spawn_autoconnect_session(int ci, int pi);
 static void schedule_autoconnect_retry(int ci, int pi);
 
+/**
+ * spawn_autoconnect_session_inherited: re-establish an autoconnect session
+ * by re-using an already-open TCP and UDP socket from the previous call.
+ *
+ * When FreeSWITCH hangs up an autoconnect leg the IVP link to the matrix is
+ * still alive — only the FreeSWITCH session went away.  By re-using the same
+ * sockets we avoid a full TCP re-login (which the matrix needs ~500 ms to
+ * process) and can be ready for the next dial immediately.
+ *
+ * Falls back to a full spawn_autoconnect_session() + socket close if anything
+ * in the new-session setup fails.
+ */
+static void spawn_autoconnect_session_inherited(const ivcore_inherit_t *inh)
+{
+	ivcore_card_t  *c = &ivcore_globals.cards[inh->card_idx];
+	ivcore_port_t  *p = &c->ports[inh->port_idx];
+	switch_core_session_t *ac_session;
+	ivcore_channel_t *ch;
+	int slot;
+
+	ac_session = switch_core_session_request(
+		ivcore_globals.endpoint_interface,
+		SWITCH_CALL_DIRECTION_OUTBOUND,
+		SOF_NONE, NULL);
+	if (!ac_session) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+			"mod_ivcore: autoconnect (inherited) card='%s' port='%s' - session request failed\n",
+			c->name, p->name);
+		goto fallback;
+	}
+
+	ch = ivcore_channel_alloc(ac_session, c, p);
+	if (!ch) {
+		switch_core_session_destroy(&ac_session);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+			"mod_ivcore: autoconnect (inherited) card='%s' port='%s' - channel alloc failed\n",
+			c->name, p->name);
+		goto fallback;
+	}
+
+	/* Inject the inherited sockets — skip TCP login and UDP open. */
+	ch->tcp_sock = inh->tcp_sock;
+	ch->udp_sock = inh->udp_sock;
+
+	switch_core_session_set_private(ac_session, ch);
+	switch_copy_string(ch->params.called_number, p->autoconnect_number,
+					   sizeof(ch->params.called_number));
+	ch->is_autoconnect       = SWITCH_TRUE;
+	ch->autoconnect_card_idx = inh->card_idx;
+	ch->autoconnect_port_idx = inh->port_idx;
+
+	switch_channel_set_name(ch->channel, "ivcore-autoconnect");
+	switch_channel_set_flag(ch->channel, CF_AUDIO);
+
+	{
+		switch_caller_profile_t *cp =
+			switch_caller_profile_new(
+				switch_core_session_get_pool(ac_session),
+				"ivcore", "XML",
+				p->username, p->username,
+				NULL, NULL, NULL, NULL,
+				"mod_ivcore",
+				c->context[0] ? c->context : "default",
+				"ivcore");
+		switch_channel_set_caller_profile(ch->channel, cp);
+	}
+
+	if (ivcore_setup_codecs(ac_session, ch) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+			"mod_ivcore: autoconnect (inherited) card='%s' port='%s' - codec init failed\n",
+			c->name, p->name);
+		/* Don't close the inherited sockets here — we are falling back
+		 * to a full reconnect which will open fresh ones. Detach them so
+		 * ivcore_channel_free() does not close them via ivp_transport_close(). */
+		ch->tcp_sock = -1;
+		ch->udp_sock = -1;
+		ivcore_channel_free(ch);
+		switch_core_session_destroy(&ac_session);
+		goto fallback;
+	}
+
+	switch_mutex_lock(ivcore_globals.mutex);
+	for (slot = 0; slot < MAX_IVC_CHANNELS; slot++) {
+		if (!ivcore_globals.channels[slot]) {
+			ivcore_globals.channels[slot] = ch;
+			ivcore_globals.channel_count++;
+			break;
+		}
+	}
+	switch_mutex_unlock(ivcore_globals.mutex);
+
+	ch->running = SWITCH_TRUE;
+	{
+		switch_threadattr_t *tattr;
+		switch_threadattr_create(&tattr, switch_core_session_get_pool(ac_session));
+		switch_threadattr_detach_set(tattr, 0);
+		switch_thread_create(&ch->rx_thread, tattr, ivp_recv_loop, ch,
+							 switch_core_session_get_pool(ac_session));
+		switch_threadattr_create(&tattr, switch_core_session_get_pool(ac_session));
+		switch_threadattr_detach_set(tattr, 0);
+		switch_thread_create(&ch->tx_thread, tattr, ivp_tx_loop, ch,
+							 switch_core_session_get_pool(ac_session));
+	}
+
+	if (ivp_send_new(ch) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+			"mod_ivcore: autoconnect (inherited) card='%s' port='%s' - NEW failed, "
+			"falling back to full reconnect\n", c->name, p->name);
+		ch->running  = SWITCH_FALSE;
+		/* Detach so teardown doesn't close the sockets we want to abandon. */
+		ch->tcp_sock = -1;
+		ch->udp_sock = -1;
+		ivcore_channel_free(ch);
+		switch_core_session_destroy(&ac_session);
+		goto fallback_close;
+	}
+
+	switch_channel_mark_pre_answered(ch->channel);
+	switch_channel_set_state(ch->channel, CS_INIT);
+	switch_core_session_thread_launch(ac_session);
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+		"mod_ivcore: autoconnect (inherited) card='%s' port='%s' ready, "
+		"tcp=%d udp=%d\n",
+		c->name, p->name, inh->tcp_sock, inh->udp_sock);
+	return;
+
+fallback:
+	/* Close the stolen sockets before doing a full re-login. */
+	if (inh->tcp_sock >= 0) {
+#ifdef _WIN32
+		closesocket((SOCKET)inh->tcp_sock);
+#else
+		close(inh->tcp_sock);
+#endif
+	}
+	if (inh->udp_sock >= 0) {
+#ifdef _WIN32
+		closesocket((SOCKET)inh->udp_sock);
+#else
+		close(inh->udp_sock);
+#endif
+	}
+fallback_close:
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+		"mod_ivcore: autoconnect (inherited) card='%s' port='%s' "
+		"falling back to full reconnect\n", c->name, p->name);
+	switch_yield(500000); /* 500 ms — let the matrix process the previous HANGUP */
+	spawn_autoconnect_session(inh->card_idx, inh->port_idx);
+}
+
 static switch_status_t channel_on_hangup(switch_core_session_t *session)
 {
 	/* channel_on_hangup runs in the session's own thread (CS_HANGUP state handler).
@@ -678,9 +831,11 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 	 * will not outlive the session — no rwunlock needed here. */
 	ivcore_channel_t *ch = (ivcore_channel_t *)
 		switch_core_session_get_private(session);
-	switch_bool_t respawn      = SWITCH_FALSE;
-	int           respawn_ci   = 0;
-	int           respawn_pi   = 0;
+	switch_bool_t    respawn      = SWITCH_FALSE;
+	ivcore_inherit_t inh;
+	memset(&inh, 0, sizeof(inh));
+	inh.tcp_sock = -1;
+	inh.udp_sock = -1;
 	{
 		char _dbg[128];
 		switch_snprintf(_dbg, sizeof(_dbg),
@@ -749,11 +904,18 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 		ivp_send_hangup(ch);
 	IVC_DBGOUT("[IVC] hangup: post ivp_send_hangup\n");
 
-	/* Capture respawn info before ivcore_channel_free() zeroes the struct. */
+	/* Capture respawn info and steal sockets BEFORE ivcore_channel_free()
+	 * tears down the transport.  For autoconnect channels we keep the TCP
+	 * and UDP sockets open so the new session can re-use the existing IVP
+	 * link without a full TCP re-login. */
 	if (ch->is_autoconnect) {
-		respawn    = SWITCH_TRUE;
-		respawn_ci = ch->autoconnect_card_idx;
-		respawn_pi = ch->autoconnect_port_idx;
+		respawn          = SWITCH_TRUE;
+		inh.card_idx     = ch->autoconnect_card_idx;
+		inh.port_idx     = ch->autoconnect_port_idx;
+		ivp_transport_steal(ch, &inh.tcp_sock, &inh.udp_sock);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+			"mod_ivcore: autoconnect hangup — stealing sockets tcp=%d udp=%d "
+			"for immediate respawn\n", inh.tcp_sock, inh.udp_sock);
 	}
 
 	/* Prevent ivp_recv_loop from dereferencing the session/channel pointer
@@ -787,15 +949,16 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 	ivcore_channel_free(ch);
 	IVC_DBGOUT("[IVC] hangup: ivcore_channel_free returned\n");
 
-	/* Re-establish the standing IVP session so the matrix can dial again
-	 * without a module reload.  A brief delay lets the IVC card fully
-	 * process the HANGUP before we send a new NEW frame. */
+	/* Re-establish the standing IVP session.  For autoconnect channels we
+	 * try to re-use the existing TCP/UDP link (no re-login, immediate NEW).
+	 * The inherited spawner falls back to a full reconnect automatically if
+	 * anything in the re-use path fails. */
 	if (respawn) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-			"mod_ivcore: respawning autoconnect session (card=%d port=%d)\n",
-			respawn_ci, respawn_pi);
-		switch_yield(500000); /* 500 ms */
-		spawn_autoconnect_session(respawn_ci, respawn_pi);
+			"mod_ivcore: respawning autoconnect session (card=%d port=%d, "
+			"inherited tcp=%d udp=%d)\n",
+			inh.card_idx, inh.port_idx, inh.tcp_sock, inh.udp_sock);
+		spawn_autoconnect_session_inherited(&inh);
 	}
 
 	return SWITCH_STATUS_SUCCESS;

@@ -599,6 +599,31 @@ switch_status_t ivp_send_hangup(ivcore_channel_t *ch);
 switch_status_t ivp_send_media(ivcore_channel_t *ch,
 								const uint8_t *payload, int payload_len);
 void            ivp_transport_close(ivcore_channel_t *ch);
+
+/**
+ * ivp_transport_steal: extract the live TCP and UDP socket descriptors from
+ * a channel without closing them, then zero the channel's socket fields.
+ * Used by the autoconnect respawn path so a new session can inherit an
+ * existing IVP link without a full TCP re-login.
+ *
+ * @param ch       Channel to steal sockets from.
+ * @param tcp_out  Receives the TCP socket fd (-1 if not open).
+ * @param udp_out  Receives the UDP socket fd (-1 if not open).
+ */
+void            ivp_transport_steal(ivcore_channel_t *ch, int *tcp_out, int *udp_out);
+
+/**
+ * ivcore_inherit_t: carries the stolen sockets and card/port identity across
+ * the session-teardown boundary so spawn_autoconnect_session_inherited() can
+ * re-use them in the new FreeSWITCH session.
+ */
+typedef struct {
+	int tcp_sock;           /**< Stolen TCP socket (or -1) */
+	int udp_sock;           /**< Stolen UDP socket (or -1) */
+	int card_idx;           /**< ivcore_globals.cards[] index */
+	int port_idx;           /**< card->ports[] index */
+} ivcore_inherit_t;
+
 void           *ivp_recv_loop(switch_thread_t *thread, void *obj);
 void           *ivp_tx_loop(switch_thread_t *thread, void *obj);
 

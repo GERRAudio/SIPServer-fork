@@ -831,6 +831,17 @@ switch_status_t ivp_send_media(ivcore_channel_t *ch,
  * Close transport sockets
  * ===================================================================*/
 
+void ivp_transport_steal(ivcore_channel_t *ch, int *tcp_out, int *udp_out)
+{
+    if (tcp_out) *tcp_out = ch->tcp_sock;
+    if (udp_out) *udp_out = ch->udp_sock;
+    /* Zero out the channel's socket fields so ivp_transport_close() (called
+     * during the normal hangup teardown) will not close the sockets we
+     * just handed off. */
+    ch->tcp_sock = -1;
+    ch->udp_sock = -1;
+}
+
 void ivp_transport_close(ivcore_channel_t *ch)
 {
 	if (ch->udp_sock >= 0) {
