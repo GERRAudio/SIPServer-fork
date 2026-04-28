@@ -840,22 +840,44 @@ switch_status_t mod_spandsp_codecs_load(switch_loadable_module_interface_t **mod
 	SWITCH_ADD_CODEC(codec_interface, "G.722");
 	for (count = 6; count > 0; count--) {
 		switch_core_codec_add_implementation(pool, codec_interface, SWITCH_CODEC_TYPE_AUDIO,	/* enumeration defining the type of the codec */
-											 9,	/* the IANA code number */
-											 "G722",	/* the IANA code name */
-											 NULL,	/* default fmtp to send (can be overridden by the init function) */
-											 8000,	/* samples transferred per second */
-											 16000,	/* actual samples transferred per second */
-											 64000,	/* bits transferred per second */
-											 mpf * count,	/* number of microseconds per frame */
-											 spf * count,	/* number of samples per frame */
-											 bpf * count,	/* number of bytes per frame decompressed */
-											 ebpf * count,	/* number of bytes per frame compressed */
-											 1,	/* number of channels represented */
-											 spf * count,	/* number of frames per network packet */
-											 switch_g722_init,	/* function to initialize a codec handle using this implementation */
-											 switch_g722_encode,	/* function to encode raw data into encoded data */
-											 switch_g722_decode,	/* function to decode encoded data into raw data */
-											 switch_g722_destroy);	/* deinitalize a codec handle using this implementation */
+										 9,	/* the IANA code number */
+										 "G722",	/* the IANA code name */
+										 NULL,	/* default fmtp to send (can be overridden by the init function) */
+										 8000,	/* samples transferred per second (RTP clock — legacy 8 kHz alias) */
+										 16000,	/* actual samples transferred per second */
+										 64000,	/* bits transferred per second */
+										 mpf * count,	/* number of microseconds per frame */
+										 spf * count,	/* number of samples per frame */
+										 bpf * count,	/* number of bytes per frame decompressed */
+										 ebpf * count,	/* number of bytes per frame compressed */
+										 1,	/* number of channels represented */
+										 spf * count,	/* number of frames per network packet */
+										 switch_g722_init,	/* function to initialize a codec handle using this implementation */
+										 switch_g722_encode,	/* function to encode raw data into encoded data */
+										 switch_g722_decode,	/* function to decode encoded data into raw data */
+										 switch_g722_destroy);	/* deinitalize a codec handle using this implementation */
+	}
+	/* IVC/IVP non-standard G.722 frame durations: 8 ms (Super LAN), 16 ms (LAN), 24 ms (WAN), 40 ms (INTERNET).
+	 * Calculated as: spf = 8000 Hz * ms / 1000; bpf = 16000 Hz * ms / 1000 * 2 bytes; ebpf = 64000 bps * ms / 8000 */
+	{
+		static const int ivc_ptimes[] = { 8, 16, 24, 40 };
+		int pi;
+		for (pi = 0; pi < 3; pi++) {
+			int ms    = ivc_ptimes[pi];
+			int i_spf  = 8000  * ms / 1000;          /* RTP-clock samples   */
+			int i_bpf  = 16000 * ms / 1000 * 2;      /* decoded PCM bytes   */
+			int i_ebpf = 64000 * ms / 8000;           /* G.722 encoded bytes */
+			int i_mpf  = ms * 1000;                   /* microseconds        */
+			switch_core_codec_add_implementation(pool, codec_interface, SWITCH_CODEC_TYPE_AUDIO,
+												 9, "G722", NULL,
+												 8000, 16000, 64000,
+												 i_mpf, i_spf, i_bpf, i_ebpf,
+												 1, i_spf,
+												 switch_g722_init,
+												 switch_g722_encode,
+												 switch_g722_decode,
+												 switch_g722_destroy);
+		}
 	}
 
 #ifdef ENABLE_G711

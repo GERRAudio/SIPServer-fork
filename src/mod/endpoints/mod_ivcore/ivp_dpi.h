@@ -26,6 +26,24 @@
 /* CSO envelope size (precedes every DPI message in HDLC I-frames) */
 #define IVP_DPI_CSO_HEADER_SIZE  6
 
+/* Maximum DPI payload bytes (excluding the CSO header) that can be passed
+ * to send_dpi_msg.  Derived from ivp_hdlc_build_iframe's raw[] constraint:
+ *   raw_len = 3(hdr) + (CSO_HDR + dpi_len) + 2(crc) ≤ IVP_HDLC_RAW_BUF_SIZE
+ *   dpi_len ≤ IVP_HDLC_RAW_BUF_SIZE - 3 - IVP_DPI_CSO_HEADER_SIZE - 2
+ *           = 256 - 3 - 6 - 2 = 245.
+ * Note: the old cap was 256, which was misleading — any message with
+ * dpi_len in [246..256] would be silently dropped by build_iframe. */
+#define IVP_DPI_MAX_PAYLOAD_BYTES  245
+
+/* Size of the raw[] staging buffer inside ivp_hdlc_build_iframe. */
+#define IVP_HDLC_RAW_BUF_SIZE      256
+
+/* Size of the HDLC-stuffed output frame[] buffer in send_dpi_msg.
+ * Must satisfy: IVP_HDLC_FRAME_BUF_SIZE >= 1 + 2*IVP_HDLC_RAW_BUF_SIZE + 1
+ *              (i.e. >= 514).  600 gives an 86-byte margin.
+ * History: 512 caused an overflow → stack corruption → 0xC0000005 crash. */
+#define IVP_HDLC_FRAME_BUF_SIZE    600
+
 /* Message IDs.  Same byte for request and reply; direction implied by sender. */
 typedef enum {
 	/* Rack → Panel */

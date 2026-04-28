@@ -685,6 +685,30 @@ SWITCH_MODULE_LOAD_FUNCTION(core_pcm_load)
 
 	}
 
+	/* IVC/IVP non-standard L16@16000hz frame durations needed as the raw
+	 * codec backing G.722 channels: 8 ms (SuperLAN), 16 ms (LAN),
+	 * 20 ms (standard), 24 ms (WAN), 40 ms (INTERNET).
+	 * spf = 16000 * ms / 1000; bpf = spf * 2 (16-bit samples). */
+	{
+		static const int ivc_l16_ptimes[] = { 8, 16, 20, 24, 40 };
+		int pi;
+		for (pi = 0; pi < 5; pi++) {
+			int ms    = ivc_l16_ptimes[pi];
+			int i_spf = 16000 * ms / 1000;
+			int i_bpf = i_spf * 2;
+			int i_mpf = ms * 1000;
+			switch_core_codec_add_implementation(pool, codec_interface, SWITCH_CODEC_TYPE_AUDIO,
+												 100, "L16", NULL,
+												 16000, 16000, 256000,
+												 i_mpf, i_spf, i_bpf, i_bpf,
+												 1, 1,
+												 switch_raw_init,
+												 switch_raw_encode,
+												 switch_raw_decode,
+												 switch_raw_destroy);
+		}
+	}
+
 
 	samples_per_frame = 64;
 	bytes_per_frame = 128;

@@ -156,11 +156,18 @@ int ivp_hdlc_build_iframe(ivcore_channel_t *ch,
 	 *   ctl = (v_s<<1) | 0  (LSB 0 = I-frame)
 	 *   ext = (v_r<<1) | P/F   (P/F=1)
 	 */
-	uint8_t raw[256];
+	uint8_t raw[IVP_HDLC_RAW_BUF_SIZE];
 	int     raw_len = 3 + payload_len + 2;
 	uint16_t crc;
 	if (!ch || !payload || payload_len < 0) return -1;
-	if (raw_len > (int)sizeof(raw)) return -1;
+	if (raw_len > (int)sizeof(raw)) {
+		/* Caller violated the IVP_DPI_MAX_PAYLOAD_BYTES contract.
+		 * Log rather than silently returning -1 so this is diagnosable. */
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+			"mod_ivcore: ivp_hdlc_build_iframe payload too large "
+			"(raw_len=%d > raw[%d])\n", raw_len, (int)sizeof(raw));
+		return -1;
+	}
 
 	raw[0] = IVP_HDLC_ADDR_RESP;
 	raw[1] = (uint8_t)((ch->hdlc.v_s & 0x7F) << 1);

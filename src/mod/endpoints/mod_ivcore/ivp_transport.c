@@ -862,6 +862,12 @@ void ivp_transport_close(ivcore_channel_t *ch)
 static void handle_media_payload(ivcore_channel_t *ch,
 								  const uint8_t *payload, int len)
 {
+	/* Only buffer audio when the call is established.  Frames arriving
+	 * during IVC_STATE_CONNECTING (before ACCEPT) — or leftover UDP
+	 * packets in an inherited socket from a previous autoconnect session
+	 * — would cause a burst at the start of playback, making audio
+	 * sound accelerated until the accumulated backlog drains. */
+	if (ch->call_state != IVC_STATE_UP) return;
 	if (len > 0)
 		ring_write(&ch->rx_ring, payload, (uint32_t)len);
 }
@@ -903,25 +909,9 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 	 * thread is created, so no assignment is needed here.  It is set to
 	 * ivp_send_data_frame the first time an IVP Data (HDLC) frame arrives. */
 
-	/* Boost the recv thread so it is not preempted by normal-priority threads
-	 * when draining incoming UDP packets into rx_ring.  Without this the recv
-	 * thread can be starved while the TX thread runs at ABOVE_NORMAL/TIME_CRITICAL,
-	 * causing rx_ring underruns that manifest as choppy audio on the FS side. */
-#ifdef _WIN32
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-	{
-		HMODULE avrt = GetModuleHandleW(L"avrt.dll");
-		if (!avrt) avrt = LoadLibraryW(L"avrt.dll");
-		if (avrt) {
-			typedef HANDLE (WINAPI *PFN_AvSet)(LPCWSTR, LPDWORD);
-			PFN_AvSet fn = (PFN_AvSet)GetProcAddress(avrt, "AvSetMmThreadCharacteristicsW");
-			if (fn) {
-				DWORD task_index = 0;
-				fn(L"Pro Audio", &task_index);
-			}
-		}
-	}
-#endif
+	#ifdef _WIN32
+		SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+	#endif
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
 		"mod_ivcore: recv loop started for channel %p\n", (void *)ch);
@@ -1058,9 +1048,15 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 				switch ((ivp_proto_subclass_t)hdr.subclass) {
 
 				case IVP_PROTO_ACCEPT: {
-					int accept_payload_len = (int)n - IVP_PROTO_HEADER_SIZE;
-					ch->remote_call_number = hdr.src_call_number;
-					ch->call_state = IVC_STATE_UP;
+						int accept_payload_len = (int)n - IVP_PROTO_HEADER_SIZE;
+						ch->remote_call_number = hdr.src_call_number;
+						/* Flush any media that arrived before ACCEPT (could be
+						 * stale UDP frames on an inherited socket, or early
+						 * media from the card).  Without this the rx_ring holds
+						 * a burst that channel_read_frame drains instantly,
+						 * causing audio to play back faster than real-time. */
+						ring_reset(&ch->rx_ring);
+						ch->call_state = IVC_STATE_UP;
 					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
 						"mod_ivcore: ACCEPT received, remoteCallNo=0x%04X payloadLen=%d\n",
 						(unsigned)hdr.src_call_number, accept_payload_len);
@@ -1088,9 +1084,10 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 								if (fs > 0)  ch->params.frame_size        = fs;
 								if (ft > 0)  ch->params.frame_time        = ft;
 								if (fpp > 0) ch->params.frames_per_packet = fpp;
-								ch->ptime_ms = (uint32_t)(ch->params.frame_time
-													* ch->params.frames_per_packet);
-								if (ch->ptime_ms == 0) ch->ptime_ms = 20;
+								/* ptime = fpp (ms per packet); frame_time is samples
+								 * per 1ms unit, NOT ms per unit. */
+								ch->ptime_ms = (uint32_t)ch->params.frames_per_packet;
+								if (ch->ptime_ms == 0) ch->ptime_ms = 16;
 							}
 							ie += ie_len;
 						}
@@ -1200,99 +1197,42 @@ void *ivp_recv_loop(switch_thread_t *thread, void *obj)
 }
 
 /* =====================================================================
- * ivp_tx_loop — dedicated TX pacer thread
+ * ivp_tx_loop — silence keepalive thread
  *
- * Owns all outbound media pacing and sending, completely decoupled from
- * the FreeSWITCH session thread.  channel_write_frame() only pushes
- * encoded bytes into tx_ring; this thread drains them at exactly the
- * right wire cadence using a QPC hybrid-sleep pacer.
+ * channel_write_frame() now sends real audio directly (no tx_ring).
+ * This thread's only job is to send a silence frame periodically when
+ * the call is UP but FreeSWITCH has not sent audio recently — keeping
+ * the matrix media watchdog alive (~4 s expiry on most cards).
  *
- * When tx_ring is empty (FS has not delivered a frame yet), a silence
- * frame is sent to keep the matrix media watchdog alive.
+ * We do NOT need a precision timer here.  A coarse 50 ms sleep gives
+ * watchdog packets at ~500 ms for idle channels without generating the
+ * N × 50 Hz wakeup storm that a per-channel 20 ms timer causes with
+ * many simultaneous standing sessions.
  * ===================================================================*/
 void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 {
 	ivcore_channel_t *ch = (ivcore_channel_t *)obj;
 	int frame_bytes;
 	uint32_t ptime_ms;
+	/* Keepalive cadence: send one silence packet every KEEPALIVE_INTERVAL_US
+	 * when FS is not actively writing.  Must be well under the card's media
+	 * watchdog timeout (~4 s).  500 ms is a comfortable margin. */
+#define IVC_KEEPALIVE_INTERVAL_US  500000   /* 500 ms */
+#define IVC_KEEPALIVE_SLEEP_US      50000   /* 50 ms poll granularity */
 
-	/* Jitter diagnostics (only accumulated when ivcore_globals.debug == TRUE).
-	 * We track how late/early each timer tick fires vs. the ideal deadline.
-	 * Positive jitter_us = late, negative = early. */
-	switch_time_t dbg_deadline_us  = 0;     /* expected fire time of next tick    */
-	int64_t       dbg_jitter_min   = 0;
-	int64_t       dbg_jitter_max   = 0;
-	int64_t       dbg_jitter_sum   = 0;
-	uint32_t      dbg_frames       = 0;
-	switch_time_t dbg_last_log_us  = 0;
-	uint32_t      dbg_silence_run  = 0;    /* consecutive silence-substitution frames */
-	uint32_t      dbg_silence_total = 0;   /* total silence frames in current 1s window */
+	(void)thread;
 
 #ifdef _WIN32
-	/* Tracks whether this thread has been elevated to TIME_CRITICAL.
-	 * Starts FALSE (ABOVE_NORMAL); set TRUE the first frame real audio is
-	 * seen; cleared back to FALSE when tx_ring drains to silence again. */
-	int           tx_is_elevated      = 0;
-	/* Absolute deadline for the NEXT timer fire, in switch_micro_time_now()
-	 * units (microseconds).  Maintained unconditionally (not gated on the
-	 * debug flag) so the re-arm calculation is always correct.
-	 * 0 = not yet anchored (first tick sets it). */
-	switch_time_t tx_next_deadline_us = 0;
-	/* QPC frequency — queried once at startup for the busy-spin clock. */
-	LARGE_INTEGER qpc_freq;
-	QueryPerformanceFrequency(&qpc_freq);
-#endif
-
-#ifdef _WIN32
-	/* On Windows each TX thread gets its own private high-resolution waitable
-	 * timer.  This avoids the shared condvar thundering-herd that occurs when
-	 * mod_timer_winmm broadcasts to ALL waiting TX threads simultaneously:
-	 * with N channels they all unblock at once, compete for the CPU, and the
-	 * last one to run is delayed by (N-1) × dispatch latency — which empties
-	 * the TX ring and causes silence substitution / audible stutter.
-	 *
-	 * A private timer per channel means each thread wakes independently at its
-	 * own absolute deadline.  A per-process sequence number staggers the
-	 * initial phase so channels started at the same time do NOT converge on the
-	 * same fire instant even when they all use the same ptime.  The FS condvar
-	 * path is still used on non-Windows platforms. */
-	HANDLE  win_timer  = NULL;
-	int     timer_ok   = 0;
-	LARGE_INTEGER due;
-	/* Global sequence counter — each TX thread claims one slot so the initial
-	 * fire time is spread evenly across one ptime window. */
-	static volatile LONG s_tx_seq = 0;
-
-	/* Start all TX threads at ABOVE_NORMAL.  The thread dynamically escalates
-	 * to TIME_CRITICAL when real audio arrives in tx_ring and drops back when
-	 * the ring drains to silence.  This prevents idle standby channels (which
-	 * only send keepalive silence) from preempting the active call channel's
-	 * RTP delivery thread — the root cause of the lqsip1 audio delays. */
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-	{
-		HMODULE avrt = GetModuleHandleW(L"avrt.dll");
-		if (!avrt) avrt = LoadLibraryW(L"avrt.dll");
-		if (avrt) {
-			typedef HANDLE (WINAPI *PFN_AvSet)(LPCWSTR, LPDWORD);
-			PFN_AvSet fn = (PFN_AvSet)GetProcAddress(avrt, "AvSetMmThreadCharacteristicsW");
-			if (fn) {
-				DWORD task_idx = 0;
-				fn(L"Pro Audio", &task_idx);
-			}
-		}
-	}
-
-#else
-	switch_timer_t timer = { 0 };
-	switch_memory_pool_t *pool = NULL;
-	int timer_ok = 0;
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
 #endif
 
 	/* Wait until codec setup has run so frame_size and ptime are valid. */
 	while (ch->running && ch->params.frame_size == 0)
 		switch_sleep(1000);
 
-	frame_bytes = (ch->params.frame_size > 0) ? (int)ch->params.frame_size : 320;
+	/* Full IVP packet bytes = frame_size (bytes/unit) × fpp (units/packet). */
+	frame_bytes = (ch->params.frame_size > 0 && ch->params.frames_per_packet > 0)
+		? (int)(ch->params.frame_size * ch->params.frames_per_packet) : 128;
 	if (frame_bytes > IVC_MAX_FRAME_BYTES) frame_bytes = IVC_MAX_FRAME_BYTES;
 	ptime_ms = ch->ptime_ms ? ch->ptime_ms : 20;
 
@@ -1302,305 +1242,42 @@ void *ivp_tx_loop(switch_thread_t *thread, void *obj)
 		memset(ch->tx_silence_buf, fill, (size_t)frame_bytes);
 	}
 
-#ifdef _WIN32
-	/* Create a private synchronisation-timer (non-manual-reset, so it
-	 * auto-resets after WaitForSingleObject returns — no spurious wakeups).
-	 * Prefer CREATE_WAITABLE_TIMER_HIGH_RESOLUTION (Windows 10 1803+, value
-	 * 0x2) which gives ~100 µs resolution without touching the system-wide
-	 * timer period via timeBeginPeriod().  Fall back to standard resolution
-	 * (flag 0) on older Windows where the flag is not recognised. */
-#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
-#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
-#endif
-	win_timer = CreateWaitableTimerExW(NULL, NULL,
-		CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
-	{
-		int hi_res = (win_timer != NULL);
-		if (!win_timer) {
-			/* Older Windows — standard resolution (~15.6 ms quantum). */
-			win_timer = CreateWaitableTimerExW(NULL, NULL, 0, TIMER_ALL_ACCESS);
-		}
-		if (win_timer) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-				"mod_ivcore: TX ch=%p waitable timer created (%s resolution)\n",
-				(void *)ch, hi_res ? "HIGH" : "standard");
-		}
-	}
-	if (win_timer) {
-		/* Stagger the initial phase: claim a slot in [0, ptime_ms) so that
-		 * channels started together fire at different points in the ptime
-		 * window.  With 10 channels at 20 ms ptime the slots are 2 ms apart.
-		 * The modulus wraps every ptime_ms channels, which is fine — even with
-		 * many channels a 2ms stagger window is enough to avoid contention. */
-		LONG my_seq = InterlockedIncrement(&s_tx_seq) - 1;
-		LONGLONG stagger_100ns = (LONGLONG)(my_seq % (LONG)ptime_ms) * 1000LL * 10LL; /* ms→100ns */
-		LONGLONG first_100ns   = (LONGLONG)ptime_ms * 10000LL + stagger_100ns;
-		due.QuadPart = -first_100ns;   /* negative = relative */
-		if (SetWaitableTimer(win_timer, &due, 0, NULL, NULL, FALSE)) {
-			timer_ok = 1;
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-				"mod_ivcore: TX ch=%p using private waitable timer, "
-				"ptime=%u ms frame=%d bytes phase_slot=%ld (+%lld ms)\n",
-				(void *)ch, ptime_ms, frame_bytes,
-				(long)(my_seq % (LONG)ptime_ms),
-				(long long)(stagger_100ns / 10000LL));
-		} else {
-			CloseHandle(win_timer);
-			win_timer = NULL;
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-				"mod_ivcore: TX ch=%p SetWaitableTimer failed (%lu), "
-				"falling back to switch_sleep\n",
-				(void *)ch, GetLastError());
-		}
-	} else {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-			"mod_ivcore: TX ch=%p CreateWaitableTimerExW failed (%lu), "
-			"falling back to switch_sleep\n",
-			(void *)ch, GetLastError());
-	}
-#else
-	/* Non-Windows: use the FS timer subsystem (posix timer / softtimer). */
-	switch_core_new_memory_pool(&pool);
-	{
-		uint32_t samples = ptime_ms * 8;
-		const char *requested = "soft";
-
-		if (switch_core_timer_init(&timer, requested,
-								   (int)ptime_ms, (int)samples, pool)
-				== SWITCH_STATUS_SUCCESS) {
-			timer_ok = 1;
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-				"mod_ivcore: TX thread using '%s' timer, ptime=%u ms frame=%d bytes\n",
-				requested, ptime_ms, frame_bytes);
-		} else {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-				"mod_ivcore: '%s' timer init failed, falling back to switch_sleep. "
-				"ptime=%u ms frame=%d bytes\n",
-				requested, ptime_ms, frame_bytes);
-		}
-	}
-#endif
-
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-		"mod_ivcore: TX thread started, frame=%d bytes ptime=%u ms\n",
-		frame_bytes, ptime_ms);
-
-	/* Initialise jitter baseline.  The deadline is anchored on the first
-	 * timer fire (see below), not on entry to the loop, so the startup
-	 * cost of timer init / first wait is not counted as jitter.
-	 * dbg_deadline_us == 0 means "anchor on next tick". */
-	dbg_last_log_us = switch_micro_time_now();
-	dbg_deadline_us = 0;
-#ifdef _WIN32
-	tx_next_deadline_us = 0;
-#endif
+		"mod_ivcore: TX keepalive thread started, frame=%d bytes ptime=%u ms "
+		"keepalive=%u ms\n",
+		frame_bytes, ptime_ms, IVC_KEEPALIVE_INTERVAL_US / 1000);
 
 	while (ch->running) {
-		uint32_t avail;
-		const uint8_t *send_buf;
 		switch_time_t now_us;
 
-		/* --- Pace to the negotiated ptime --- */
-#ifdef _WIN32
-		if (timer_ok) {
-			/* Block until the private per-channel waitable timer fires. */
-			WaitForSingleObject(win_timer, (DWORD)(ptime_ms * 3));
-
-			/* Capture the current time immediately after waking so the
-			 * deadline advance and re-arm are based on the same instant. */
-			now_us = switch_micro_time_now();
-
-			/* Advance the absolute deadline by one ptime.  This MUST happen
-			 * before re-arming so the re-arm always targets the NEXT tick,
-			 * not the tick that just fired (off-by-one that caused ±10ms
-			 * alternating jitter). */
-			if (tx_next_deadline_us == 0) {
-				/* First tick: anchor the deadline on actual wake time. */
-				tx_next_deadline_us = now_us + (switch_time_t)ptime_ms * 1000;
-			} else {
-				tx_next_deadline_us += (switch_time_t)ptime_ms * 1000;
-				/* Last-resort resync: if we have fallen more than 250 ms behind
-				 * (debugger pause, host sleep/resume), re-anchor to now. */
-				if ((int64_t)(now_us - tx_next_deadline_us) > 250000) {
-					tx_next_deadline_us = now_us + (switch_time_t)ptime_ms * 1000;
-				}
-			}
-
-			/* Re-arm: fire at tx_next_deadline_us expressed as a relative
-			 * offset from now (negative = relative in FILETIME units). */
-			{
-				LONGLONG next_rel_100ns =
-					-(LONGLONG)((int64_t)(tx_next_deadline_us - now_us)) * 10LL;
-				/* Clamp: if already past, fire in 100 µs to avoid spin. */
-				if (next_rel_100ns > -1000LL) next_rel_100ns = -1000LL;
-				due.QuadPart = next_rel_100ns;
-			}
-			SetWaitableTimer(win_timer, &due, 0, NULL, NULL, FALSE);
-		} else {
-			switch_sleep(ptime_ms * 1000);
-		}
-#else
-		if (timer_ok) {
-			if (switch_core_timer_next(&timer) != SWITCH_STATUS_SUCCESS) {
-				timer_ok = 0;
-			}
-		}
-		if (!timer_ok) {
-			switch_sleep(ptime_ms * 1000);
-		}
-#endif
-
-		#ifndef _WIN32
-		/* On Windows now_us was already captured right after WaitForSingleObject
-		 * above; on other platforms capture it here. */
-		now_us = switch_micro_time_now();
-#endif
-
-		/* --- Jitter accounting (under debug flag to avoid cache-line churn) --- */
-		if (ivcore_globals.debug == SWITCH_TRUE) {
-			int64_t jitter;
-
-			/* Anchor the deadline on the *first* tick we observe so that
-			 * timer-init / thread-startup latency is not counted as jitter. */
-			if (dbg_deadline_us == 0) {
-				dbg_deadline_us = now_us;
-			}
-
-			jitter = (int64_t)(now_us - dbg_deadline_us);
-			if (dbg_frames == 0) {
-				dbg_jitter_min = jitter;
-				dbg_jitter_max = jitter;
-			} else {
-				if (jitter < dbg_jitter_min) dbg_jitter_min = jitter;
-				if (jitter > dbg_jitter_max) dbg_jitter_max = jitter;
-			}
-			dbg_jitter_sum += jitter;
-			dbg_frames++;
-
-			/* Log once per second. */
-			if (now_us - dbg_last_log_us >= 1000000) {
-				int64_t avg = dbg_frames ? dbg_jitter_sum / (int64_t)dbg_frames : 0;
-				IVC_LOG_DEBUG(
-					"[IVC-TX] ch=%p timer jitter over %u frames: "
-					"min=%+" PRId64 " avg=%+" PRId64 " max=%+" PRId64 " us"
-					" silence=%u/%u\n",
-					(void *)ch, dbg_frames,
-					dbg_jitter_min, avg, dbg_jitter_max,
-					dbg_silence_run, dbg_silence_total);
-				dbg_jitter_min  = 0;
-				dbg_jitter_max  = 0;
-				dbg_jitter_sum  = 0;
-				dbg_frames       = 0;
-				dbg_silence_run  = 0;
-				dbg_silence_total = 0;
-				dbg_last_log_us  = now_us;
-			}
-			/* Advance ideal deadline by one ptime interval. */
-			dbg_deadline_us += (switch_time_t)ptime_ms * 1000;
-
-			/* Last-resort resync for the debug counter only. */
-			{
-				const switch_time_t resync_threshold_us = 250000; /* 250 ms */
-				int64_t lateness_us = (int64_t)(now_us - dbg_deadline_us);
-				if (lateness_us > (int64_t)resync_threshold_us) {
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-						"[IVC-TX] ch=%p timer drift %" PRId64 " us exceeds "
-						"%" PRId64 " us resync threshold; rebasing deadline\n",
-						(void *)ch, lateness_us,
-						(int64_t)resync_threshold_us);
-					dbg_deadline_us = now_us;
-				}
-			}
-		}
+		switch_sleep(IVC_KEEPALIVE_SLEEP_US);
 
 		if (!ch->running) break;
 
-		/* Drain one frame from tx_ring, or use silence.
-		 *
-		 * The FS write clock and this TX timer clock are independent and drift
-		 * relative to each other.  When the TX timer fires just before the FS
-		 * write arrives, the ring is momentarily empty even though audio is
-		 * flowing.  A brief busy-spin absorbs this phase drift before falling
-		 * back to silence — but ONLY when we are actively in an audio call
-		 * (tx_is_elevated, meaning real audio was seen last tick).  On
-		 * permanently-silent channels the ring is always empty and spinning
-		 * would add latency to every TX tick. */
-			avail = ring_available(&ch->tx_ring);
-#ifdef _WIN32
-			if (avail < (uint32_t)frame_bytes && tx_is_elevated) {
-				/* Busy-spin for up to 2 ms using QPC so we never call Sleep()
-				 * (which rounds up to the OS timer quantum and is far too long).
-				 * YieldProcessor() hints the CPU to give up its hyper-thread
-				 * slot so the FS write thread can run and fill the ring. */
-				LARGE_INTEGER spin_start, spin_now;
-				QueryPerformanceCounter(&spin_start);
-				LONGLONG spin_limit = qpc_freq.QuadPart * 2 / 1000; /* 2 ms in QPC ticks */
-				do {
-					YieldProcessor();
-					avail = ring_available(&ch->tx_ring);
-					if (avail >= (uint32_t)frame_bytes) break;
-					QueryPerformanceCounter(&spin_now);
-				} while ((spin_now.QuadPart - spin_start.QuadPart) < spin_limit);
-			}
-#endif
-			if (avail >= (uint32_t)frame_bytes) {
-				/* Read directly from ring into send buffer.
-				 * ring_read handles wrap-around. */
-				uint8_t frame_buf[IVC_MAX_FRAME_BYTES];
-				ring_read(&ch->tx_ring, frame_buf, (uint32_t)frame_bytes);
-				send_buf = frame_buf;
-				dbg_silence_run = 0; /* reset consecutive-silence counter */
-#ifdef _WIN32
-				/* Elevate to TIME_CRITICAL the moment real audio arrives so
-				 * this channel's pacing is precise for the duration of the call. */
-				if (!tx_is_elevated) {
-					SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-					tx_is_elevated = 1;
-				}
-#endif
-			} else {
-				/* Ring still empty after spin-wait — fall back to silence. */
-				send_buf = ch->tx_silence_buf;
-				dbg_silence_run++;
-				dbg_silence_total++;
-				if (ivcore_globals.debug == SWITCH_TRUE && dbg_silence_run == 1) {
-					IVC_LOG_DEBUG("[IVC-TX] ch=%p ring underrun: silence substituted "
-						"(avail=%u need=%d jitter=%" PRId64 " us)\n",
-						(void *)ch, avail, frame_bytes,
-						(dbg_deadline_us ? (int64_t)(now_us - (dbg_deadline_us - (switch_time_t)ptime_ms * 1000)) : 0));
-				}
-#ifdef _WIN32
-				/* Drop back to ABOVE_NORMAL when the ring empties so idle
-				 * standby channels do not preempt channels with active audio. */
-				if (tx_is_elevated) {
-					SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-					tx_is_elevated = 0;
-				}
-#endif
-			}
+		if (ch->call_state != IVC_STATE_UP)
+			continue;
 
-		if (ch->call_state == IVC_STATE_UP) {
-			ch->last_write_us = switch_micro_time_now();
-			ivp_send_media(ch, send_buf, frame_bytes);
+		now_us = switch_micro_time_now();
+
+		/* Send a silence packet when FS hasn't written recently.
+		 * For an active bridged call, write_frame fires every ptime so
+		 * last_write_us is always fresh and we skip every poll.
+		 * For idle-UP (autoconnect standing sessions), we fire once per
+		 * 500 ms keepalive window, which is ~8 packets/s across N channels
+		 * regardless of how many channels exist. */
+		{
+			switch_time_t last = ch->last_write_us;
+			if (last == 0 || (now_us - last) >= IVC_KEEPALIVE_INTERVAL_US) {
+				ivp_send_media(ch, ch->tx_silence_buf, frame_bytes);
+				ch->last_write_us = now_us;
+			}
 		}
 	}
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-		"mod_ivcore: TX thread exited for channel %p\n", (void *)ch);
+		"mod_ivcore: TX keepalive thread exited for channel %p\n", (void *)ch);
 
-#ifdef _WIN32
-	if (win_timer) {
-		CancelWaitableTimer(win_timer);
-		CloseHandle(win_timer);
-		win_timer = NULL;
-	}
-#else
-	if (timer_ok) {
-		switch_core_timer_destroy(&timer);
-	}
-	if (pool) {
-		switch_core_destroy_memory_pool(&pool);
-	}
-#endif
 	return NULL;
+#undef IVC_KEEPALIVE_INTERVAL_US
+#undef IVC_KEEPALIVE_SLEEP_US
 }

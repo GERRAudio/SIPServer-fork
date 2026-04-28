@@ -205,6 +205,7 @@
     <ClCompile Include="..\src\ftdm_cpu_monitor.c" />
     <ClCompile Include="..\src\ftdm_dso.c" />
     <ClCompile Include="..\src\ftdm_io.c" />
+    <ClCompile Include="..\src\ftmod_eque.c" />
     <ClCompile Include="..\src\ftdm_queue.c" />
     <ClCompile Include="..\src\ftdm_sched.c" />
     <ClCompile Include="..\src\ftdm_state.c" />

@@ -64,21 +64,39 @@ static switch_status_t send_dpi_msg(ivcore_channel_t *ch,
 									 ivp_hdlc_send_data_cb send_cb)
 {
 	/* CSO header: MsgType(4 BE)=1, RouteDst=0, RouteSrc=0 */
-	uint8_t buf[IVP_DPI_CSO_HEADER_SIZE + 256];
-	/* Worst-case HDLC stuffing of a max-size DPI payload:
-	 *   input  = IVP_DPI_CSO_HEADER_SIZE(6) + dpi_len(max 256) = 262 bytes
-	 *   raw    = addr(1) + ctl(1) + ext(1) + 262 + crc(2)      = 267 bytes
-	 *   stuffed = 0x7E + 2*267 + 0x7E                          = 536 bytes
-	 * 512 was too small by 24 bytes, causing a stack buffer overflow that
-	 * corrupted the return address and produced the 0xC0000005 AV at
-	 * 0x00007FFC00000000 (torn/overwritten instruction pointer). */
-	uint8_t frame[600];
+	uint8_t buf[IVP_DPI_CSO_HEADER_SIZE + IVP_DPI_MAX_PAYLOAD_BYTES];
+
+	/* Compile-time proof that frame[] can never overflow:
+	 *
+	 *   ivp_hdlc_build_iframe uses raw[IVP_HDLC_RAW_BUF_SIZE].
+	 *   raw_len = 3(hdr) + total(max) + 2(crc)
+	 *           = 3 + (IVP_DPI_CSO_HEADER_SIZE + IVP_DPI_MAX_PAYLOAD_BYTES) + 2
+	 *           = 3 + (6 + 245) + 2 = 256  →  exactly fits raw[].
+	 *
+	 *   hdlc_stuff worst case (every byte escaped):
+	 *     output = 0x7E + 2*IVP_HDLC_RAW_BUF_SIZE + 0x7E
+	 *            = 1 + 512 + 1 = 514 bytes
+	 *
+	 *   IVP_HDLC_FRAME_BUF_SIZE (600) >= 514  →  safe.
+	 *
+	 * History: frame[512] was 2 bytes too small, corrupting the return
+	 * address and producing 0xC0000005 at 0x00007FFD00000000. */
+	_Static_assert(IVP_HDLC_FRAME_BUF_SIZE >= 1 + 2*IVP_HDLC_RAW_BUF_SIZE + 1,
+		"IVP_HDLC_FRAME_BUF_SIZE too small for worst-case HDLC byte-stuffing");
+
+	uint8_t frame[IVP_HDLC_FRAME_BUF_SIZE];
 	int     total, n;
 
 	if (!ch || !dpi || dpi_len <= 0 || !send_cb) return SWITCH_STATUS_FALSE;
-	if (dpi_len > 256) {
+	if (dpi_len > IVP_DPI_MAX_PAYLOAD_BYTES) {
+		/* IVP_DPI_MAX_PAYLOAD_BYTES (245) is the true ceiling:
+		 *   raw_len = 3 + (CSO_HDR(6) + dpi_len) + 2 must fit in raw[256]
+		 *   → dpi_len ≤ 256 - 3 - 6 - 2 = 245.
+		 * Anything larger would cause ivp_hdlc_build_iframe to return -1
+		 * (silent drop), which is harder to diagnose than this warning. */
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-			"mod_ivcore: DPI message too large (%d bytes)\n", dpi_len);
+			"mod_ivcore: DPI message too large (%d bytes, max %d)\n",
+			dpi_len, IVP_DPI_MAX_PAYLOAD_BYTES);
 		return SWITCH_STATUS_FALSE;
 	}
 
@@ -660,6 +678,7 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 
 	case IVP_DPI_DISCONNECT_OUTGOING: {
 		uint8_t reason = (dpi_len >= 2) ? dpi[1] : 0;
+		uint8_t prev_dpi_state;
 		{
 			char _dbg[128];
 			switch_snprintf(_dbg, sizeof(_dbg),
@@ -700,6 +719,10 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 			IVC_DBGOUT(_dbg);
 		}
 
+		/* Save the current state BEFORE overwriting it — the is_active_call
+		 * check below must reflect what the port was doing when 0xF4 arrived,
+		 * not the OnHookAllocated state we are about to set. */
+		prev_dpi_state = ch->dpi_state;
 		ch->dpi_state = (uint8_t)IVP_SIP_STATE_ON_HOOK_ALLOCATED;
 		ch->dpi_dial_buffer[0]     = '\0';
 		ch->dpi_dial_cont_active   = SWITCH_FALSE;
@@ -712,29 +735,55 @@ switch_status_t ivp_dpi_on_message(ivcore_channel_t *ch,
 		/* Rack initiated: reply with the reply form [0xF4][success=1] */
 		send_disconnect_outbound_reply(ch, /*success*/ 1, send_cb);
 		/* Only hang up the FreeSWITCH session on an explicit disconnect reason
-		 * (FarEnd = remote SIP hung up, LocalEnd = panel user hung up).
+		 * (FarEnd = remote SIP hung up, LocalEnd = panel user hung up), OR
+		 * when reason=NOT_SET but the port is actually in an active telephony
+		 * state.  The matrix sends NOT_SET (0) on both user-initiated hangups
+		 * on autoconnect calls AND as a benign pre-dial state-reset.  The two
+		 * cases are distinguished by the state at the time 0xF4 arrived
+		 * (prev_dpi_state): if we were in ConnectingOut / ConnectedOut the
+		 * port had an active call, so this IS a user hangup.
+		 * If the port was already OnHookAllocated the NOT_SET is just a reset
+		 * and we must NOT tear down the session.
 		 *
-		 * Do NOT hang up when reason=NOT_SET (0).  The matrix sends 0xF4
-		 * reason=0 as a benign pre-dial state-reset while the IVP session is
-		 * sitting idle in exchange_media (IVC_STATE_UP / OnHookAllocated).
-		 * Treating that as a teardown kills the session before the user's
-		 * 0xF1/0xF5 dial arrives, leaving the port dead until the next
-		 * autoconnect respawn (500 ms later).
-		 *
-		 * The dpi_state is the authoritative indicator of an active SIP call;
-		 * IVC_STATE_UP only reflects the IVP transport connection, not the
-		 * SIP leg. */
-		if (ch->session &&
-			(reason == (uint8_t)IVP_SIP_REASON_FAR_END ||
-			 reason == (uint8_t)IVP_SIP_REASON_LOCAL_END)) {
-			char _dbg2[128];
-			switch_snprintf(_dbg2, sizeof(_dbg2),
-				"[IVC] 0xF4 reason=%u triggering hangup ch=0x%lX\n",
-				(unsigned)reason, (unsigned long)(uintptr_t)ch);
-			IVC_DBGOUT(_dbg2);
-			switch_channel_hangup(
-				switch_core_session_get_channel(ch->session),
-				SWITCH_CAUSE_NORMAL_CLEARING);
+		 * For an autoconnect matrix hangup we set dpi_initiated_hangup so that
+		 * channel_on_hangup skips sending IVP_PROTO_HANGUP — the IVC transport
+		 * link should stay alive for the respawn to inherit. */
+		{
+			switch_bool_t is_active_call =
+				(prev_dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_OUT ||
+				 prev_dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_OUT  ||
+				 prev_dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_IN  ||
+				 prev_dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_IN);
+
+			if (ch->session_uuid[0] &&
+				(reason == (uint8_t)IVP_SIP_REASON_FAR_END  ||
+				 reason == (uint8_t)IVP_SIP_REASON_LOCAL_END ||
+				 (reason == (uint8_t)IVP_SIP_REASON_NOT_SET && is_active_call))) {
+				switch_core_session_t *_s;
+				char _dbg2[128];
+				switch_snprintf(_dbg2, sizeof(_dbg2),
+					"[IVC] 0xF4 reason=%u state=%u triggering hangup ch=0x%lX\n",
+					(unsigned)reason, (unsigned)ch->dpi_state,
+					(unsigned long)(uintptr_t)ch);
+				IVC_DBGOUT(_dbg2);
+				/* Flag that the matrix drove this hangup so channel_on_hangup
+				 * will not send IVP_PROTO_HANGUP back (keeps IVC link alive).
+				 * Use UUID-based session locate (same safe pattern as
+				 * ivp_transport.c HANGUP/REJECT handlers) — ch->session is a
+				 * raw pointer that may be stale after transfer/bridge. */
+				ch->dpi_initiated_hangup = SWITCH_TRUE;
+				_s = switch_core_session_locate(ch->session_uuid);
+				if (_s) {
+					switch_channel_hangup(
+						switch_core_session_get_channel(_s),
+						SWITCH_CAUSE_NORMAL_CLEARING);
+					switch_core_session_rwunlock(_s);
+				} else {
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+						"mod_ivcore: DPI 0xF4 — session '%s' not found for hangup\n",
+						ch->session_uuid);
+				}
+			}
 		}
 		break;
 	}

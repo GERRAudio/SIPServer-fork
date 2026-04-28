@@ -31,16 +31,16 @@
 
   ┌─────────────────────────────────────────────────────────────────────┐
   │  CARD PARAMETERS                                                    │
-  │  login-ip    IP address of the IVC card / Eclipse matrix           │
-  │  tcp-port    TCP login port             (default: 6001)            │
-  │  udp-port    UDP media port hint        (default: 6001)            │
-  │  context     FreeSWITCH dialplan context for inbound calls         │
-  │  codec       u = G.711 µ-law  a = G.711 A-law  g = G.722  p = PCM │
-  │  ptime       Packetisation time in ms   (default: 20)              │
-  │  timer-name  TX pacer (mod_sofia-style)  (default: soft)           │
-  │                soft   — software wall-clock (recommended)          │
-  │                none   — disable pacing; send as fast as FS delivers│
-  │                <other> — any installed FreeSWITCH timer module     │
+  │  login-ip      IP address of the IVC card / Eclipse matrix         │
+  │  tcp-port      TCP login port             (default: 6001)          │
+  │  udp-port      UDP media port hint        (default: 6001)          │
+  │  context       FreeSWITCH dialplan context for inbound calls       │
+  │  codec         u = G.711 µ-law  a = G.711 A-law  g = G.722  p=PCM │
+  │  network-type  IVC network quality setting (default: lan)          │
+  │                  superlan — 8 ms G.722 packets, no encryption      │
+  │                  lan      — 16 ms G.722 packets, no encryption     │
+  │                  wan      — 24 ms G.722 packets, AES encryption    │
+  │                  internet — 40 ms G.722 packets, AES + protection  │
   │  encryption-key  IVP encryption key (omit = none)                  │
   │  auth-key        IVP authentication key (omit = none)              │
   │                                                                     │
@@ -65,13 +65,12 @@
              ivcore/main/op1/intercom1
     -->
     <card name="default">
-      <param name="login-ip"  value="192.168.1.112"/>
-      <param name="tcp-port"  value="6001"/>
-      <param name="udp-port"  value="6001"/>
-      <param name="context"   value="default"/>
-      <param name="codec"     value="u"/>  <!-- G.711 µ-law -->
-      <param name="ptime"     value="20"/>
-      <param name="timer-name" value="soft"/>  <!-- soft | none | <module> -->
+      <param name="login-ip"      value="192.168.1.112"/>
+      <param name="tcp-port"      value="6001"/>
+      <param name="udp-port"      value="6001"/>
+      <param name="context"       value="default"/>
+      <param name="codec"         value="g"/>           <!-- G.722 (hard-coded for LQ-SIP) -->
+      <param name="network-type"  value="lan"/>         <!-- superlan | lan | wan | internet -->
 
       <port name="LQSIP1" username="lqsip1" password="password" type="lqsip"/>
     </card>
@@ -83,10 +82,10 @@
     -->
     <!--
     <card name="studio-a">
-      <param name="login-ip"  value="10.0.1.10"/>
-      <param name="context"   value="default"/>
-      <param name="codec"     value="g"/>
-      <param name="ptime"     value="20"/>
+      <param name="login-ip"     value="10.0.1.10"/>
+      <param name="context"      value="default"/>
+      <param name="codec"        value="g"/>
+      <param name="network-type" value="lan"/>
 
       <port name="board1" username="test" password="test" type="lqsip"/>
       <port name="board2" username="test2" password="test2" type="lq4"/>
@@ -99,10 +98,10 @@
     -->
     <!--
     <card name="broadcast">
-      <param name="login-ip"  value="10.0.2.5"/>
-      <param name="context"   value="broadcast"/>
-      <param name="codec"     value="g"/>
-      <param name="ptime"     value="20"/>
+      <param name="login-ip"     value="10.0.2.5"/>
+      <param name="context"      value="broadcast"/>
+      <param name="codec"        value="g"/>
+      <param name="network-type" value="lan"/>
 
       <port name="feed1" username="test" password="test"/>
     </card>

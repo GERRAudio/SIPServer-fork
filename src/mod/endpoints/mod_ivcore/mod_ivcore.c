@@ -104,11 +104,6 @@ static void apply_card_port(ivcore_channel_t *ch,
 	else
 		switch_copy_string(ch->params.device_type, "lqsip",        sizeof(ch->params.device_type));
 
-	/* Card-level TX pacing timer (mod_sofia-style "timer-name"). */
-	switch_copy_string(ch->params.timer_name,
-		(c->timer_name[0] ? c->timer_name : "soft"),
-		sizeof(ch->params.timer_name));
-
 	ch->params.tcp_port = c->tcp_port;
 	ch->params.udp_port = c->udp_port;
 	ch->ptime_ms        = (uint32_t)c->ptime_ms;
@@ -130,14 +125,17 @@ static void apply_card_port(ivcore_channel_t *ch,
 		ch->params.codec_family  = IVP_CODEC_G722;
 		ch->params.codec_format  = IVP_CODEC_G722;
 		ch->params.sampling_rate = 16000;
-		/* 160 bytes / 20 ms: one 20 ms G.722 frame per IVP packet.
-		 * G.722 @ 64 kbps = 8000 bytes/s → 20 ms = 160 bytes.
-		 * 20 ms is the SIP/RTP standard ptime and well under the
-		 * Windows scheduler period, so the high-resolution waitable
-		 * timer fires reliably on every tick. */
-		ch->params.frame_size    = 160;
-		ch->params.frame_time    = 20;
-		ch->params.frames_per_packet = 1;
+		/* Per CODEC.txt §1 & §3: frameTime=16 (samples/ms), frameSize=8 (bytes/ms).
+		 * framesPerPacket = packet duration in ms, driven by network type:
+		 *   SUPERLAN=8ms  LAN=16ms  WAN=24ms  INTERNET=40ms */
+		ch->params.frame_size = 8;
+		ch->params.frame_time = 16;
+		switch (c->network_type) {
+		case IVC_NET_SUPERLAN: ch->params.frames_per_packet = 8;  break;
+		case IVC_NET_WAN:      ch->params.frames_per_packet = 24; break;
+		case IVC_NET_INTERNET: ch->params.frames_per_packet = 40; break;
+		default:               ch->params.frames_per_packet = 16; break; /* LAN */
+		}
 		break;
 	case 'p':
 		ch->active_codec         = IVP_CODEC_PCM;
@@ -161,7 +159,7 @@ static void apply_card_port(ivcore_channel_t *ch,
 		break;
 	}
 
-	ch->params.protection_level  = 0;
+	ch->params.protection_level  = (c->network_type == IVC_NET_INTERNET) ? 1 : 0;
 	ch->params.user_id           = 0;
 
 	/* LQ-SIP ports on IVC cards only support G.722.  If the XML config
@@ -179,14 +177,20 @@ static void apply_card_port(ivcore_channel_t *ch,
 		ch->params.codec_family  = IVP_CODEC_G722;
 		ch->params.codec_format  = IVP_CODEC_G722;
 		ch->params.sampling_rate = 16000;
-		ch->params.frame_size    = 160;
-		ch->params.frame_time    = 20;
-		ch->params.frames_per_packet = 1;
+		ch->params.frame_size = 8;
+		ch->params.frame_time = 16;
+		switch (c->network_type) {
+		case IVC_NET_SUPERLAN: ch->params.frames_per_packet = 8;  break;
+		case IVC_NET_WAN:      ch->params.frames_per_packet = 24; break;
+		case IVC_NET_INTERNET: ch->params.frames_per_packet = 40; break;
+		default:               ch->params.frames_per_packet = 16; break;
+		}
 	}
 
-	/* ptime used for the FreeSWITCH codec init must match the IVP packet
-	 * cadence (frame_time * frames_per_packet). */
-	ch->ptime_ms = (uint32_t)(ch->params.frame_time * ch->params.frames_per_packet);
+	/* ptime = framesPerPacket, because each IVP 'frame' unit is exactly 1 ms
+	 * of audio (frameTime = samples per 1ms unit, framesPerPacket = ms per packet).
+	 * e.g. G.722 LAN: fpp=16 → ptime=16 ms; G.711 LAN: fpp=20 → ptime=20 ms. */
+	ch->ptime_ms = (uint32_t)ch->params.frames_per_packet;
 	if (ch->ptime_ms == 0) ch->ptime_ms = (uint32_t)c->ptime_ms;
 
 	/* Derive the IVP media key (lowercase hex MD5 of username||password)
@@ -240,7 +244,6 @@ ivcore_channel_t *ivcore_channel_alloc(switch_core_session_t *session,
 	ch->running  = SWITCH_FALSE;
 
 	ring_reset(&ch->rx_ring);
-	ring_reset(&ch->tx_ring);
 
 	switch_copy_string(ch->params.version_string, "3.0.0", sizeof(ch->params.version_string));
 
@@ -251,7 +254,6 @@ ivcore_channel_t *ivcore_channel_alloc(switch_core_session_t *session,
 		switch_copy_string(ch->params.called_context, "default",   sizeof(ch->params.called_context));
 		switch_copy_string(ch->params.calling_name,   "sessiax2",  sizeof(ch->params.calling_name));
 		switch_copy_string(ch->params.device_type,    "lqsip",     sizeof(ch->params.device_type));
-		switch_copy_string(ch->params.timer_name,     "soft",      sizeof(ch->params.timer_name));
 		ch->params.tcp_port          = IVC_TCP_PORT;
 		ch->params.udp_port          = IVC_UDP_PORT;
 		ch->active_codec             = IVP_CODEC_G722;
@@ -314,18 +316,13 @@ static switch_status_t ivcore_setup_codecs(switch_core_session_t *session,
     /* G.722 is registered in FreeSWITCH at the legacy RTP clock rate of
      * 8000 Hz even though it actually samples at 16 kHz. */
     case IVP_CODEC_G722:  codec_name = "G722"; rate = 8000;  break;
-    case IVP_CODEC_PCM:   codec_name = "L16";  rate = 8000;  break;
+    case IVP_CODEC_PCM:   codec_name = "L16";  rate = (int)ch->sample_rate; break;
     default:              codec_name = "PCMU"; rate = 8000;  break;
     }
 
-    /* Derive ptime from the negotiated provisioning parameters so all codec
-     * types get the right frame size:
-     *   G.722  → frame_time=20 ms, frame_size=160 bytes (64 kbps × 20 ms = 160 B)
-     *            FreeSWITCH registers G.722 at 8 kHz RTP clock rate; 160 samples
-     *            at that clock = 20 ms, which is the correct framing.
-     *   G.711u → frame_time=1  ms, fpp=20 → ptime=20 ms, 160 bytes/frame
-     * Fall back to 20 ms for any codec that has no ptime_ms set yet. */
-    codec_ms = (ch->ptime_ms > 0) ? (int)ch->ptime_ms : 20;
+    /* ptime = framesPerPacket (ms per packet). frame_time is samples-per-unit,
+     * not ms-per-unit, so the old frame_time*fpp formula is wrong. */
+    codec_ms = (ch->ptime_ms > 0) ? (int)ch->ptime_ms : 16;
     if (switch_core_codec_init(&ch->read_codec, codec_name, NULL,
             NULL, rate, codec_ms, 1,
             SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE,
@@ -352,44 +349,17 @@ static switch_status_t ivcore_setup_codecs(switch_core_session_t *session,
     switch_core_session_set_read_codec(session,  &ch->read_codec);
     switch_core_session_set_write_codec(session, &ch->write_codec);
 
-    /* TX pacer — mirrors mod_sofia's <param name="timer-name"> behaviour.
-     * "none" disables pacing entirely (channel_write_frame sends as fast as
-     * FreeSWITCH delivers).  "soft" (default) gates each write to the
-     * negotiated ptime, eliminating the "hurried/distorted" symptom for
-     * tone_stream / playback sources that have no read-leg back-pressure.
-     * Any other value is passed through to switch_core_timer_init() so the
-     * full set of installed FreeSWITCH timer modules can be selected. */
-    if (!ch->write_timer_inited) {
-        const char *tname = ch->params.timer_name[0] ? ch->params.timer_name : "soft";
-        if (!strcasecmp(tname, "none")) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-                "mod_ivcore: TX pacing disabled (timer-name=none)\n");
-        } else {
-            int samples_per_tick = (rate / 1000) * codec_ms;
-            if (switch_core_timer_init(&ch->write_timer, tname, codec_ms,
-                    samples_per_tick,
-                    switch_core_session_get_pool(session)) == SWITCH_STATUS_SUCCESS) {
-                ch->write_timer_inited = SWITCH_TRUE;
-#ifdef _WIN32
-                /* Pre-compute the QPC interval once so channel_write_frame
-                 * doesn't call QueryPerformanceFrequency on every tick. */
-                {
-                    LARGE_INTEGER freq;
-                    QueryPerformanceFrequency(&freq);
-                    ch->tx_qpc_interval.QuadPart = (freq.QuadPart * codec_ms) / 1000;
-                    QueryPerformanceCounter(&ch->next_tx_qpc);
-                    ch->tx_qpc_inited = SWITCH_TRUE;
-                }
-#endif
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-                    "mod_ivcore: TX pacer '%s' init at %d ms / %d samples\n",
-                    tname, codec_ms, samples_per_tick);
-            } else {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-                    "mod_ivcore: TX pacer '%s' init failed — falling back to unpaced\n",
-                    tname);
-            }
-        }
+    /* Start the soft timer that paces channel_read_frame.  One tick == one
+     * audio frame (ptime_ms ms), so the session thread wakes at exactly the
+     * right cadence regardless of how much audio is buffered in rx_ring. */
+    if (switch_core_timer_init(&ch->read_timer, "soft", codec_ms, codec_ms * 8,
+            switch_core_session_get_pool(session)) == SWITCH_STATUS_SUCCESS) {
+        ch->timer_started = SWITCH_TRUE;
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+            "mod_ivcore: read_timer init failed for %s at %d ms — "
+            "falling back to switch_yield pacing\n", codec_name, codec_ms);
+        ch->timer_started = SWITCH_FALSE;
     }
 
     return SWITCH_STATUS_SUCCESS;
@@ -581,47 +551,45 @@ static switch_status_t channel_read_frame(switch_core_session_t *session,
 	 * stays in lock-step with the codec / TX side.  Defaults match the new
 	 * 20 ms G.722 baseline if for any reason params were never populated. */
 	ptime_ms    = ch->ptime_ms ? ch->ptime_ms : 20;
-	frame_bytes = ch->params.frame_size ? (uint32_t)ch->params.frame_size : 160;
-	/* G.722 codes 16 kHz audio at 8 bits/sample but FreeSWITCH reports it
-	 * as an 8 kHz codec, so samples == bytes for the framing FS expects. */
+	/* IVP wire format: frame_size = bytes per 1ms unit, fpp = ms per packet.
+	 * Full packet bytes = frame_size × fpp (e.g. G.722 LAN: 8×16=128 bytes). */
+	frame_bytes = (ch->params.frame_size && ch->params.frames_per_packet)
+		? (uint32_t)(ch->params.frame_size * ch->params.frames_per_packet) : 160;
+	/* G.722 is registered in FreeSWITCH with samples_per_second=8000 (the
+	 * legacy RTP-clock alias) and microseconds_per_packet driving all timing.
+	 * Report samples at the RTP-clock rate: 8000 Hz × ptime_ms / 1000 = frame_bytes.
+	 * Both G.711 and G.722 encode 1 byte per RTP-clock sample, so frame_bytes
+	 * already equals samples_per_frame for all IVP codecs. */
 	samples_per_frame = frame_bytes;
+
+	/* Pace to exactly one frame per ptime_ms using the soft timer.
+	 * This is the sole timing gate for the session thread — it blocks here
+	 * whether or not the ring has data, preventing a buffered rx_ring from
+	 * being drained at CPU speed (audio running too fast).
+	 * Fall back to switch_yield if the timer was not successfully started. */
+	if (ch->timer_started) {
+		switch_core_timer_next(&ch->read_timer);
+	}
 
 	/* While waiting for ACCEPT, yield one frame interval and return CNG. */
 	if (ch->call_state == IVC_STATE_CONNECTING) {
-		switch_yield(ptime_ms * 1000);
+		if (!ch->timer_started)
+			switch_yield(ptime_ms * 1000);
 		goto return_cng;
 	}
 
 	avail = ring_available(&ch->rx_ring);
-	if (avail < frame_bytes) {
-		/* Not enough audio yet.  Wait at most half a frame interval so we
-		 * return promptly rather than stalling for a full ptime on underrun
-		 * (which would double the gap heard on the FS side).  Slice into
-		 * 1 ms steps so we react quickly when the recv thread fills the ring,
-		 * and bail out early if dpi_dial_pending is set by the recv thread. */
-		uint32_t step_us   = 1000;
-		uint32_t total_us  = (ptime_ms * 1000) / 2;
-		uint32_t waited_us = 0;
-		while (waited_us < total_us) {
-			switch_yield(step_us);
-			waited_us += step_us;
-			if (ch->dpi_dial_pending)
-				goto return_cng;
-			avail = ring_available(&ch->rx_ring);
-			if (avail >= frame_bytes)
-				break;
-		}
-	}
 
 	if (avail >= frame_bytes) {
 		ring_read(&ch->rx_ring, ch->read_frame_data, frame_bytes);
 		ch->read_frame.flags   = 0;
 		ch->read_frame.datalen = frame_bytes;
 	} else {
-		if (ivcore_globals.debug == SWITCH_TRUE) {
-			IVC_LOG_DEBUG("[IVC-RX] ch=%p rx_ring underrun: avail=%u need=%u -> CNG\n",
-				(void *)ch, avail, frame_bytes);
-		}
+		/* Not enough audio yet — timer already paced us; just return CNG. */
+		if (ch->dpi_dial_pending)
+			goto return_cng;
+		if (!ch->timer_started)
+			switch_yield(ptime_ms * 1000);
 		goto return_cng;
 	}
 
@@ -665,15 +633,17 @@ static switch_status_t channel_write_frame(switch_core_session_t *session,
 	if (frame->flags & SFF_CNG)
 		return SWITCH_STATUS_SUCCESS;
 
-	/* Push encoded audio into the TX ring; ivp_tx_loop drains it at
-	 * the correct wire cadence on its own high-priority thread.
-	 * ring_write drops the oldest data if the ring is full, which is
-	 * better than blocking the FS session thread. */
-	if (frame->datalen > 0) {
-		ring_write(&ch->tx_ring,
-				   (const uint8_t *)frame->data,
-				   (uint32_t)frame->datalen);
-	}
+	if (frame->datalen == 0)
+		return SWITCH_STATUS_SUCCESS;
+
+	/* Send directly — no ring, no extra thread, no phase drift.
+	 * The session thread is already paced by channel_read_frame() yielding
+	 * one full ptime interval on every underrun, so no additional timer
+	 * is needed here.  Adding switch_core_timer_next() would double-pace
+	 * each write (read-side 20 ms + write-side 20 ms = 40 ms per frame),
+	 * dropping roughly half the outbound frames and causing audible dropout. */
+	ivp_send_media(ch, (const uint8_t *)frame->data, (int)frame->datalen);
+	ch->last_write_us = switch_micro_time_now();
 
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -909,7 +879,14 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 	}
 
 	IVC_DBGOUT("[IVC] hangup: pre ivp_send_hangup\n");
-	if (ch->call_state == IVC_STATE_UP || ch->call_state == IVC_STATE_CONNECTING)
+	/* When the matrix itself initiated the hangup (0xF4 DisconnectOutgoing),
+	 * do NOT send IVP_PROTO_HANGUP back to the card.  The IVC transport link
+	 * is still alive and the respawn will inherit the sockets for a seamless
+	 * reconnect without a TCP re-login.  Sending HANGUP here would cause the
+	 * card to tear down the call leg it already knows is gone, which can race
+	 * with the respawn NEW and leave the port stuck until the next timeout. */
+	if (!ch->dpi_initiated_hangup &&
+		(ch->call_state == IVC_STATE_UP || ch->call_state == IVC_STATE_CONNECTING))
 		ivp_send_hangup(ch);
 	IVC_DBGOUT("[IVC] hangup: post ivp_send_hangup\n");
 
@@ -946,15 +923,14 @@ static switch_status_t channel_on_hangup(switch_core_session_t *session)
 	IVC_DBGOUT("[IVC] hangup: destroying write_codec\n");
 	switch_core_codec_destroy(&ch->write_codec);
 	IVC_DBGOUT("[IVC] hangup: codecs destroyed\n");
-
-	if (ch->write_timer_inited) {
-		IVC_DBGOUT("[IVC] hangup: destroying write_timer\n");
-		switch_core_timer_destroy(&ch->write_timer);
-		ch->write_timer_inited = SWITCH_FALSE;
-		IVC_DBGOUT("[IVC] hangup: write_timer destroyed\n");
+	if (ch->timer_started) {
+		IVC_DBGOUT("[IVC] hangup: destroying read_timer\n");
+		switch_core_timer_destroy(&ch->read_timer);
+		ch->timer_started = SWITCH_FALSE;
+		IVC_DBGOUT("[IVC] hangup: read_timer destroyed\n");
 	}
 
-	IVC_DBGOUT("[IVC] hangup: calling ivcore_channel_free\n");
+
 	ivcore_channel_free(ch);
 	IVC_DBGOUT("[IVC] hangup: ivcore_channel_free returned\n");
 
@@ -1379,11 +1355,11 @@ static switch_status_t load_config(void)
 
 		switch_copy_string(c->name, cname, sizeof(c->name));
 
-		c->tcp_port = IVC_TCP_PORT;
-		c->udp_port = IVC_UDP_PORT;
-		c->codec    = 'u';
-		c->ptime_ms = 20;
-		switch_copy_string(c->timer_name, "soft",     sizeof(c->timer_name));
+		c->tcp_port    = IVC_TCP_PORT;
+		c->udp_port    = IVC_UDP_PORT;
+		c->codec       = 'u';
+		c->ptime_ms    = 20;
+		c->network_type = IVC_NET_LAN;
 		switch_copy_string(c->context,   "default",   sizeof(c->context));
 		switch_copy_string(c->server_ip, "127.0.0.1", sizeof(c->server_ip));
 
@@ -1398,11 +1374,19 @@ static switch_status_t load_config(void)
 			else if (!strcasecmp(n, "context"))        switch_copy_string(c->context,        v, sizeof(c->context));
 			else if (!strcasecmp(n, "codec"))          c->codec    = v[0];
 			else if (!strcasecmp(n, "ptime"))          c->ptime_ms = atoi(v);
-			else if (!strcasecmp(n, "timer-name"))     switch_copy_string(c->timer_name,     v, sizeof(c->timer_name));
 			else if (!strcasecmp(n, "encryption-key")) switch_copy_string(c->encryption_key, v, sizeof(c->encryption_key));
-			else if (!strcasecmp(n, "auth-key"))       switch_copy_string(c->auth_key,       v, sizeof(c->auth_key));
-			else if (!strcasecmp(n, "autoconnect"))    c->autoconnect = switch_true(v) ? SWITCH_TRUE : SWITCH_FALSE;
-		}
+				else if (!strcasecmp(n, "auth-key"))       switch_copy_string(c->auth_key,       v, sizeof(c->auth_key));
+				else if (!strcasecmp(n, "autoconnect"))    c->autoconnect = switch_true(v) ? SWITCH_TRUE : SWITCH_FALSE;
+				else if (!strcasecmp(n, "network-type")) {
+					if      (!strcasecmp(v, "superlan"))  c->network_type = IVC_NET_SUPERLAN;
+					else if (!strcasecmp(v, "lan"))       c->network_type = IVC_NET_LAN;
+					else if (!strcasecmp(v, "wan"))       c->network_type = IVC_NET_WAN;
+					else if (!strcasecmp(v, "internet"))  c->network_type = IVC_NET_INTERNET;
+					else switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+						"mod_ivcore: card '%s' unknown network-type '%s' (use superlan/lan/wan/internet)\n",
+						c->name, v);
+				}
+			}
 
 		for (port_node = switch_xml_child(card_node, "port");
 			 port_node;
