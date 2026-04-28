@@ -345,18 +345,29 @@ switch_status_t ivp_hdlc_on_data(ivcore_channel_t *ch,
 					 * marks the port online or sends 0xF1 dial-out commands. */
 					ivp_dpi_send_panel_reset(ch, send_cb);
 
-					/* Proactively clear any leftover SIP telephony state in
-					 * CPUApp when the HDLC link was re-established mid-call.
-					 * Only send 0xF4 when dpi_state indicates an active call;
-					 * sending it in OnHookAllocated (state=1) would cause CPUApp
-					 * to echo back an empty 0xF1 DialOut that stalls dial-out. */
-					if (ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_OUT ||
-						ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_OUT  ||
-						ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_IN  ||
-						ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_IN) {
-						ivp_dpi_send_disconnect_reply(ch,
-							(uint8_t)IVP_SIP_REASON_LOCAL_END, send_cb);
-					}
+					/* Proactively clear any SIP telephony state in CPUApp:
+						 *
+						 * On the FIRST ever HDLC link establishment (sabme_count==1)
+						 * we send 0xF4 unconditionally.  The matrix may be carrying a
+						 * live or stuck call from a previous SIPServer session that our
+						 * freshly-initialised dpi_state knows nothing about.  The 0xF4
+						 * causes CPUApp to tear down any such state cleanly.  If the
+						 * matrix was already idle the only side-effect is an empty 0xF1
+						 * echo, which the IVP_DPI_CONNECT_OUTGOING handler already
+						 * treats as an off-hook notification (replies success=1, waits
+						 * for a real 0xF5 number) — so there is no stall risk.
+						 *
+						 * On subsequent full resets (link dropped and re-established)
+						 * we only send 0xF4 when our local dpi_state indicates that we
+						 * had an active call, for the same reasons as before. */
+						if (ch->hdlc.sabme_count == 1 ||
+							ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_OUT ||
+							ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_OUT  ||
+							ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTING_IN  ||
+							ch->dpi_state == (uint8_t)IVP_SIP_STATE_CONNECTED_IN) {
+							ivp_dpi_send_disconnect_reply(ch,
+								(uint8_t)IVP_SIP_REASON_LOCAL_END, send_cb);
+						}
 				}
 			} else if (u == 0x63) {
 				/* UA — server acknowledged our SABME (we did not send one
