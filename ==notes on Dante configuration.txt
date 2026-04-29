@@ -13,7 +13,7 @@ IPT on .90
 
 Set up Partylines, and Dante names and streams
 
-Make sure Broadcom NICs on PC are configured propery and on the right VLANs
+Make sure Broadcom NICs on PC are configured properly and on the right VLANs
 
 Make sure SIPServer Dash ins running in admin mode on Admin network
 
