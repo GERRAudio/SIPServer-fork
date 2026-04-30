@@ -126,6 +126,21 @@ typedef struct {
 	/** Windows source: filename of the PTPSync fallback DLL.
 	 *  (config: <param name="ptpsync-dll" value="PTPSyncNative.dll"/>) */
 	char                  ptpsync_dll[256];
+
+	/** Native PTPv2 client controls.
+	 *  use_native    — try the built-in client first (default false on
+	 *                  Linux, true on Windows when configured)
+	 *  ptp_iface     — NIC name (Linux) or dotted IPv4 address; empty
+	 *                  selects INADDR_ANY which is rarely what you want
+	 *  ptp_domain    — PTP domain number 0..127 (default 0)
+	 *  ptp_priority  — "bmca" (default), "first", or
+	 *                  "locked:AA:BB:CC:DD:EE:FF:GG:HH" */
+	switch_bool_t         use_native;
+	char                  ptp_iface[64];
+	uint8_t               ptp_domain;
+	char                  ptp_priority[64];
+	/** Delay_Req delivery: "auto" (default), "multicast", or "unicast" */
+	char                  ptp_dreq_mode[16];
 } mod_ptp_globals_t;
 
 extern mod_ptp_globals_t mod_ptp_globals;

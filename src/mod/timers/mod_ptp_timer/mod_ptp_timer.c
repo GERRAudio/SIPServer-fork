@@ -217,6 +217,11 @@ static switch_status_t load_config(void)
 
 	switch_set_string(mod_ptp_globals.ptp4l_socket, "/var/run/ptp4l");
 	switch_set_string(mod_ptp_globals.ptpsync_dll,  "PTPSyncNative.dll");
+	switch_set_string(mod_ptp_globals.ptp_iface,    "");
+	switch_set_string(mod_ptp_globals.ptp_priority, "bmca");
+	switch_set_string(mod_ptp_globals.ptp_dreq_mode, "multicast");
+	mod_ptp_globals.ptp_domain = 0;
+	mod_ptp_globals.use_native = SWITCH_TRUE;
 	mod_ptp_globals.debug = SWITCH_FALSE;
 
 	if ((xml = switch_xml_open_cfg(cf, &cfg, NULL)) == NULL) {
@@ -233,6 +238,17 @@ static switch_status_t load_config(void)
 				switch_set_string(mod_ptp_globals.ptp4l_socket, val);
 			} else if (!strcasecmp(var, "ptpsync-dll") && !zstr(val)) {
 				switch_set_string(mod_ptp_globals.ptpsync_dll, val);
+			} else if (!strcasecmp(var, "native-ptp")) {
+				mod_ptp_globals.use_native = switch_true(val) ? SWITCH_TRUE : SWITCH_FALSE;
+			} else if (!strcasecmp(var, "ptp-iface") && !zstr(val)) {
+				switch_set_string(mod_ptp_globals.ptp_iface, val);
+			} else if (!strcasecmp(var, "ptp-domain") && !zstr(val)) {
+				int d = atoi(val);
+				if (d >= 0 && d <= 127) mod_ptp_globals.ptp_domain = (uint8_t)d;
+			} else if (!strcasecmp(var, "ptp-priority") && !zstr(val)) {
+				switch_set_string(mod_ptp_globals.ptp_priority, val);
+			} else if (!strcasecmp(var, "ptp-delay-req-mode") && !zstr(val)) {
+				switch_set_string(mod_ptp_globals.ptp_dreq_mode, val);
 			} else if (!strcasecmp(var, "debug")) {
 				mod_ptp_globals.debug = switch_true(val) ? SWITCH_TRUE : SWITCH_FALSE;
 			}

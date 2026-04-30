@@ -22,6 +22,7 @@
 #ifdef __linux__
 
 #include "ptp_source.h"
+#include "ptp_native.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -128,6 +129,9 @@ struct ptp_source_s {
 	switch_bool_t         have_current;
 	switch_bool_t         have_parent;
 	switch_bool_t         have_port;
+
+	/* Optional built-in PTPv2 client (used when ptp4l is not the source). */
+	ptp_native_t         *native_client;
 };
 
 /* -------- helpers -------- */
@@ -314,6 +318,43 @@ switch_status_t ptp_source_create(ptp_source_t **src_out, switch_memory_pool_t *
 	src->pool   = pool;
 	src->sockfd = -1;
 
+	/* If configured, prefer the built-in PTPv2 client over ptp4l. */
+	if (mod_ptp_globals.use_native) {
+		ptp_native_cfg_t cfg;
+		memset(&cfg, 0, sizeof(cfg));
+		cfg.iface  = mod_ptp_globals.ptp_iface[0] ? mod_ptp_globals.ptp_iface : NULL;
+		cfg.domain = mod_ptp_globals.ptp_domain;
+		cfg.prio_mode = PTP_NATIVE_PRIO_BMCA;
+		if (!strcasecmp(mod_ptp_globals.ptp_priority, "first")) {
+			cfg.prio_mode = PTP_NATIVE_PRIO_FIRST;
+		} else if (!strncasecmp(mod_ptp_globals.ptp_priority, "locked:", 7)) {
+			unsigned int b[8];
+			if (sscanf(mod_ptp_globals.ptp_priority + 7,
+					   "%2x:%2x:%2x:%2x:%2x:%2x:%2x:%2x",
+					   &b[0], &b[1], &b[2], &b[3],
+					   &b[4], &b[5], &b[6], &b[7]) == 8) {
+				int i;
+				for (i = 0; i < 8; i++) cfg.locked_clock_id[i] = (uint8_t)(b[i] & 0xFF);
+				cfg.prio_mode = PTP_NATIVE_PRIO_LOCKED;
+			}
+		}
+		cfg.dreq_mode = PTP_NATIVE_DREQ_AUTO;
+		if (!strcasecmp(mod_ptp_globals.ptp_dreq_mode, "multicast")) {
+			cfg.dreq_mode = PTP_NATIVE_DREQ_MULTICAST;
+		} else if (!strcasecmp(mod_ptp_globals.ptp_dreq_mode, "unicast")) {
+			cfg.dreq_mode = PTP_NATIVE_DREQ_UNICAST;
+		}
+		if (ptp_native_create(&src->native_client, pool, &cfg) == SWITCH_STATUS_SUCCESS) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+							  "ptp: using built-in PTPv2 client\n");
+			*src_out = src;
+			return SWITCH_STATUS_SUCCESS;
+		}
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+						  "ptp: built-in client requested but failed to start; "
+						  "falling back to ptp4l\n");
+	}
+
 	/* Derive a stable-ish "clock identity" for our client port. */
 	switch_uuid_get(&uuid);
 	memcpy(src->client_clock_id.v, uuid.data, 8);
@@ -334,6 +375,10 @@ switch_status_t ptp_source_create(ptp_source_t **src_out, switch_memory_pool_t *
 switch_status_t ptp_source_poll(ptp_source_t *src, ptp_status_t *st)
 {
 	int i;
+
+	if (src->native_client) {
+		return ptp_native_poll(src->native_client, st);
+	}
 
 	memset(st, 0, sizeof(*st));
 	st->state     = PTP_SYNC_NONE;
@@ -379,6 +424,9 @@ void ptp_source_destroy(ptp_source_t **src_io)
 	ptp_source_t *src;
 	if (!src_io || !*src_io) return;
 	src = *src_io;
+	if (src->native_client) {
+		ptp_native_destroy(&src->native_client);
+	}
 	if (src->sockfd >= 0) {
 		close(src->sockfd);
 		src->sockfd = -1;
