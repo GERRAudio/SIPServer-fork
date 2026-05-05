@@ -1,4 +1,6 @@
 /x64/Release/conf/*
+/Product Keys
+licensing.conf.xml
 !*.xml
 !/x64/Release/mod/managed/*.csx
 !*.csx
