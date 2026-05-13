@@ -1,6 +1,6 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 18
-VisualStudioVersion = 18.6.11709.129
+# Visual Studio Version 17
+VisualStudioVersion = 17.9.34723.18
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Codecs", "Codecs", "{F881ADA2-2F1A-4046-9FEB-191D9422D781}"
 EndProject
@@ -583,6 +583,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "autoload_configs", "autoload_configs", "{0644AC71-76A5-4DC5-BEFD-25F515CA97CE}"
 	ProjectSection(SolutionItems) = preProject
 		conf\Bruce\conf\autoload_configs\aes67.conf.xml = conf\Bruce\conf\autoload_configs\aes67.conf.xml
+		..\..\..\..\Users\Administrator\Desktop\SIPServer\conf\Bruce\conf\autoload_configs\licensing.conf.xml = ..\..\..\..\Users\Administrator\Desktop\SIPServer\conf\Bruce\conf\autoload_configs\licensing.conf.xml
 		conf\vanilla\autoload_configs\modules.conf.xml = conf\vanilla\autoload_configs\modules.conf.xml
 	EndProjectSection
 EndProject

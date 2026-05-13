@@ -2153,9 +2153,9 @@ SWITCH_DECLARE(switch_status_t) switch_loadable_module_init(switch_bool_t autolo
 	if (switch_loadable_module_load_module_ex(SWITCH_GLOBAL_dirs.mod_dir, "mod_licensing", SWITCH_FALSE, SWITCH_FALSE, &err,
 			SWITCH_LOADABLE_MODULE_TYPE_COMMON, event_hash) != SWITCH_STATUS_SUCCESS) {
 
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Failed to load licensing module, abort()\n");
-		switch_core_hash_destroy(&event_hash);
-		abort();
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Failed to load licensed modules\n");
+		//switch_core_hash_destroy(&event_hash);
+		//abort();  //remove so that SIPServer continues to load without the licensed module (avoid bootloop)
 
 	}
 	

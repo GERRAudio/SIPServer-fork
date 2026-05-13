@@ -34,8 +34,8 @@
   <!-- where to harvest utility installer files from -->
   <?define IconsEtcPath= ".\InstallUtils\" ?>
   
-  <?define SIPServerVersion=1.10.13?>
-  <?define MSIVersion=1.6?>   <!-- Update for new releases of this installer -->
+  <?define SIPServerVersion=1.10.14?>
+  <?define MSIVersion=1.7?>   <!-- Update for new releases of this installer licensing begins at 1.10.14 1.7 -->
   <!-- TODO auto version increments -->
   <!-- updated the confs to include CUCM,  for external Bruce phone system, renamed examples, and skinny confs -->
 
