@@ -367,7 +367,15 @@
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\nssm.exe"/>
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\readme.txt"/>
 
-        <!--Files we do not want to copy over - see .gitignore -->
+		<Exclude Files="$(ReleaseBuildDirectoryPath)\cert\**"/>
+		<Exclude Files="$(ReleaseBuildDirectoryPath)\cert\*"/>
+		<Exclude Files="$(ReleaseBuildDirectoryPath)\cert"/>
+		<Exclude Files="$(ReleaseBuildDirectoryPath)\Product Keys\status.html"/>
+		<Exclude Files="$(ReleaseBuildDirectoryPath)\Product Keys\*.lic"/>
+		<Exclude Files="$(ReleaseBuildDirectoryPath)\Product Keys\license.machine-id"/>
+
+
+		  <!--Files we do not want to copy over - see .gitignore -->
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\.git*"/>
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\.git"/>
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\**\.gitignore"/>

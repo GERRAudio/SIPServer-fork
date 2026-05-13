@@ -75,6 +75,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "autoload_configs", "autoloa
 		conf\vanilla\autoload_configs\event_socket.conf.xml = conf\vanilla\autoload_configs\event_socket.conf.xml
 		conf\vanilla\autoload_configs\ivr.conf.xml = conf\vanilla\autoload_configs\ivr.conf.xml
 		conf\vanilla\autoload_configs\java.conf.xml = conf\vanilla\autoload_configs\java.conf.xml
+		conf\autoload_configs\licensing.conf.xml = conf\autoload_configs\licensing.conf.xml
 		conf\vanilla\autoload_configs\limit.conf.xml = conf\vanilla\autoload_configs\limit.conf.xml
 		conf\vanilla\autoload_configs\local_stream.conf.xml = conf\vanilla\autoload_configs\local_stream.conf.xml
 		conf\vanilla\autoload_configs\logfile.conf.xml = conf\vanilla\autoload_configs\logfile.conf.xml
@@ -583,7 +584,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "autoload_configs", "autoload_configs", "{0644AC71-76A5-4DC5-BEFD-25F515CA97CE}"
 	ProjectSection(SolutionItems) = preProject
 		conf\Bruce\conf\autoload_configs\aes67.conf.xml = conf\Bruce\conf\autoload_configs\aes67.conf.xml
-		..\..\..\..\Users\Administrator\Desktop\SIPServer\conf\Bruce\conf\autoload_configs\licensing.conf.xml = ..\..\..\..\Users\Administrator\Desktop\SIPServer\conf\Bruce\conf\autoload_configs\licensing.conf.xml
+		conf\Bruce\conf\autoload_configs\licensing.conf.xml = conf\Bruce\conf\autoload_configs\licensing.conf.xml
 		conf\vanilla\autoload_configs\modules.conf.xml = conf\vanilla\autoload_configs\modules.conf.xml
 	EndProjectSection
 EndProject
