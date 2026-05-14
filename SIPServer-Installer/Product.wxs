@@ -33,6 +33,8 @@
   <?define GSTMediaDirectoryPath = "..\..\SIPServer\x64\Media\" ?>
   <!-- where to harvest utility installer files from -->
   <?define IconsEtcPath= ".\InstallUtils\" ?>
+  <!-- where to get license related files -->
+  <?define LicensePath= "..\..\Licensing\" ?>
   
   <?define SIPServerVersion=1.10.14?>
   <?define MSIVersion=1.7?>   <!-- Update for new releases of this installer licensing begins at 1.10.14 1.7 -->
@@ -57,14 +59,14 @@
 
     <Property Id="ROOTDRIVE" Value="C:\"/>
     <Feature Id="SIPSERVER" Title="IP Telephony Server" Level="1">
-      <ComponentGroupRef Id="HarvestedComponents"/>
-      <ComponentGroupRef Id="GSTHarvestedComponents"/>
+        <ComponentGroupRef Id="HarvestedComponents"/>
+        <ComponentGroupRef Id="GSTHarvestedComponents"/>
+		<ComponentGroupRef Id="LicensingComponents"/>
     </Feature>
 
     <Feature Id="ProductFeature" Title="Main Product" Level="1">
       <ComponentRef Id="ApplicationShortcut" />
       <ComponentRef Id="ApplicationShortcutDesktop" />
-      <ComponentGroupRef Id="HarvestedComponents"/>
     </Feature>
 
     <!-- VC redistributable install C:\Windows\System32-->
@@ -158,18 +160,20 @@
   </Package>
 
 
-
-
-  <Fragment>
-    <Directory  Name="." ComponentGuidGenerationSeed="5950CB39-0D52-4158-A4B1-4BC5AAE9A2C4">
-      <Directory Id="APPROOT">
-        <Directory Id="MYAPPFOLDER" Name="SIPServer"/>
-        <Directory Id="MEDIADIR" Name="Media"/>
-      </Directory>
-      <Directory Id="ProgramMenuFolder">
-        <Directory Id="MYSTARTFOLDER" Name="GerrAudio"/>
-      </Directory>
-    </Directory>
+	<Fragment>
+		<Directory  Name="." ComponentGuidGenerationSeed="5950CB39-0D52-4158-A4B1-4BC5AAE9A2C4">
+			<Directory Id="APPROOT">
+				<Directory Id="MYAPPFOLDER" Name="SIPServer">
+					<Directory Id="CONF" Name="conf">
+						<Directory Id="AUTOLOAD_CONF" Name="autoload_configs"/>
+					</Directory>
+				</Directory>
+				<Directory Id="MEDIADIR" Name="Media"/>
+			</Directory>
+			<Directory Id="ProgramMenuFolder">
+				<Directory Id="MYSTARTFOLDER" Name="GerrAudio"/>
+			</Directory>
+		</Directory>
 
     <Icon Id="GerrIcon.ico"   SourceFile="$(IconsEtcPath)\GerrAudio.ico"/>
     <Icon Id="GerrIconW.ico"  SourceFile="$(IconsEtcPath)\GerrAudioW.ico"/>
@@ -298,6 +302,19 @@
     </DirectoryRef>
 
     <!-- Files to install-->
+
+	  <ComponentGroup Id="LicensingComponents" Directory="AUTOLOAD_CONF">
+		  <!-- Licensing conf file - custom and not in repo -->
+		  <Component    Id="LicensingConfig"
+						Guid="BC640D04-085D-48CD-8A70-1BA04442A9D6"
+						Directory="AUTOLOAD_CONF"
+						Permanent="yes">
+			  <File Id="LicensingConfigFile"
+					Source="$(LicensePath)\licensing.conf.xml"
+					KeyPath="yes"/>
+		  </Component>
+	  </ComponentGroup>
+	  
     <ComponentGroup  Id="HarvestedComponents" Directory="MYAPPFOLDER">
       <!--Special batch file utility-->
       <!-- No Guid forces the batch to persist between installs-->
@@ -346,12 +363,17 @@
             Source="$(IconsEtcPath)\nssm.exe" KeyPath="yes"
         />
       </Component>
-      <Component Id="readme.txt" Guid="">
+      <Component Id="readme.txt" Guid="2A142FE7-4D4D-43F8-AD24-A8144543933B">
         <File Id="readme.txt"
             Source="$(IconsEtcPath)\readme.txt" KeyPath="yes"
         />
       </Component>
-      <Files   Include="$(ReleaseBuildDirectoryPath)\**">
+
+
+
+
+
+		<Files   Include="$(ReleaseBuildDirectoryPath)\**">
         <!-- for security reasons, we do not include the certificates, they must be manually installed -->
         <Exclude Files ="$(ReleaseBuildDirectoryPath)\cert\**"/>
         <!-- the various setup files are not copied, they are explicitely brought over from the utils directory -->
