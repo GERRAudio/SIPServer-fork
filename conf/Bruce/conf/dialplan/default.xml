@@ -1,7 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <include>
+	
 	<context name="default">
+		<extension name="asr_active_capture">
+			<condition field="destination_number" expression="^5600$">
+				<action application="answer"/>
 
+				<!-- 1. INSTANT BEEP: A fast, ascending double-chirp directly from memory -->
+				<action application="playback" data="tone_stream://%(100,50,1000);%(100,0,1400)"/>
+
+				<action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
+
+				<action application="set" data="record_sample_rate=16000"/>
+
+				<action application="record" data="C:/inetpub/SIPServer/asr-queue/${uuid}.wav 25 200 3"/>
+				<action application="park"/>
+			</condition>
+		</extension>
+
+		<extension name="asr_hold_queue">
+			<condition field="destination_number" expression="^5601$">
+				<action application="answer"/>
+				<action application="loop_playback" data="C:/inetpub/SIPServer/sounds/custom/asr_please_wait.wav"/>
+			</condition>
+		</extension>
+
+		<extension name="asr_monitored_conference">
+			<condition field="destination_number" expression="^3001$">
+				<action application="conference" data="3001@asr-queue"/>
+			</condition>
+		</extension>
 		<!-- Drop conference access when it's the All Call -->
 		<extension name="stop_all_call">
 			<condition field="destination_number" expression="^${ProtectedAllCall}$">
