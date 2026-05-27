@@ -1,19 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <include>
-	
 	<context name="default">
+	<!--ASR additions-->
 		<extension name="asr_active_capture">
 			<condition field="destination_number" expression="^5600$">
 				<action application="answer"/>
-
-				<!-- 1. INSTANT BEEP: A fast, ascending double-chirp directly from memory -->
-				<action application="playback" data="tone_stream://%(100,50,1000);%(100,0,1400)"/>
-
 				<action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
-
+				
 				<action application="set" data="record_sample_rate=16000"/>
-
-				<action application="record" data="C:/inetpub/SIPServer/asr-queue/${uuid}.wav 25 200 3"/>
+				<action application="set" data="record_gain=15"/>
+				
+				<!-- Concurrent Filename Strategy: BeltpackName___UUID.wav -->
+				<action application="record" data="C:/inetpub/SIPServer/asr-queue/${beltpack_name}___${uuid}.wav 25 200 3"/>
 				<action application="park"/>
 			</condition>
 		</extension>
@@ -30,7 +28,9 @@
 				<action application="conference" data="3001@asr-queue"/>
 			</condition>
 		</extension>
-		<!-- Drop conference access when it's the All Call -->
+		<!--ASR additions-->	
+		
+		<!-- Drop conference access when it's the All Call -->		
 		<extension name="stop_all_call">
 			<condition field="destination_number" expression="^${ProtectedAllCall}$">
 				<action application="playback" data="misc\8000\invalid_extension.wav"/>
@@ -38,20 +38,17 @@
 				<action application="hangup" data="USER_BUSY"/>
 			</condition>
 		</extension>
-		
-		<!-- default route for all dialed-into conferences (Phone Calls), 4 or 5 digits -->
+		<!-- default route for all dialed-into conferences (Phone Calls), 4 or 5 digits -->		
 		<extension name="all_dial_in_conferences">
 			<condition field="destination_number" expression="^(${FirstNumber}\d{3,4})$">
 				<action application="log" data="INFO - Default/dial in conferences - dest conf:${destination_number} Caller ID: + ${caller_id_number}"/>
 				<action application="answer"/>
 				<action application="managed" data="CommunicatorConnector ConferenceChecker + ${destination_number} FROM_DIALPLAN"/>
 				<action application="set" data="api_hangup_hook=managed CommunicatorConnector ConferenceChecker - ${destination_number}"/>
-        <!-- no hangup option : nomoh added -->
-				<action application="conference" data="${destination_number}@default+flags{nomoh}"/>
+        <action application="conference" data="${destination_number}@default+flags{nomoh}"/>
 			</condition>
 		</extension>
-		
-		<!-- Generated conference from 9000 to 9998 from Communicator for pin-validated dial-ins -->
+		<!-- Generated conference from 9000 to 9998 from Communicator for pin-validated dial-ins -->		
 		<extension name="non-whitelisted-people-with-correct-PIN">
 			<condition field="destination_number" expression="^(9\d{3})$">
 				<action application="set" data="api_hangup_hook=managed CommunicatorConnector ConferenceChecker - $1"/>
@@ -61,7 +58,6 @@
 				<action application="conference" data="$1"/>
 			</condition>
 		</extension>
-
 		<!-- Add Eclipse interface into existing SIP Server conference (dynamically assigned Dante) -->
 		<extension name="dante_dial_conference">
 			<condition field="destination_number" expression="^99999(\d+)$">
@@ -74,7 +70,6 @@
 				<action application="transfer" data="${destination_number}"/>
 			</condition>
 		</extension>
-		
 		<!-- Verto Operators calling into Dante / AES67 -->
 		<extension name="dante_connect">
 			<condition field="destination_number" expression="^[0-9]$">
@@ -87,7 +82,6 @@
 				<action application="bridge" data="aes67/endpoints/Operator_${destination_number}"/>
 			</condition>
 		</extension>
-
 		<!-- Hang up users who fail to give correct PIN after three attempts -->
 		<extension name="conference_failed_pin">
 			<condition field="destination_number" expression="^9999$">
@@ -95,7 +89,6 @@
 				<action application="sleep" data="1000"/>
 			</condition>
 		</extension>
-		
 		<!-- Endless loop of audio to reassure beltpack users after they hit "Call" -->
 		<extension name="Tone_Stream_For_Beltpacks">
 			<condition field="destination_number" expression="^99998$">
@@ -104,7 +97,6 @@
 				<action application="loop_playback" data="theoperatorhasbeencalledbeep.wav"/>
 			</condition>
 		</extension>
-		
 		<!-- Icecast Broadcast method to send PortAudio input to multiple conferences - deprecated -->
 		<extension name="Broadcast_Announce">
 			<condition field="destination_number" expression="^99991$">

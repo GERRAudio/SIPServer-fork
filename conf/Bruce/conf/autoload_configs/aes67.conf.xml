@@ -98,12 +98,14 @@
 			<param name="outstream" value="Dante-AES67-1-8:5" />
 		</endpoint>
 
-		<endpoint name="Operator_7">
+		
+		<!--ASR_Active_1 through ASR_Active_50 autodetected by the code on startup - this is the only place to allocate ASR endpoints-->
+		<endpoint name="ASR_Active_1">
 			<param name="instream" value="Dante-AES67-1-8:6" />
 			<param name="outstream" value="Dante-AES67-1-8:6" />
 		</endpoint>
-
-		<endpoint name="ASR_Active">
+		
+		<endpoint name="ASR_Active_2">
 			<param name="instream" value="Dante-AES67-1-8:7" />
 			<param name="outstream" value="Dante-AES67-1-8:7" />
 		</endpoint>
@@ -113,6 +115,9 @@
 			<param name="outstream" value="Dante-AES67-9-16:0" />
 		</endpoint>
 
+		<!--asr channels end-->
+		
+			
 		<endpoint name="Phone_01">
 			<param name="instream" value="Dante-AES67-9-16:1" />
 			<param name="outstream" value="Dante-AES67-9-16:1" />

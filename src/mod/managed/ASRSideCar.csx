@@ -1,15 +1,12 @@
-
-// Native mod_managed replacement for the Python sidecar.
-// Spawns a background thread on load to monitor the API and WAV folder.
-// Uses native FreeSWITCH API execution to break file locks 
-
-
+// Monitors the asr-queue and manages the prompting etc
+//
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
-using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using FreeSWITCH;
 using FreeSWITCH.Native;
 
@@ -17,94 +14,106 @@ public class AsrSidecar : ILoadNotificationPlugin
 {
     private const string BASE_URL = "http://localhost";
     private const string FOLDER = @"C:\inetpub\SIPServer\asr-queue";
-    private const int POLL_INTERVAL_MS = 500;
-    private const int TIMEOUT_S = 25;
+    private const int SCAN_INTERVAL_MS = 300;
     private const double FILE_SETTLE_S = 1.0;
+
+    // Delimiter used in FreeSWITCH dialplan: ${beltpack_name}___${uuid}.wav
+    private const string DELIMITER = "___";
 
     private static bool _isRunning = false;
     private static Thread _workerThread;
 
-    // Triggered automatically by mod_managed when the script is loaded
+    // Thread-safe dictionary to track the growth state of multiple files
+    private ConcurrentDictionary<string, FileTracker> _activeFiles;
+
+    private class FileTracker
+    {
+        public long LastSize { get; set; } = -1;
+        public DateTime? StableAt { get; set; } = null;
+        public bool IsProcessing { get; set; } = false;
+    }
+
     public bool Load()
     {
         if (_isRunning) return true;
 
         _isRunning = true;
-        _workerThread = new Thread(MainLoop) 
-        { 
-            IsBackground = true, 
-            Name = "AsrSidecarWorker" 
+        _activeFiles = new ConcurrentDictionary<string, FileTracker>(StringComparer.OrdinalIgnoreCase);
+
+        _workerThread = new Thread(MainLoop)
+        {
+            IsBackground = true,
+            Name = "AsrConcurrentScanner"
         };
         _workerThread.Start();
-        
-        Log.WriteLine(LogLevel.Info, "[AsrSidecar] Native plugin loaded, background thread started successfully.");
+
+        Log.WriteLine(LogLevel.Info, "[AsrSidecar] Concurrent scanner loaded successfully.");
         return true;
     }
 
     private void MainLoop()
     {
         Directory.CreateDirectory(FOLDER);
-        HashSet<string> seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // Pre-fill seen files so we don't process old artifacts on startup
-        foreach (var f in Directory.GetFiles(FOLDER, "*.wav"))
-        {
-            seenFiles.Add(f);
-        }
-
-        string lastCurrentName = null;
 
         while (_isRunning)
         {
             try
             {
-                string bpName = GetCurrentBeltpack(BASE_URL);
+                string[] currentFiles = Directory.GetFiles(FOLDER, "*.wav");
 
-                if (string.IsNullOrEmpty(bpName))
+                foreach (string filepath in currentFiles)
                 {
-                    lastCurrentName = null;
-                    Thread.Sleep(POLL_INTERVAL_MS);
-                    continue;
-                }
+                    // Ignore files already claimed by the unlocker
+                    if (filepath.EndsWith("_ready.wav", StringComparison.OrdinalIgnoreCase))
+                        continue;
 
-                if (bpName == lastCurrentName)
-                {
-                    Thread.Sleep(POLL_INTERVAL_MS);
-                    continue;
-                }
-
-                lastCurrentName = bpName;
-                Log.WriteLine(LogLevel.Info, "[AsrSidecar] [" + bpName + "] is Current — waiting for audio...");
-
-                string wavPath = WaitForWav(FOLDER, seenFiles, TIMEOUT_S);
-
-                if (!string.IsNullOrEmpty(wavPath))
-                {
-                    Log.WriteLine(LogLevel.Info, "[AsrSidecar] [" + bpName + "] Audio ready: " + wavPath);
-                    PostCommand(BASE_URL, bpName, wavPath);
-
-                    // Give SAPI time to read, then clean up
-                    Thread.Sleep(2000);
-                    try
-                    {
-                        if (File.Exists(wavPath))
+                    _activeFiles.AddOrUpdate(filepath,
+                        new FileTracker(),
+                        (key, tracker) =>
                         {
-                            File.Delete(wavPath);
-                            Log.WriteLine(LogLevel.Info, "[AsrSidecar] [" + bpName + "] Cleaned up WAV: " + Path.GetFileName(wavPath));
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.WriteLine(LogLevel.Warning, "[AsrSidecar] [" + bpName + "] Clean up failed: " + ex.Message);
-                    }
-                }
-                else
-                {
-                    Log.WriteLine(LogLevel.Warning, "[AsrSidecar] [" + bpName + "] No audio in " + TIMEOUT_S + "s — skipping");
-                    PostSkip(BASE_URL, bpName, "no_audio_file");
+                            if (tracker.IsProcessing) return tracker;
+
+                            try
+                            {
+                                FileInfo fi = new FileInfo(key);
+                                if (!fi.Exists) return tracker;
+
+                                long currentSize = fi.Length;
+
+                                if (currentSize == tracker.LastSize && currentSize > 0)
+                                {
+                                    if (tracker.StableAt == null)
+                                    {
+                                        tracker.StableAt = DateTime.Now;
+                                    }
+                                    else if ((DateTime.Now - tracker.StableAt.Value).TotalSeconds >= FILE_SETTLE_S)
+                                    {
+                                        // File is stable. Mark as processing and spawn a concurrent task.
+                                        tracker.IsProcessing = true;
+                                        Task.Run(() => ProcessStableFile(key));
+                                    }
+                                }
+                                else
+                                {
+                                    tracker.LastSize = currentSize;
+                                    tracker.StableAt = null;
+                                }
+                            }
+                            catch (Exception) { /* Transient file access error, ignore */ }
+
+                            return tracker;
+                        });
                 }
 
-                lastCurrentName = null;
+                // Cleanup deleted/missing files from tracker dictionary
+                var keys = new List<string>(_activeFiles.Keys);
+                foreach (var key in keys)
+                {
+                    if (!File.Exists(key))
+                    {
+                        _activeFiles.TryRemove(key, out _);
+                    }
+                }
             }
             catch (ThreadAbortException)
             {
@@ -112,161 +121,89 @@ public class AsrSidecar : ILoadNotificationPlugin
             }
             catch (Exception ex)
             {
-                Log.WriteLine(LogLevel.Error, "[AsrSidecar] Exception in main loop: " + ex.Message);
-                Thread.Sleep(2000);
+                Log.WriteLine(LogLevel.Error, "[AsrSidecar] Directory scan error: " + ex.Message);
             }
+
+            Thread.Sleep(SCAN_INTERVAL_MS);
         }
     }
 
-    private string GetCurrentBeltpack(string baseUrl)
-    {
-        try
-        {
-            using (WebClient wc = new WebClient())
-            {
-                wc.Headers[HttpRequestHeader.ContentType] = "application/json";
-                string json = wc.DownloadString(baseUrl + "/api/asr/queue");
-                
-                // Lightweight Regex parse to avoid relying on external JSON DLLs in mod_managed
-                Match m = Regex.Match(json, "\"(?:current|Current)\"\\s*:\\s*\\{[^}]*\"(?:beltpackName|BeltpackName)\"\\s*:\\s*\"([^\"]+)\"");
-                if (m.Success)
-                {
-                    return m.Groups[1].Value;
-                }
-            }
-        }
-        catch (WebException) { /* Ignore timeout polls silently */ }
-        catch (Exception ex)
-        {
-            Log.WriteLine(LogLevel.Debug, "[AsrSidecar] Poll error: " + ex.Message);
-        }
-        return null;
-    }
-
-    private string WaitForWav(string folder, HashSet<string> seen, int timeoutS)
-    {
-        DateTime deadline = DateTime.Now.AddSeconds(timeoutS);
-        string candidate = null;
-        long lastSize = -1;
-        DateTime? stableAt = null;
-
-        while (DateTime.Now < deadline)
-        {
-            if (candidate == null)
-            {
-                string[] files = Directory.GetFiles(folder, "*.wav");
-                foreach (string file in files)
-                {
-                    if (!seen.Contains(file))
-                    {
-                        candidate = file;
-                        lastSize = -1;
-                        stableAt = null;
-                        Log.WriteLine(LogLevel.Info, "[AsrSidecar] --> NEW FILE DETECTED ON DISK: " + Path.GetFileName(candidate));
-                        break;
-                    }
-                }
-            }
-
-            if (candidate != null)
-            {
-                try
-                {
-                    FileInfo fi = new FileInfo(candidate);
-                    if (!fi.Exists)
-                    {
-                        candidate = null;
-                        continue;
-                    }
-
-                    long size = fi.Length;
-
-                    if (size == lastSize && size > 0)
-                    {
-                        if (stableAt == null)
-                        {
-                            stableAt = DateTime.Now;
-                        }
-                        else if ((DateTime.Now - stableAt.Value).TotalSeconds >= FILE_SETTLE_S)
-                        {
-                            Log.WriteLine(LogLevel.Info, "[AsrSidecar] Size settled at " + size + " bytes. PTT released.");
-
-                            // Break FreeSWITCH Lock internally using Native API!
-                            ForceFreeswitchUnlock(candidate);
-
-                            if (VerifyFileUnlocked(candidate, 5.0))
-                            {
-                                seen.Add(candidate);
-                                return candidate;
-                            }
-                            else
-                            {
-                                candidate = null;
-                                stableAt = null;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        lastSize = size;
-                        stableAt = null;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log.WriteLine(LogLevel.Error, "[AsrSidecar] Error checking file " + candidate + ": " + ex.Message);
-                    candidate = null;
-                }
-            }
-
-            Thread.Sleep(300);
-        }
-
-        return null;
-    }
-
-    private void ForceFreeswitchUnlock(string filepath)
+    private void ProcessStableFile(string filepath)
     {
         string filename = Path.GetFileNameWithoutExtension(filepath);
-        Log.WriteLine(LogLevel.Info, "[AsrSidecar] Forcing FreeSWITCH to release lock for UUID: " + filename);
-        
-        // Execute the break command directly in FreeSWITCH's memory space using the Native API object
-        Api fsApi = new Api(null);
-        fsApi.ExecuteString("uuid_break " + filename);
+        string bpName = "UNKNOWN";
+        string uuid = filename;
+
+        // Parse BeltpackName and UUID from filename
+        if (filename.Contains(DELIMITER))
+        {
+            string[] parts = filename.Split(new string[] { DELIMITER }, StringSplitOptions.None);
+            if (parts.Length >= 2)
+            {
+                bpName = parts[0];
+                uuid = parts[1];
+            }
+        }
+
+        Log.WriteLine(LogLevel.Info, "[AsrSidecar] [" + bpName + "] Audio settled. Forcing unlock on UUID: " + uuid);
+
+        try
+        {
+            // 1. Force FreeSWITCH to drop the record handle natively
+            Api fsApi = new Api(null);
+            fsApi.ExecuteString("uuid_break " + uuid);
+
+            // 2. Wait for OS to release locks and execute atomic rename
+            if (VerifyAndClaimFile(filepath, out string readyPath, 5.0))
+            {
+                Log.WriteLine(LogLevel.Info, "[AsrSidecar] [" + bpName + "] Audio unlocked and ready.");
+
+                // 3. POST to IIS
+                PostCommand(BASE_URL, bpName, readyPath);
+
+                // 4. Cleanup
+                Thread.Sleep(2000);
+                if (File.Exists(readyPath)) File.Delete(readyPath);
+            }
+            else
+            {
+                Log.WriteLine(LogLevel.Warning, "[AsrSidecar] [" + bpName + "] Failed to acquire OS lock. Abandoning file.");
+                PostSkip(BASE_URL, bpName, "file_locked");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.WriteLine(LogLevel.Error, "[AsrSidecar] [" + bpName + "] Processing error: " + ex.Message);
+        }
+        finally
+        {
+            // Remove from tracking dictionary so it isn't scanned again
+            _activeFiles.TryRemove(filepath, out _);
+        }
     }
 
-    private bool VerifyFileUnlocked(string filepath, double maxWaitSeconds)
+    private bool VerifyAndClaimFile(string originalPath, out string readyPath, double maxWaitSeconds)
     {
+        readyPath = originalPath.Replace(".wav", "_ready.wav");
         DateTime start = DateTime.Now;
-        int attempt = 1;
-        Log.WriteLine(LogLevel.Info, "[AsrSidecar] Verifying file locks for: " + Path.GetFileName(filepath));
 
         while ((DateTime.Now - start).TotalSeconds < maxWaitSeconds)
         {
             try
             {
-                // Atomic self-rename test to guarantee the OS has relinquished the file
-                string temp = filepath + ".locktest";
-                File.Move(filepath, temp);
-                File.Move(temp, filepath);
+                // Attempt to permanently rename the file to claim ownership
+                File.Move(originalPath, readyPath);
 
-                Log.WriteLine(LogLevel.Info, "[AsrSidecar] Attempt " + attempt + ": SUCCESS. File is completely unlocked by OS.");
+                // Pause briefly for Windows Defender to clear
+                Thread.Sleep(500);
                 return true;
             }
-            catch (IOException ex)
-            {
-                Log.WriteLine(LogLevel.Debug, "[AsrSidecar] Attempt " + attempt + ": LOCKED (IOException). OS reports: " + ex.Message);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                Log.WriteLine(LogLevel.Debug, "[AsrSidecar] Attempt " + attempt + ": LOCKED (UnauthorizedAccess). OS reports: " + ex.Message);
-            }
+            catch (IOException) { /* Locked */ }
+            catch (UnauthorizedAccessException) { /* Locked */ }
 
-            Thread.Sleep(500);
-            attempt++;
+            Thread.Sleep(400);
         }
 
-        Log.WriteLine(LogLevel.Error, "[AsrSidecar] TIMEOUT. File remained locked.");
         return false;
     }
 
@@ -274,34 +211,20 @@ public class AsrSidecar : ILoadNotificationPlugin
     {
         try
         {
-            // Escape backslashes for JSON mapping
+            // No modern string interpolation (C# 6+) here to satisfy older embedded mono compilers
             string escapedPath = wavPath.Replace("\\", "\\\\");
             string json = "{\"beltpackName\":\"" + bpName + "\",\"conference\":\"\",\"transcript\":\"WAV:" + escapedPath + "\"}";
 
             using (WebClient wc = new WebClient())
             {
                 wc.Headers[HttpRequestHeader.ContentType] = "application/json";
-                Log.WriteLine(LogLevel.Info, "[AsrSidecar] POSTing to " + baseUrl + "/api/asr/voicecommand");
-                
                 string response = wc.UploadString(baseUrl + "/api/asr/voicecommand", "POST", json);
                 Log.WriteLine(LogLevel.Info, "[AsrSidecar] [" + bpName + "] API Success: " + response.Trim());
             }
         }
         catch (WebException ex)
         {
-            string responseText = "";
-            if (ex.Response != null)
-            {
-                using (var reader = new StreamReader(ex.Response.GetResponseStream()))
-                {
-                    responseText = reader.ReadToEnd();
-                }
-            }
-            Log.WriteLine(LogLevel.Warning, "[AsrSidecar] [" + bpName + "] API Error: " + responseText);
-        }
-        catch (Exception ex)
-        {
-            Log.WriteLine(LogLevel.Error, "[AsrSidecar] [" + bpName + "] POST failed: " + ex.Message);
+            Log.WriteLine(LogLevel.Warning, "[AsrSidecar] [" + bpName + "] API Error: " + ex.Message);
         }
     }
 
@@ -310,23 +233,14 @@ public class AsrSidecar : ILoadNotificationPlugin
         try
         {
             string json = "{\"beltpackName\":\"" + bpName + "\",\"reason\":\"" + reason + "\"}";
-
             using (WebClient wc = new WebClient())
             {
                 wc.Headers[HttpRequestHeader.ContentType] = "application/json";
                 wc.UploadString(baseUrl + "/api/asr/skip", "POST", json);
-                Log.WriteLine(LogLevel.Info, "[AsrSidecar] [" + bpName + "] skipped (" + reason + ")");
             }
         }
-        catch (Exception ex)
-        {
-            Log.WriteLine(LogLevel.Error, "[AsrSidecar] [" + bpName + "] skip POST failed: " + ex.Message);
-        }
+        catch (Exception) { }
     }
 
-    // Required by the mod_managed C# compiler to satisfy entry point requirements for CSX files
-    public static void Main()
-    {
-        // Leave empty. Execution happens via the ILoadNotificationPlugin interface hook.
-    }
+    public static void Main() { }
 }
