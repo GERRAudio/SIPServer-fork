@@ -584,6 +584,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "autoload_configs", "autoload_configs", "{0644AC71-76A5-4DC5-BEFD-25F515CA97CE}"
 	ProjectSection(SolutionItems) = preProject
 		conf\Bruce\conf\autoload_configs\aes67.conf.xml = conf\Bruce\conf\autoload_configs\aes67.conf.xml
+		conf\Bruce\conf\autoload_configs\conference.conf.xml = conf\Bruce\conf\autoload_configs\conference.conf.xml
 		conf\Bruce\conf\autoload_configs\licensing.conf.xml = conf\Bruce\conf\autoload_configs\licensing.conf.xml
 	EndProjectSection
 EndProject
