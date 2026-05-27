@@ -101,13 +101,13 @@
 		</endpoint>
 
 		
-		<!--ASR_Active_1 through ASR_Active_xx autodetected by the code on startup - asr operators, add more here, autodetected by the code-->
-		<endpoint name="ASR_Active_1">
+		<!--ASR_Act_1 through ASR_Act_xx autodetected by the code on startup - asr operators, add more here, autodetected by the code-->
+		<endpoint name="ASR_Act_1">
 			<param name="instream" value="Dante-AES67-1-8:6" />
 			<param name="outstream" value="Dante-AES67-1-8:6" />
 		</endpoint>
 		
-		<endpoint name="ASR_Active_2">
+		<endpoint name="ASR_Act_2">
 			<param name="instream" value="Dante-AES67-1-8:7" />
 			<param name="outstream" value="Dante-AES67-1-8:7" />
 		</endpoint>
