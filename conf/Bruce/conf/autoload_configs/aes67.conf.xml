@@ -67,6 +67,8 @@
 			<param name="allow-multiple-listen" value="1" />
 		</stream>
 	</streams>
+	
+		
 	<endpoints>
 		<endpoint name="Operator_1">
 			<param name="instream" value="Dante-AES67-1-8:0" />
@@ -99,7 +101,7 @@
 		</endpoint>
 
 		
-		<!--ASR_Active_1 through ASR_Active_50 autodetected by the code on startup - this is the only place to allocate ASR endpoints-->
+		<!--ASR_Active_1 through ASR_Active_xx autodetected by the code on startup - asr operators, add more here, autodetected by the code-->
 		<endpoint name="ASR_Active_1">
 			<param name="instream" value="Dante-AES67-1-8:6" />
 			<param name="outstream" value="Dante-AES67-1-8:6" />

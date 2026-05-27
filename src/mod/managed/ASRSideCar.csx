@@ -1,4 +1,5 @@
-// Monitors the asr-queue and manages the prompting etc
+// Monitors the asr-queue and manages the prompting 
+// multi-threaded, pool allocator
 //
 using System;
 using System.Collections.Concurrent;
@@ -211,7 +212,7 @@ public class AsrSidecar : ILoadNotificationPlugin
     {
         try
         {
-            // No modern string interpolation (C# 6+) here to satisfy older embedded mono compilers
+
             string escapedPath = wavPath.Replace("\\", "\\\\");
             string json = "{\"beltpackName\":\"" + bpName + "\",\"conference\":\"\",\"transcript\":\"WAV:" + escapedPath + "\"}";
 
