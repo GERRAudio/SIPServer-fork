@@ -129,43 +129,7 @@
       <!-- <param name="conference-flags" value="livearray-sync"/> -->
 	</profile> 
 	  
-	<profile name="asr-queue">
-		  <!-- Suppress all built-in conference sounds -->
-		  <param name="muted-sound"         value="silence_stream://0"/>
-		  <param name="unmuted-sound"       value="silence_stream://0"/>
-		  <param name="alone-sound"         value="silence_stream://0"/>
-		  <param name="enter-sound"         value="silence_stream://0"/>
-		  <param name="exit-sound"          value="silence_stream://0"/>
-		  <param name="kicked-sound"        value="silence_stream://0"/>
-		  <param name="locked-sound"        value="silence_stream://0"/>
 
-		  <!-- Belt-packs enter muted; only Current speaks -->
-		  <param name="mute-on-entry"       value="true"/>
-
-		  <!-- 16 kHz matches System.Speech.Recognition and Whisper requirements -->
-		  <param name="rate"                value="16000"/>
-		  <param name="interval"            value="20"/>
-		  <param name="energy-level"        value="100"/>
-
-		  <!-- Max members = belt-pack count + headroom -->
-		  <param name="max-members"         value="999"/>
-
-		  <!--
-			Record each member's audio to a separate WAV file.
-			AsrController.PostVoiceCommand() watches this folder for new files.
-
-			IMPORTANT:
-			  1. Create the folder: C:\inetpub\SIPServer\asr-queue\
-			  2. Grant write permission to the SIPServer service account.
-			  3. The {uuid} token ensures one file per belt-pack per alert.
-		  -->
-		  <param name="record-file-template"
-				 value="C:/inetpub/SIPServer/asr-queue/{strftime(%Y%m%d%H%M%S)}-{uuid}.wav"/>
-
-		  <!-- Record only the member who joined (not the whole conference mix) -->
-		  <param name="record-member-audio" value="true"/>
-
-	</profile>
 
     <profile name="wideband">
       <param name="domain" value="$${domain}"/>

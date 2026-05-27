@@ -23,12 +23,8 @@
 			</condition>
 		</extension>
 
-		<extension name="asr_monitored_conference">
-			<condition field="destination_number" expression="^3001$">
-				<action application="conference" data="3001@asr-queue"/>
-			</condition>
-		</extension>
-		<!--ASR additions-->	
+
+		<!-- end ASR additions-->	
 		
 		<!-- Drop conference access when it's the All Call -->		
 		<extension name="stop_all_call">
