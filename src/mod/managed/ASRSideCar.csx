@@ -29,9 +29,17 @@ public class AsrSidecar : ILoadNotificationPlugin
 
     private class FileTracker
     {
-        public long LastSize { get; set; } = -1;
-        public DateTime? StableAt { get; set; } = null;
-        public bool IsProcessing { get; set; } = false;
+        public long LastSize { get; set; }
+        public DateTime? StableAt { get; set; }
+        public bool IsProcessing { get; set; }
+
+        // Use a constructor to set the defaults for C# 5.0 compatibility
+        public FileTracker()
+        {
+            LastSize = -1;
+            StableAt = null;
+            IsProcessing = false;
+        }
     }
 
     public bool Load()
@@ -112,7 +120,8 @@ public class AsrSidecar : ILoadNotificationPlugin
                 {
                     if (!File.Exists(key))
                     {
-                        _activeFiles.TryRemove(key, out _);
+                        FileTracker ignoredTracker;
+                        _activeFiles.TryRemove(key, out ignoredTracker);
                     }
                 }
             }
@@ -155,7 +164,8 @@ public class AsrSidecar : ILoadNotificationPlugin
             fsApi.ExecuteString("uuid_break " + uuid);
 
             // 2. Wait for OS to release locks and execute atomic rename
-            if (VerifyAndClaimFile(filepath, out string readyPath, 5.0))
+            string readyPath;
+            if (VerifyAndClaimFile(filepath, out readyPath, 5.0))
             {
                 Log.WriteLine(LogLevel.Info, "[AsrSidecar] [" + bpName + "] Audio unlocked and ready.");
 
@@ -179,7 +189,8 @@ public class AsrSidecar : ILoadNotificationPlugin
         finally
         {
             // Remove from tracking dictionary so it isn't scanned again
-            _activeFiles.TryRemove(filepath, out _);
+            FileTracker ignoredTracker;
+            _activeFiles.TryRemove(filepath, out ignoredTracker);
         }
     }
 
