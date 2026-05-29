@@ -6,15 +6,16 @@
 			<condition field="destination_number" expression="^5600$">
 				<action application="answer"/>
 				
-				<action application="sleep" data="1000"/>
-				
+				<!-- Reduced from 2500ms: 800ms is sufficient for matrix crosspoint to latch -->
+				<action application="sleep" data="800"/>
 				<action application="playback" data="tone_stream://%(250,0,1000)"/>
 				
 				<action application="set" data="record_sample_rate=16000"/>
 				<action application="set" data="record_gain=15"/>
+		
 				<action application="loop_playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
 				<action application="record" data="C:/inetpub/SIPServer/asr-queue/${beltpack_name}___${uuid}.wav 25 200 5"/>
-				
+
 				<action application="park"/>
 			</condition>
 		</extension>
