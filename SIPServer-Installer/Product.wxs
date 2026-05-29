@@ -157,8 +157,7 @@
 
 					<!-- Explicitly creating the required Queue Directories -->
 					<Directory Id="ASR_QUEUE" Name="asr-queue"/>
-					<Directory Id="IVR_QUEUE" Name="ivr-queue"/>
-
+		
 					<!-- Explicitly creating the Sounds Directory -->
 					<Directory Id="SOUNDS_DIR" Name="sounds">
 						<Directory Id="CUSTOM_SOUNDS_DIR" Name="custom"/>
@@ -181,11 +180,6 @@
 				<CreateFolder />
 				<!-- Wildcard delete of any spurious WAV files left over from previous runs -->
 				<RemoveFile Id="ClearAsrWavs" Name="*.wav" On="both" />
-			</Component>
-			<Component Id="IvrQueueFolder" Guid="87654321-DCBA-1234-5678-0123456789AB" Directory="IVR_QUEUE">
-				<CreateFolder />
-				<!-- Wildcard delete of any spurious WAV files left over from previous runs -->
-				<RemoveFile Id="ClearIvrWavs" Name="*.wav" On="both" />
 			</Component>
 		</ComponentGroup>
 

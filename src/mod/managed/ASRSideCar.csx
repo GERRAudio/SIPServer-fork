@@ -1,6 +1,9 @@
 // Monitors the asr-queue and manages the prompting 
 // multi-threaded, pool allocator
 //
+// Monitors the asr-queue and manages the prompting 
+// multi-threaded, pool allocator, with IIS heartbeat
+//
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -17,7 +20,7 @@ public class AsrSidecar : ILoadNotificationPlugin
     private const string FOLDER = @"C:\inetpub\SIPServer\asr-queue";
     private const int SCAN_INTERVAL_MS = 300;
     private const double FILE_SETTLE_S = 1.0;
-
+    
     // Delimiter used in FreeSWITCH dialplan: ${beltpack_name}___${uuid}.wav
     private const string DELIMITER = "___";
 
@@ -27,13 +30,13 @@ public class AsrSidecar : ILoadNotificationPlugin
     // Thread-safe dictionary to track the growth state of multiple files
     private ConcurrentDictionary<string, FileTracker> _activeFiles;
 
+    // C# 5.0 Compatible Class structure
     private class FileTracker
     {
         public long LastSize { get; set; }
         public DateTime? StableAt { get; set; }
         public bool IsProcessing { get; set; }
 
-        // Use a constructor to set the defaults for C# 5.0 compatibility
         public FileTracker()
         {
             LastSize = -1;
@@ -54,6 +57,7 @@ public class AsrSidecar : ILoadNotificationPlugin
             IsBackground = true,
             Name = "AsrConcurrentScanner"
         };
+
         _workerThread.Start();
 
         Log.WriteLine(LogLevel.Info, "[AsrSidecar] Concurrent scanner loaded successfully.");
@@ -63,11 +67,13 @@ public class AsrSidecar : ILoadNotificationPlugin
     private void MainLoop()
     {
         Directory.CreateDirectory(FOLDER);
+        DateTime lastHeartbeat = DateTime.MinValue;
 
         while (_isRunning)
         {
             try
             {
+                // 1. FILE SCANNING LOGIC
                 string[] currentFiles = Directory.GetFiles(FOLDER, "*.wav");
 
                 foreach (string filepath in currentFiles)
@@ -97,7 +103,6 @@ public class AsrSidecar : ILoadNotificationPlugin
                                     }
                                     else if ((DateTime.Now - tracker.StableAt.Value).TotalSeconds >= FILE_SETTLE_S)
                                     {
-                                        // File is stable. Mark as processing and spawn a concurrent task.
                                         tracker.IsProcessing = true;
                                         Task.Run(() => ProcessStableFile(key));
                                     }
@@ -123,6 +128,22 @@ public class AsrSidecar : ILoadNotificationPlugin
                         FileTracker ignoredTracker;
                         _activeFiles.TryRemove(key, out ignoredTracker);
                     }
+                }
+
+                // 2. THE IIS HEARTBEAT PING
+                if ((DateTime.Now - lastHeartbeat).TotalSeconds > 10)
+                {
+                    try
+                    {
+                        using (WebClient wc = new WebClient())
+                        {
+                            // This lightweight ping forces IIS to stay awake
+                            wc.DownloadString(BASE_URL + "/api/asr/queue");
+                        }
+                    }
+                    catch { /* Ignore heartbeat HTTP errors */ }
+                    
+                    lastHeartbeat = DateTime.Now;
                 }
             }
             catch (ThreadAbortException)
@@ -168,10 +189,10 @@ public class AsrSidecar : ILoadNotificationPlugin
             if (VerifyAndClaimFile(filepath, out readyPath, 5.0))
             {
                 Log.WriteLine(LogLevel.Info, "[AsrSidecar] [" + bpName + "] Audio unlocked and ready.");
-
+                
                 // 3. POST to IIS
                 PostCommand(BASE_URL, bpName, readyPath);
-
+                
                 // 4. Cleanup
                 Thread.Sleep(2000);
                 if (File.Exists(readyPath)) File.Delete(readyPath);
@@ -205,7 +226,7 @@ public class AsrSidecar : ILoadNotificationPlugin
             {
                 // Attempt to permanently rename the file to claim ownership
                 File.Move(originalPath, readyPath);
-
+                
                 // Pause briefly for Windows Defender to clear
                 Thread.Sleep(500);
                 return true;
@@ -223,10 +244,9 @@ public class AsrSidecar : ILoadNotificationPlugin
     {
         try
         {
-
             string escapedPath = wavPath.Replace("\\", "\\\\");
             string json = "{\"beltpackName\":\"" + bpName + "\",\"conference\":\"\",\"transcript\":\"WAV:" + escapedPath + "\"}";
-
+            
             using (WebClient wc = new WebClient())
             {
                 wc.Headers[HttpRequestHeader.ContentType] = "application/json";
@@ -245,6 +265,7 @@ public class AsrSidecar : ILoadNotificationPlugin
         try
         {
             string json = "{\"beltpackName\":\"" + bpName + "\",\"reason\":\"" + reason + "\"}";
+            
             using (WebClient wc = new WebClient())
             {
                 wc.Headers[HttpRequestHeader.ContentType] = "application/json";

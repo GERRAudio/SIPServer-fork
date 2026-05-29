@@ -6,5 +6,5 @@ copy /y C:\Development\GitHub\GERRAudio\SIPServer\conf\Bruce\conf\dialplan\defau
 copy /y C:\Development\GitHub\GERRAudio\SIPServer\src\mod\managed\ASRSideCar.csx  C:\inetpub\SIPServer\mod\managed\
 copy /y C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\sounds\custom\*.wav  C:\inetpub\SIPServer\sounds\custom\
 copy /y C:\inetpub\wwwroot\Configuration\Bruce-pool.hxn   C:\inetpub\wwwroot\Configuration\Bruce.hxn
-del  C:\inetpub\SIPServer\asr-queue\*.*
+del /F /Q C:\inetpub\SIPServer\asr-queue\*.*
 pause
