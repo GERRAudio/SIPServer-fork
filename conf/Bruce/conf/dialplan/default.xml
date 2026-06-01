@@ -6,8 +6,8 @@
 			<condition field="destination_number" expression="^5600$">
 				<action application="answer"/>
 				
-				<!-- Reduced from 2500ms: 800ms is sufficient for matrix crosspoint to latch -->
-				<action application="sleep" data="800"/>
+				<!-- crosspoint latch wait -->
+				<action application="sleep" data="100"/>
 				<action application="playback" data="tone_stream://%(250,0,1000)"/>
 				
 				<action application="set" data="record_sample_rate=16000"/>
