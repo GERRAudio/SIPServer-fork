@@ -19,7 +19,7 @@ public class AsrSidecar : ILoadNotificationPlugin
     private const string BASE_URL = "http://localhost";
     private const string FOLDER = @"C:\inetpub\SIPServer\asr-queue";
     private const int SCAN_INTERVAL_MS = 300;
-    private const double FILE_SETTLE_S = 1.0;
+    private const double FILE_SETTLE_S = 0.3;  // 0.3s sufficient: file is stable once uuid_break stops recording
     
     // Delimiter used in FreeSWITCH dialplan: ${beltpack_name}___${uuid}.wav
     private const string DELIMITER = "___";
@@ -227,8 +227,10 @@ public class AsrSidecar : ILoadNotificationPlugin
                 // Attempt to permanently rename the file to claim ownership
                 File.Move(originalPath, readyPath);
                 
-                // Pause briefly for Windows Defender to clear
-                Thread.Sleep(500);
+                // Brief pause for OS to flush file handles (100ms sufficient)
+                // Exclude C:\inetpub\SIPServer\asr-queue from Windows Defender
+                // real-time scanning to eliminate this delay entirely.
+                Thread.Sleep(100);
                 return true;
             }
             catch (IOException) { /* Locked */ }
