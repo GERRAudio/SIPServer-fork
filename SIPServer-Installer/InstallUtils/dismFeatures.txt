@@ -1,0 +1,494 @@
+
+Deployment Image Servicing and Management tool
+Version: 10.0.20348.681
+
+Image Version: 10.0.20348.2655
+
+Features listing for package : Microsoft-Windows-Foundation-Package~31bf3856ad364e35~amd64~~10.0.20348.1
+
+Feature Name : Server-Core
+State : Enabled
+
+Feature Name : NetFx4ServerFeatures
+State : Enabled
+
+Feature Name : NetFx4
+State : Enabled
+
+Feature Name : NetFx4Extended-ASPNET45
+State : Enabled
+
+Feature Name : DeviceHealthAttestationService
+State : Disabled
+
+Feature Name : ActiveDirectory-PowerShell
+State : Disabled
+
+Feature Name : DirectoryServices-AdministrativeCenter
+State : Disabled
+
+Feature Name : DirectoryServices-DomainController
+State : Disabled
+
+Feature Name : DirectoryServices-ISM-Smtp
+State : Disabled
+
+Feature Name : HostGuardianService-Package
+State : Disabled
+
+Feature Name : AuthManager
+State : Disabled
+
+Feature Name : IPAMClientFeature
+State : Disabled
+
+Feature Name : RightsManagementServices-Role
+State : Disabled
+
+Feature Name : RightsManagementServices
+State : Disabled
+
+Feature Name : RMS-Federation
+State : Disabled
+
+Feature Name : RightsManagementServices-AdminTools
+State : Disabled
+
+Feature Name : FSRM-Infrastructure
+State : Disabled
+
+Feature Name : Microsoft-Windows-FCI-Client-Package
+State : Disabled
+
+Feature Name : UpdateServices-RSAT
+State : Disabled
+
+Feature Name : UpdateServices-API
+State : Disabled
+
+Feature Name : UpdateServices
+State : Disabled
+
+Feature Name : UpdateServices-Services
+State : Disabled
+
+Feature Name : UpdateServices-Database
+State : Disabled
+
+Feature Name : UpdateServices-WidDatabase
+State : Disabled
+
+Feature Name : UpdateServices-UI
+State : Disabled
+
+Feature Name : WebAccess
+State : Disabled
+
+Feature Name : FSRM-Infrastructure-Services
+State : Disabled
+
+Feature Name : Printing-InternetPrinting-Server
+State : Disabled
+
+Feature Name : MicrosoftWindowsPowerShellRoot
+State : Enabled
+
+Feature Name : MicrosoftWindowsPowerShell
+State : Enabled
+
+Feature Name : iSCSITargetServer-PowerShell
+State : Disabled
+
+Feature Name : PKIClient-PSH-Cmdlets
+State : Disabled
+
+Feature Name : Tpm-PSH-Cmdlets
+State : Enabled
+
+Feature Name : MicrosoftWindowsPowerShellV2
+State : Enabled
+
+Feature Name : KeyDistributionService-PSH-Cmdlets
+State : Enabled
+
+Feature Name : TlsSessionTicketKey-PSH-Cmdlets
+State : Enabled
+
+Feature Name : RemoteAccessMgmtTools
+State : Disabled
+
+Feature Name : RemoteAccessPowerShell
+State : Disabled
+
+Feature Name : RasServerAdminTools
+State : Disabled
+
+Feature Name : DamgmtTools
+State : Disabled
+
+Feature Name : Server-Psh-Cmdlets
+State : Enabled
+
+Feature Name : DataCenterBridging-LLDP-Tools
+State : Disabled
+
+Feature Name : WindowsPowerShellWebAccess
+State : Disabled
+
+Feature Name : NetworkControllerTools
+State : Disabled
+
+Feature Name : RemoteAccess
+State : Disabled
+
+Feature Name : RemoteAccessServer
+State : Disabled
+
+Feature Name : RasRoutingProtocols
+State : Disabled
+
+Feature Name : Web-Application-Proxy
+State : Disabled
+
+Feature Name : IIS-WebServerRole
+State : Enabled
+
+Feature Name : IIS-WebServer
+State : Enabled
+
+Feature Name : IIS-CommonHttpFeatures
+State : Enabled
+
+Feature Name : IIS-Security
+State : Enabled
+
+Feature Name : IIS-RequestFiltering
+State : Enabled
+
+Feature Name : IIS-StaticContent
+State : Enabled
+
+Feature Name : IIS-DefaultDocument
+State : Enabled
+
+Feature Name : IIS-DirectoryBrowsing
+State : Enabled
+
+Feature Name : IIS-HttpErrors
+State : Enabled
+
+Feature Name : IIS-HttpRedirect
+State : Enabled
+
+Feature Name : IIS-WebDAV
+State : Disabled
+
+Feature Name : IIS-ApplicationDevelopment
+State : Enabled
+
+Feature Name : IIS-WebSockets
+State : Enabled
+
+Feature Name : IIS-ApplicationInit
+State : Enabled
+
+Feature Name : IIS-NetFxExtensibility
+State : Enabled
+
+Feature Name : IIS-NetFxExtensibility45
+State : Enabled
+
+Feature Name : IIS-ISAPIExtensions
+State : Enabled
+
+Feature Name : IIS-ISAPIFilter
+State : Enabled
+
+Feature Name : IIS-ASPNET
+State : Enabled
+
+Feature Name : IIS-ASPNET45
+State : Enabled
+
+Feature Name : IIS-ASP
+State : Enabled
+
+Feature Name : IIS-CGI
+State : Enabled
+
+Feature Name : IIS-ServerSideIncludes
+State : Enabled
+
+Feature Name : IIS-HealthAndDiagnostics
+State : Enabled
+
+Feature Name : IIS-HttpLogging
+State : Enabled
+
+Feature Name : IIS-LoggingLibraries
+State : Disabled
+
+Feature Name : IIS-RequestMonitor
+State : Disabled
+
+Feature Name : IIS-HttpTracing
+State : Disabled
+
+Feature Name : IIS-CustomLogging
+State : Disabled
+
+Feature Name : IIS-ODBCLogging
+State : Disabled
+
+Feature Name : IIS-CertProvider
+State : Disabled
+
+Feature Name : IIS-BasicAuthentication
+State : Disabled
+
+Feature Name : IIS-WindowsAuthentication
+State : Disabled
+
+Feature Name : IIS-DigestAuthentication
+State : Disabled
+
+Feature Name : IIS-ClientCertificateMappingAuthentication
+State : Disabled
+
+Feature Name : IIS-IISCertificateMappingAuthentication
+State : Disabled
+
+Feature Name : IIS-URLAuthorization
+State : Disabled
+
+Feature Name : IIS-IPSecurity
+State : Disabled
+
+Feature Name : IIS-Performance
+State : Enabled
+
+Feature Name : IIS-HttpCompressionStatic
+State : Enabled
+
+Feature Name : IIS-HttpCompressionDynamic
+State : Disabled
+
+Feature Name : IIS-WebServerManagementTools
+State : Enabled
+
+Feature Name : IIS-ManagementConsole
+State : Enabled
+
+Feature Name : IIS-IIS6ManagementCompatibility
+State : Disabled
+
+Feature Name : IIS-Metabase
+State : Disabled
+
+Feature Name : IIS-LegacySnapIn
+State : Disabled
+
+Feature Name : IIS-ManagementScriptingTools
+State : Disabled
+
+Feature Name : IIS-ManagementService
+State : Enabled
+
+Feature Name : IIS-WMICompatibility
+State : Disabled
+
+Feature Name : IIS-LegacyScripts
+State : Disabled
+
+Feature Name : IIS-FTPServer
+State : Disabled
+
+Feature Name : IIS-FTPSvc
+State : Disabled
+
+Feature Name : IIS-FTPExtensibility
+State : Disabled
+
+Feature Name : WAS-WindowsActivationService
+State : Disabled
+
+Feature Name : WAS-ProcessModel
+State : Disabled
+
+Feature Name : WAS-NetFxEnvironment
+State : Disabled
+
+Feature Name : WAS-ConfigurationAPI
+State : Disabled
+
+Feature Name : IIS-HostableWebCore
+State : Disabled
+
+Feature Name : BITSExtensions-AdminPack
+State : Disabled
+
+Feature Name : ManagementOdata
+State : Disabled
+
+Feature Name : DSC-Service
+State : Disabled
+
+Feature Name : BITSExtensions-Upload
+State : Disabled
+
+Feature Name : WCF-HTTP-Activation
+State : Disabled
+
+Feature Name : WCF-NonHTTP-Activation
+State : Disabled
+
+Feature Name : Smtpsvc-Admin-Update-Name
+State : Disabled
+
+Feature Name : Smtpsvc-Service-Update-Name
+State : Disabled
+
+Feature Name : RPC-HTTP_Proxy
+State : Disabled
+
+Feature Name : Gateway-UI
+State : Disabled
+
+Feature Name : Gateway
+State : Disabled
+
+Feature Name : WorkFolders-Server
+State : Disabled
+
+Feature Name : Microsoft-Windows-Web-Services-for-Management-IIS-Extension
+State : Disabled
+
+Feature Name : MSMQ
+State : Disabled
+
+Feature Name : MSMQ-Services
+State : Disabled
+
+Feature Name : MSMQ-DCOMProxy
+State : Disabled
+
+Feature Name : MSMQ-Server
+State : Disabled
+
+Feature Name : MSMQ-ADIntegration
+State : Disabled
+
+Feature Name : MSMQ-HTTP
+State : Disabled
+
+Feature Name : MSMQ-Multicast
+State : Disabled
+
+Feature Name : MSMQ-Triggers
+State : Disabled
+
+Feature Name : MSMQ-RoutingServer
+State : Disabled
+
+Feature Name : WCF-Services45
+State : Enabled
+
+Feature Name : WCF-HTTP-Activation45
+State : Disabled
+
+Feature Name : WCF-TCP-PortSharing45
+State : Enabled
+
+Feature Name : WCF-TCP-Activation45
+State : Disabled
+
+Feature Name : WCF-Pipe-Activation45
+State : Disabled
+
+Feature Name : WCF-MSMQ-Activation45
+State : Disabled
+
+Feature Name : IPAMServerFeature
+State : Disabled
+
+Feature Name : IdentityServer-SecurityTokenService
+State : Disabled
+
+Feature Name : ADCertificateServicesRole
+State : Disabled
+
+Feature Name : CertificateServices
+State : Disabled
+
+Feature Name : OnlineRevocationServices
+State : Disabled
+
+Feature Name : WebEnrollmentServices
+State : Disabled
+
+Feature Name : NetworkDeviceEnrollmentServices
+State : Disabled
+
+Feature Name : CertificateEnrollmentPolicyServer
+State : Disabled
+
+Feature Name : CertificateEnrollmentServer
+State : Disabled
+
+Feature Name : DirectoryServices-ADAM
+State : Disabled
+
+Feature Name : ServerCore-WOW64
+State : Enabled
+
+Feature Name : Printing-Server-Foundation-Features
+State : Disabled
+
+Feature Name : Printing-Server-Role
+State : Disabled
+
+Feature Name : Printing-LPDPrintService
+State : Disabled
+
+Feature Name : Printing-Client
+State : Enabled
+
+Feature Name : Printing-Client-Gui
+State : Enabled
+
+Feature Name : NetFx3ServerFeatures
+State : Enabled
+
+Feature Name : NetFx3
+State : Enabled
+
+Feature Name : MediaPlayback
+State : Enabled
+
+Feature Name : WindowsMediaPlayer
+State : Enabled
+
+Feature Name : Printing-XPSServices-Features
+State : Enabled
+
+Feature Name : LegacyComponents
+State : Disabled
+
+Feature Name : DirectPlay
+State : Disabled
+
+Feature Name : Windows-Identity-Foundation
+State : Disabled
+
+Feature Name : FailoverCluster-AdminPak
+State : Disabled
+
+Feature Name : HardenedFabricEncryptionTask
+State : Disabled
+
+Feature Name : SimpleTCP
+State : Disabled
+
+
+Attempting to cancel the operation...
+

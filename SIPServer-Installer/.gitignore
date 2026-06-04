@@ -1,0 +1,12 @@
+*.log
+*.pdb
+*.pem
+*.obj
+*.lib
+*.ipch
+*.tlog
+*.vsidx
+*.opendb
+*.msi
+*wixpdb
+*.cab

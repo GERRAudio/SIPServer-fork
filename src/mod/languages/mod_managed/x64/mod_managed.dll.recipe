@@ -1,0 +1,45 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <ProjectOutputs>
+    <ProjectOutput>
+      <FullPath>E:\Development\SIPServerFork\x64\Debug\libteletone.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>E:\Development\SIPServerFork\libs\win32\spandsp\Win32\All\make_at_dictionary.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>E:\Development\SIPServerFork\libs\win32\spandsp\Win32\All\make_cielab_luts.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>E:\Development\SIPServerFork\libs\win32\spandsp\Win32\All\make_math_fixed_tables.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>E:\Development\SIPServerFork\libs\win32\spandsp\Win32\All\make_modem_filter.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>E:\Development\SIPServerFork\libs\win32\spandsp\Win32\All\make_t43_gray_code_tables.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>E:\Development\SIPServerFork\x64\Debug\libspandsp.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>E:\Development\SIPServerFork\x64\Debug\libpng16.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>E:\Development\SIPServerFork\x64\Debug\libapr.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>E:\Development\SIPServerFork\x64\Debug\FreeSwitch.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>E:\Development\SIPServerFork\x64\Debug\mod\mod_managed.dll</FullPath>
+    </ProjectOutput>
+  </ProjectOutputs>
+  <ContentFiles />
+  <SatelliteDlls />
+  <NonRecipeFileRefs>
+    <NonRecipeFileRef>
+      <FullPath>E:\Development\SIPServerFork\src\mod\languages\mod_managed\managed\FreeSWITCH.Managed.2017.csproj</FullPath>
+    </NonRecipeFileRef>
+  </NonRecipeFileRefs>
+</Project>
