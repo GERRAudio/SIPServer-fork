@@ -1,25 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <include>
 	<context name="default">
-		<!--Vosk addition-->
-		<extension name="test_asr">
-			<condition field="destination_number" expression="^9999$">
-				<action application="answer"/>
-				<action application="sleep" data="1000"/>
-				<action application="detect_speech" data="vosk default default"/>
-				<action application="sleep" data="5000"/>
-				<action application="log" data="INFO ASR Result: ${detect_speech}"/>
-				<action application="hangup"/>
-			</condition>
-		</extension>
+
 	<!--ASR additions-->
-<extension name="asr_active_capture">
+		<!--extension name="asr_active_capture">
 			<condition field="destination_number" expression="^5600$">
-				<action application="answer"/>
+				<action application="answer"/-->
 				
 				<!-- crosspoint latch wait -->
-				<action application="sleep" data="100"/>
-				<action application="playback" data="tone_stream://%(250,0,1000)"/>
+				<!--action application="sleep" data="100"/-->
+				<!--action application="playback" data="tone_stream://%(250,0,1000)"/>
 				
 				<action application="set" data="record_sample_rate=16000"/>
 				<action application="set" data="record_gain=15"/>
@@ -29,7 +19,38 @@
 
 				<action application="park"/>
 			</condition>
+		</extension-->
+		
+		<include>
+			<extension name="vosk_asr_queue">
+				<condition field="destination_number" expression="^vosk_detect$">
+					<action application="answer"/>
+
+					<action application="set" data="play_and_detect_speech_close_asr=true"/>
+					<action application="play_and_detect_speech" data="tone_stream://%(200,100,800,1000) detect:vosk default"/>
+
+					<action application="curl" data="http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post ${detect_speech_result}"/>
+
+					<action application="park"/>
+				</condition>
+			</extension>
+		</include>
+		
+		<extension name="vosk_asr_queue">
+			<condition field="destination_number" expression="^vosk_detect$">
+			<action application="answer"/>
+				<!--crosspoint latch wait -->
+				<action application="sleep" data="100"/>
+				<action application="set" data="play_and_detect_speech_close_asr=true"/>
+				<action application="play_and_detect_speech" data="tone_stream://%(200,100,800,1000) detect:vosk default"/>
+
+				<action application="curl" data="http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post ${detect_speech_result}"/>
+
+				<action application="park"/>
+			</condition>
 		</extension>
+
+		
 		
 		<extension name="asr_hold_queue">
 			<condition field="destination_number" expression="^5601$">

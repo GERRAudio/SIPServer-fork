@@ -1,23 +1,38 @@
-<include>
-  <context name="public">
-	<extension name="test_echo">
-  <condition field="destination_number" expression="^9999$">
-    <action application="answer"/>
-    <action application="echo"/>
-  </condition>
-</extension>
-
-		<!--Vosk addition-->
-		<extension name="test_asr">
-			<condition field="destination_number" expression="^9998$">
+	<include>
+		<context name="public">
+		<extension name="test_echo">
+			<condition field="destination_number" expression="^9999$">
 				<action application="answer"/>
-				<action application="sleep" data="1000"/>
-				<action application="detect_speech" data="vosk default default"/>
-				<action application="sleep" data="5000"/>
-				<action application="log" data="INFO ASR Result: ${detect_speech}"/>
-				<action application="hangup"/>
+			<action application="echo"/>
 			</condition>
 		</extension>
+	</include>
+	
+	<!--Vosk addition-->
+	<include>
+	  <context name="default">
+		<extension name="asr_demo">
+			<condition field="destination_number" expression="^9997$">
+			  <action application="answer"/>
+			  <action application="play_and_detect_speech" data="ivr/ivr-welcome.wav detect:vosk default"/>
+			  <action application="speak" data="tts_commandline|espeak|You said ${detect_speech_result}!"/>
+
+			</condition>
+		</extension>
+	  </context>
+	</include>
+				
+	
+	<extension name="test_asr">
+		<condition field="destination_number" expression="^9998$">
+			<action application="answer"/>
+			<action application="sleep" data="1000"/>
+			<action application="detect_speech" data="vosk default default"/>
+			<action application="sleep" data="5000"/>
+			<action application="log" data="INFO ASR Result: ${detect_speech}"/>
+			<action application="hangup"/>
+		</condition>
+	</extension>
 
 	<!-- User calls specific number to get in -->
     <extension name="white_list_select_conference">
