@@ -2,15 +2,7 @@
 <include>
 	<context name="default">
 
-		<extension name="vosk_asr_entry">
-			<condition field="destination_number" expression="^5600$">
-				<action application="answer"/>
-				<action application="sleep" data="200"/>
-				<action application="transfer" data="5602 XML default"/>
-			</condition>
-		</extension>
-		
-		<extension name="vosk_asr_processing">
+<extension name="vosk_asr_processing">
 			<condition field="destination_number" expression="^5602$">
 				<action application="answer"/>
 				<action application="sleep" data="200"/>
@@ -19,7 +11,11 @@
 				
 				<action application="play_and_detect_speech" data="silence_stream://5000 detect:vosk default"/>
 
-				<action application="curl" data="http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post ${detect_speech_result}"/>
+				<action application="set" data="my_post_body={&quot;text&quot;:&quot;${detect_speech_result}&quot;}"/>
+
+				<action application="curl" data="http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}'"/>
+
+				<action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
 
 				<action application="park"/>
 			</condition>

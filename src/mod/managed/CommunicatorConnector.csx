@@ -101,61 +101,30 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         return MakeCall(portAudioInterface, destination, 0).Result;
     }
 
-    internal async Task<Guid> MakeCall(string portAudioInterface, string destination, int attempts)
+ internal async Task<Guid> MakeCall(string portAudioInterface, string destination, int attempts)
     {
         if (attempts > 5)
         {
             WriteToLog(LogLevel.Error, string.Format("Failed to connect {0} to {1} on attempt {2}. Giving up.", portAudioInterface, destination, attempts));
-
             throw new Exception("Unable to open a " + moduleName + " stream");
         }
+
+        // Generate the unique channel identifier instantly
         var newID = fsApi.ExecuteString("create_uuid");
-        WriteToLog(LogLevel.Info, "Trying to use " + newID + " as an ID");
+        WriteToLog(LogLevel.Info, "Spawning snappy background origination link for UUID: " + newID);
+        
+        // Execute the background API call. FreeSWITCH processes this immediately on its own threads.
         string allCallAttempt1Result = fsApi.Execute("bgapi", "originate {origination_uuid=" + newID + "}" + moduleName + "/endpoints/" + portAudioInterface + " " + destination);
+        WriteToLog(LogLevel.Info, "Background call launched: " + allCallAttempt1Result);
 
-        WriteToLog(LogLevel.Info, "Attempt to make call: " + allCallAttempt1Result);
         Guid uuid = Guid.Empty;
-        int count = 0;
-
-        while (true)
+        if (Guid.TryParse(newID, out uuid))
         {
-            WriteToLog(LogLevel.Info, "Waiting a second for background processing before attempt " + (1 + count) + "...");
-            await Task.Delay(2000);
-
-            if (count > 10)
-            {
-                return MakeCall(portAudioInterface, destination, ++attempts).Result;
-            }
-            string result = fsApi.ExecuteString("eval uuid:" + newID + " ${channel-state}");
-
-            switch (result.ToLower().Trim())
-            {
-                case "":
-                    return MakeCall(portAudioInterface, destination, ++attempts).Result;
-                    break;
-
-                case "cs_execute":
-
-                    WriteToLog(LogLevel.Info, "Successfully added " + portAudioInterface + " to " + destination + " on attempt number " + (1 + count) + ".");
-
-                    if (Guid.TryParse(newID, out uuid))
-                    {
-                        WriteToLog(LogLevel.Info, "ID is " + uuid.ToString());
-                        return uuid;
-                    }
-                    else
-                    {
-                        return MakeCall(portAudioInterface, destination, ++attempts).Result;
-                    }
-                    break;
-                case "cs_routing":
-                    break;
-                default:
-                    WriteToLog(LogLevel.Error, string.Format("Failed to connect {0} to {1} on attempt {2}. Result was : {3}.", portAudioInterface, destination, 1 + count, result));
-                    ++count;
-                    break;
-            }
+            // Return the ID instantly to the button release handler. No more 2-second polling blocks.
+            return uuid;
         }
+        
+        return MakeCall(portAudioInterface, destination, ++attempts).Result;
     }
 
     // Requires IIS/Communicator to be up and running. If IIS is restarted, there is no need to clean out phone bridges.
@@ -1368,12 +1337,206 @@ WriteToLog(LogLevel.Notice, xmlDocument.OuterXml);
                     returnString = "Debug mode now " + onOff;
                 }
                 break;
+			case "asrvoskhandler":
+                if (arguments.Length >= 3)
+                {
+                    // Offload the tracking loop to the thread pool so the core channel leg stays unlocked
+                    System.Threading.ThreadPool.QueueUserWorkItem(_ => 
+                    {
+                        try 
+                        {
+                            var backgroundTaskResult = AsrVoskHandler(arguments[1], arguments[2]).Result;
+                        }
+                        catch (Exception threadEx) 
+                        {
+                            WriteToLog(LogLevel.Error, "AsrVoskHandler background thread error: " + threadEx.Message);
+                        }
+                    });
+                    returnString = "+OK Background ASR stream monitor worker spawned successfully.";
+                }
+                else
+                {
+                    WriteToLog(LogLevel.Error, "AsrVoskHandler: missing UUID or beltpack name in arguments.");
+                    returnString = "MISSING_ARGS";
+                }
+                break;
+
             default:
                 WriteToLog(LogLevel.Error, "Unable to work out what was meant by " + arguments[0]);
                 break;
         }
 
         return returnString;
+    }
+
+    // -----------------------------------------------------------------------
+    // AsrVoskHandler
+    //
+    // Drives the full Vosk ASR interaction for a belt-pack voice command
+    // entirely from C# via the embedded FreeSWITCH API, bypassing the
+    // play_and_detect_speech dialplan app which is fragile against AES67
+    // codec-change events.
+    //
+    // Key API choice: uuid_broadcast fires an application on an existing
+    // channel from the API thread without blocking here.  It is the correct
+    // embedded-API equivalent of the ESL "uuid_execute" command, which is NOT
+    // available through fsApi.ExecuteString in the managed plugin host.
+    //
+    // Sequence:
+    //   1. Arm detect_speech on the channel via uuid_broadcast
+    //   2. Play the ready prompt via uuid_broadcast (non-blocking)
+    //   3. Poll uuid_getvar detect_speech_result until non-empty or 8s timeout
+    //   4. POST the result to /api/asr/voicecommand
+    //   5. Stop detect_speech and hang up the channel
+    // -----------------------------------------------------------------------
+    internal async Task<string> AsrVoskHandler(string channelUUID, string beltpackName)
+    {
+        WriteToLog(LogLevel.Info, string.Format(
+            "AsrVoskHandler: starting for UUID={0} beltpack={1}", channelUUID, beltpackName));
+
+        // Guard: confirm the channel exists before touching it
+        string channelState = fsApi.ExecuteString("eval uuid:" + channelUUID + " ${channel-state}");
+        if (string.IsNullOrWhiteSpace(channelState) || channelState.Trim().ToLower() == "cs_destroy")
+        {
+            WriteToLog(LogLevel.Error,
+                "AsrVoskHandler: channel " + channelUUID + " not found or already destroyed. Aborting.");
+            return "CHANNEL_NOT_FOUND";
+        }
+
+        try
+        {
+            // ------------------------------------------------------------------
+            // Step 1: Arm the ASR engine on the channel.
+            //
+            // uuid_broadcast syntax:
+            //   uuid_broadcast <uuid> <app>::<data> [aleg|bleg|both]
+            //
+            // The "aleg" flag targets the channel itself (not a bridged peer).
+            // detect_speech syntax: <engine> <grammar_file> <grammar_name>
+            // ------------------------------------------------------------------
+            string armResult = fsApi.ExecuteString(
+                "uuid_broadcast " + channelUUID + " detect_speech::vosk default default aleg");
+            WriteToLog(LogLevel.Info, "AsrVoskHandler: detect_speech arm result: " + armResult);
+
+            // Allow the ASR engine to open and attach its media bug before
+            // audio from the prompt playback starts arriving.
+            await Task.Delay(300);
+
+            // ------------------------------------------------------------------
+            // Step 2: Play the ready prompt — non-blocking fire-and-forget.
+            // uuid_broadcast returns immediately; playback runs on the channel
+            // thread while this C# thread polls for the ASR result.
+            // ------------------------------------------------------------------
+            const string promptPath = "C:/inetpub/SIPServer/sounds/custom/asr_ready.wav";
+            string playResult = fsApi.ExecuteString(
+                "uuid_broadcast " + channelUUID + " playback::" + promptPath + " aleg");
+            WriteToLog(LogLevel.Info, "AsrVoskHandler: playback result: " + playResult);
+
+            // ------------------------------------------------------------------
+            // Step 3: Poll for the ASR result.
+            //
+            // detect_speech sets channel variable detect_speech_result when the
+            // engine returns a final result.  uuid_getvar reads it from the API
+            // thread.  FreeSWITCH returns "_undef_" for unset variables.
+            //
+            // Timing: prompt is ~0.5s, Vosk returns a final result after the
+            // speaker pauses.  8s gives ~0.5s prompt + 5s listen + 2.5s margin.
+            // ------------------------------------------------------------------
+            const int pollIntervalMs = 200;
+            const int maxWaitMs      = 8000;
+            int       elapsed        = 0;
+            string    speechResult   = "";
+
+            while (elapsed < maxWaitMs)
+            {
+                await Task.Delay(pollIntervalMs);
+                elapsed += pollIntervalMs;
+
+                string raw = fsApi.ExecuteString(
+                    "uuid_getvar " + channelUUID + " detect_speech_result");
+
+                if (!string.IsNullOrWhiteSpace(raw)
+                    && raw.Trim() != "_undef_"
+                    && raw.Trim() != "false"
+                    && raw.Trim() != "")
+                {
+                    speechResult = raw.Trim();
+                    WriteToLog(LogLevel.Info, string.Format(
+                        "AsrVoskHandler: got result after {0}ms: {1}", elapsed, speechResult));
+                    break;
+                }
+
+                // Stop polling early if the channel has already gone away
+                string state = fsApi.ExecuteString(
+                    "eval uuid:" + channelUUID + " ${channel-state}");
+                if (string.IsNullOrWhiteSpace(state)
+                    || state.Trim().ToLower() == "cs_destroy"
+                    || state.Trim().ToLower() == "cs_hangup")
+                {
+                    WriteToLog(LogLevel.Warning,
+                        "AsrVoskHandler: channel hung up during poll. Stopping.");
+                    break;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(speechResult))
+            {
+                WriteToLog(LogLevel.Warning, string.Format(
+                    "AsrVoskHandler: no result within {0}ms for beltpack {1}.",
+                    maxWaitMs, beltpackName));
+            }
+
+            // ------------------------------------------------------------------
+            // Step 4: POST the recognised text to the Communicator API.
+            // ------------------------------------------------------------------
+            try
+            {
+                string apiUrl = apiServer + "asr/voicecommand?beltpack="
+                                + Uri.EscapeDataString(beltpackName);
+                WriteToLog(LogLevel.Info, "AsrVoskHandler: POSTing to " + apiUrl);
+                WriteToLog(LogLevel.Info, "AsrVoskHandler: POST body: " + speechResult);
+
+                using (WebClient client = new WebClient())
+                {
+                    client.Headers[HttpRequestHeader.ContentType] = "application/json";
+                    string postResponse = client.UploadString(apiUrl, "POST", speechResult);
+                    WriteToLog(LogLevel.Info, "AsrVoskHandler: POST response: " + postResponse);
+                }
+            }
+            catch (Exception postEx)
+            {
+                WriteToLog(LogLevel.Error, "AsrVoskHandler: POST failed: " + postEx.Message);
+            }
+        }
+        catch (Exception ex)
+        {
+            WriteToLog(LogLevel.Error, "AsrVoskHandler: exception: " + ex.Message);
+        }
+        finally
+        {
+            // ------------------------------------------------------------------
+            // Step 5: Clean up — stop ASR engine then kill the channel.
+            // Best-effort; harmless if channel is already gone.
+            // ------------------------------------------------------------------
+            try
+            {
+                fsApi.ExecuteString(
+                    "uuid_broadcast " + channelUUID + " detect_speech::stop aleg");
+                WriteToLog(LogLevel.Info,
+                    "AsrVoskHandler: detect_speech stopped for " + channelUUID);
+            }
+            catch { }
+
+            try
+            {
+                fsApi.ExecuteString("uuid_kill " + channelUUID);
+                WriteToLog(LogLevel.Info,
+                    "AsrVoskHandler: channel killed: " + channelUUID);
+            }
+            catch { }
+        }
+
+        return "AsrVoskHandler complete.";
     }
 
     public bool Load()
