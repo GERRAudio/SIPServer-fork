@@ -15,9 +15,7 @@
 
 				<action application="curl" data="http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}'"/>
 
-				<action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
-
-				<action application="park"/>
+				<action application="conference" data="asr_holding_room@default+flags{mute|waste|nomoh}"/>
 			</condition>
 		</extension>
 
