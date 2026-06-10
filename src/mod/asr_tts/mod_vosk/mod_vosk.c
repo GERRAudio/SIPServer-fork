@@ -8,16 +8,15 @@
  * Natively downsamples 48kHz audio streams down to 16kHz using a 13-tap
  * windowed-sinc anti-aliasing filter before passing data to the ASR engine.
  *
- * Fix log:
- *  - FIX 4: WebSocket handshake + config JSON moved from vosk_asr_feed into
+ *  WebSocket handshake + config JSON moved from vosk_asr_feed into
  *            vosk_asr_open so that no audio frames are lost and there is no
  *            race between the config send and the first binary frame.
- *  - FIX 5: Resampling path uses dynamic sample counts derived from `len`
+ *  Resampling path uses dynamic sample counts derived from `len`
  *            rather than the hardcoded 1920/960/320/640 constants, so any
  *            ptime (10ms, 20ms, 30ms) is handled correctly.
- *  - FIX 6: FIR filter boundary uses zero-padding instead of clamping to
+ *  FIR filter boundary uses zero-padding instead of clamping to
  *            index 0, eliminating the DC transient at the start of each frame.
- *  - FIX 7: vosk_asr_check_results no longer signals SUCCESS on partial
+ *  vosk_asr_check_results no longer signals SUCCESS on partial
  *            results; only a non-empty final {"text":"..."} result returns
  *            SUCCESS, preventing premature termination of the listen window.
  */
@@ -159,7 +158,7 @@ static switch_status_t ws_send_text(switch_socket_t *sock, const char *text)
 /* -------------------------------------------------------------------------
  * vosk_asr_open
  *
- * FIX 4: WebSocket upgrade handshake and Vosk config JSON are now sent here,
+ * WebSocket upgrade handshake and Vosk config JSON are sent here,
  * synchronously, before any audio frames can arrive.  This guarantees:
  *   a) No audio frame is lost to the handshake branch.
  *   b) The server has processed the sample_rate config before the first
@@ -292,13 +291,13 @@ static switch_status_t vosk_asr_close(switch_asr_handle_t *ah, switch_asr_flag_t
 /* -------------------------------------------------------------------------
  * vosk_asr_feed
  *
- * FIX 5: Dynamic frame sizing — sample counts are derived from `len` so that
+ * Dynamic frame sizing — sample counts are derived from `len` so that
  *         10ms, 20ms, and 30ms ptimes all produce correctly sized output.
  *         A frame is treated as 48kHz when its byte count is exactly 3x a
  *         16kHz frame at the same sample width (i.e. len % 6 == 0 &&
  *         len > 640).  All other frames are passed through as 16kHz native.
  *
- * FIX 6: FIR boundary uses zero-padding (out-of-range input_idx → 0.0f)
+ * FIR boundary uses zero-padding (out-of-range input_idx → 0.0f)
  *         instead of clamping to index 0, removing the DC transient at the
  *         leading edge of each frame.
  * ---------------------------------------------------------------------- */
@@ -323,7 +322,7 @@ static switch_status_t vosk_asr_feed(switch_asr_handle_t *ah, void *data, unsign
 		int is_48k = (len > 640 && (len % 6) == 0);
 
 		if (is_48k) {
-			/* FIX 5: derive counts from len, not from hardcoded constants */
+			/* Derive counts from len, not from hardcoded constants */
 			int in_sample_count = (int)(len / sizeof(int16_t)); /* e.g. 960 for 20ms@48k */
 			int out_sample_count = in_sample_count / 3;			/* e.g. 320 */
 			switch_size_t out_bytes = (switch_size_t)(out_sample_count * sizeof(int16_t));
@@ -477,7 +476,7 @@ static switch_status_t vosk_asr_unload_grammar(switch_asr_handle_t *ah, const ch
 /* -------------------------------------------------------------------------
  * vosk_asr_check_results
  *
- * FIX 7: Only signal SUCCESS (result ready for collection) on a non-empty
+ * Only signal SUCCESS (result ready for collection) on a non-empty
  * final result.  Partial results keep returning FALSE so FreeSWITCH
  * continues feeding audio rather than terminating the listen window early.
  *
