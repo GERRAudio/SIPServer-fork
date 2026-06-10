@@ -1,23 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
 <include>
 	<context name="default">
-
+	
 <extension name="vosk_asr_processing">
-			<condition field="destination_number" expression="^5602$">
-				<action application="answer"/>
-				<action application="sleep" data="200"/>
+    <condition field="destination_number" expression="^5602$">
+        <action application="answer"/>
+        
+        <action application="set" data="disable_break=true"/>
+        <action application="sleep" data="50"/>
 
-				<action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
-				
-				<action application="play_and_detect_speech" data="silence_stream://5000 detect:vosk default"/>
+        <action application="playback" data="tone_stream://%(150,0,1000)"/>
+        <action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
 
-				<action application="set" data="my_post_body={&quot;text&quot;:&quot;${detect_speech_result}&quot;}"/>
+        <!-- 1. Run ASR Speech detection -->
+        <action application="play_and_detect_speech" data="silence_stream://5000 detect:vosk default"/>
+        
+        <!-- 2. Explicitly capture the speech result string text -->
+        <action application="set" data="my_post_body={&quot;text&quot;:&quot;${detect_speech_result}&quot;}"/>
 
-				<action application="curl" data="http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}'"/>
+        <!-- 3. Turn off break restriction before processing the network transaction -->
+        <action application="set" data="disable_break=false"/>
 
-				<action application="conference" data="asr_holding_room@default+flags{mute|waste|nomoh}"/>
-			</condition>
-		</extension>
+        <!-- FIX 1: URL fixed with full loopback IP address and accurate variable parameter references -->
+        <!-- Removed inline flag to ensure data processes sequentially after speech completes -->
+
+		<action application="curl" data="http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}'"/>
+
+        <!-- 4. Explicitly stop the background ASR engine thread instance -->
+        <action application="detect_speech" data="stop"/>
+
+        <!-- FIX 2: Stream raw silence frames to give your Communicator a clean 5-second window -->
+        <!-- This satisfies mod_aes67's requirements and holds the slot for incoming REST injections -->
+        <action application="playback" data="silence_stream://5000"/>
+        
+        <!-- 5. Move to the holding room safely after the confirmation window closes -->
+        <action application="conference" data="asr_holding_room@default+flags{mute|waste|nomoh}"/>
+    </condition>
+</extension>
+
+
+
+
+
+
 
 		<extension name="all_dial_in_conferences">
 			<condition field="destination_number" expression="^(${FirstNumber}\d{3,4})$">

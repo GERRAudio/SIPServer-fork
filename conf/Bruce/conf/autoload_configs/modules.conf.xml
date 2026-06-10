@@ -19,7 +19,7 @@
 
 		<!-- XML Interfaces -->
 		<load module="mod_xml_rpc"/>
-		<load module="mod_xml_curl"/> 
+		<!--load module="mod_xml_curl"/--> 
 		<!-- <load module="mod_xml_cdr"/> -->
 		<!-- <load module="mod_xml_radius"/> -->
 		<!-- <load module="mod_xml_scgi"/> -->
@@ -52,13 +52,13 @@
 		<!-- <load module="mod_khomp"/>   -->
 		<load module="mod_rtc"/>
 		<!-- <load module="mod_rtmp"/>   -->
-		<load module="mod_verto"/>
+		<!--load module="mod_verto"/-->
 
 		<!-- Applications -->
 
 		<load module="mod_commands"/>
 		<load module="mod_conference"/>
-		<!-- <load module="mod_curl"/> -->
+		<load module="mod_curl"/> 
 		<load module="mod_db"/>
 		<load module="mod_dptools"/>
 		<load module="mod_expr"/>
@@ -73,7 +73,7 @@
 		<load module="mod_esf"/>
 		<load module="mod_fsv"/>
 		<!--<load module="mod_cluechoo"/>-->
-		<!--<load module="mod_valet_parking"/>-->
+		<load module="mod_valet_parking"/>
 		<!--<load module="mod_oreka"/>-->
 		<!--<load module="mod_fsk"/>-->
 		<!--<load module="mod_spy"/>-->
@@ -131,7 +131,7 @@
 		<!-- <load module="mod_python"/> -->
 		<!-- <load module="mod_python3"/> -->
 		<!-- <load module="mod_java"/> -->
-		<!-- <load module="mod_lua"/> -->
+		<load module="mod_lua"/>
 		<load module="mod_managed"/>
 
 		<!-- ASR /TTS -->
