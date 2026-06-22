@@ -45,12 +45,15 @@ SWITCH_MODULE_DEFINITION(mod_vosk, mod_vosk_load, mod_vosk_shutdown, NULL);
 static switch_mutex_t *MUTEX = NULL;
 static switch_event_node_t *NODE = NULL;
 
+
 static struct {
 	char *server_url;
 	char *server_ip;
 	switch_port_t server_port;
 	int return_json;
 	int auto_reload;
+	int endpoint_silence_ms; /* Track the silence window via XML configuration */
+	char *recognition_words; /* Added for configuration file mapping */
 	switch_memory_pool_t *pool;
 } globals;
 
@@ -59,8 +62,15 @@ typedef struct {
 	char *result;
 	switch_mutex_t *mutex;
 	int sample_rate;
-	int handshake_done; /* kept as an error guard only */
+	int handshake_done;
+	int16_t *out_buffer;	   /* Permanent pre-allocated buffer */
+	switch_size_t out_max_len; /* Max sample capacity tracker */
+	// Added for local endpointing silence detection
+	char *last_partial;		   //Cache to store the previous partial phrase text 
+	switch_time_t last_partial_time; // 64-bit integer tracking the microsecond timestamp */
 } vosk_t;
+
+
 
 /* -------------------------------------------------------------------------
  * WebSocket frame helpers
@@ -70,10 +80,17 @@ static switch_status_t ws_send_binary(switch_socket_t *sock, const char *payload
 {
 	unsigned char hdr[8];
 	unsigned char mask[4];
-	char *masked = NULL;
+	char stack_masked[2048]; /* OPTIMIZATION: Use stack memory instead of heap malloc */
+	char *masked = stack_masked;
 	switch_size_t hlen, slen;
 
 	if (!sock || !payload || payload_len == 0) return SWITCH_STATUS_FALSE;
+
+	/* If a frame somehow exceeds our 2048 safe stack buffer, fallback safely to heap */
+	if (payload_len > sizeof(stack_masked)) {
+		masked = (char *)malloc(payload_len);
+		if (!masked) return SWITCH_STATUS_MEMERR;
+	}
 
 	mask[0] = (unsigned char)(rand() & 0xFF);
 	mask[1] = (unsigned char)(rand() & 0xFF);
@@ -81,7 +98,7 @@ static switch_status_t ws_send_binary(switch_socket_t *sock, const char *payload
 	mask[3] = (unsigned char)(rand() & 0xFF);
 
 	hdr[0] = 0x82; /* FIN + opcode BINARY */
-	hdr[1] = 0xFE; /* MASK bit + 126 => 16-bit extended length follows */
+	hdr[1] = 0xFE; /* MASK bit + 126 */
 	hdr[2] = (unsigned char)((payload_len >> 8) & 0xFF);
 	hdr[3] = (unsigned char)(payload_len & 0xFF);
 	hdr[4] = mask[0];
@@ -89,23 +106,21 @@ static switch_status_t ws_send_binary(switch_socket_t *sock, const char *payload
 	hdr[6] = mask[2];
 	hdr[7] = mask[3];
 
-	masked = (char *)malloc(payload_len);
-	if (!masked) return SWITCH_STATUS_MEMERR;
 	for (switch_size_t i = 0; i < payload_len; i++) masked[i] = payload[i] ^ mask[i % 4];
 
 	hlen = 8;
 	if (switch_socket_send(sock, (char *)hdr, &hlen) != SWITCH_STATUS_SUCCESS) {
-		free(masked);
+		if (masked != stack_masked) free(masked);
 		return SWITCH_STATUS_GENERR;
 	}
 
 	slen = payload_len;
 	if (switch_socket_send(sock, masked, &slen) != SWITCH_STATUS_SUCCESS) {
-		free(masked);
+		if (masked != stack_masked) free(masked);
 		return SWITCH_STATUS_GENERR;
 	}
 
-	free(masked);
+	if (masked != stack_masked) free(masked);
 	return SWITCH_STATUS_SUCCESS;
 }
 
@@ -178,6 +193,9 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 	vosk->handshake_done = 0;
 	vosk->result = NULL;
 
+	vosk->last_partial = NULL;	 /* Initialize to safe NULL pointer state */
+	vosk->last_partial_time = 0; /* Clear the stopwatch state to 0 */
+
 
 	ah->rate = 48000;
 	vosk->sample_rate = 48000;
@@ -204,6 +222,11 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 						  globals.server_ip, globals.server_port);
 		switch_socket_close(socket);
 		return SWITCH_STATUS_GENERR;
+	}
+
+	/* Try to disable Nagle's algo for speed*/
+	if (switch_socket_opt_set(socket, SWITCH_SO_TCP_NODELAY, 1) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "mod_vosk: Could not set TCP_NODELAY\n");
 	}
 
 	/* --- WebSocket HTTP upgrade ----------------------------------------- */
@@ -248,15 +271,33 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 
 	/* --- Send Vosk configuration JSON ------------------------------------ */
 	{
-		char cfg_json[64];
-		snprintf(cfg_json, sizeof(cfg_json), "{\"config\":{\"sample_rate\":16000}}");
+		/* Dynamically format the JSON using  custom XML configuration array */
+		char *cfg_json =
+			switch_mprintf("{\"config\":{\"sample_rate\":16000,\"words\":[%s]}}", globals.recognition_words);
+
+		if (!cfg_json) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+							  "mod_vosk: failed to allocate config JSON memory\n");
+			switch_socket_close(socket);
+			return SWITCH_STATUS_MEMERR;
+		}
+
 		if (ws_send_text(socket, cfg_json) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "mod_vosk: failed to send config JSON\n");
+			switch_safe_free(cfg_json);
 			switch_socket_close(socket);
 			return SWITCH_STATUS_GENERR;
 		}
+
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "mod_vosk: config JSON sent: %s\n", cfg_json);
+		switch_safe_free(cfg_json); /* Safely release heap memory before processing audio frames */
 	}
+
+
+
+
+	vosk->out_max_len = 16000 * sizeof(int16_t); /* Safe 1-second headroom allocation */
+	vosk->out_buffer = (int16_t *)switch_core_alloc(ah->memory_pool, vosk->out_max_len);
 
 	vosk->ws = socket;
 	vosk->handshake_done = 1;
@@ -284,6 +325,10 @@ static switch_status_t vosk_asr_close(switch_asr_handle_t *ah, switch_asr_flag_t
 
 	switch_set_flag(ah, SWITCH_ASR_FLAG_CLOSED);
 	switch_safe_free(vosk->result);
+
+	// local endpointing mem cleanup
+	switch_safe_free(vosk->last_partial); /* Safely releases the string memory from heap */
+
 	switch_mutex_unlock(vosk->mutex);
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -322,17 +367,14 @@ static switch_status_t vosk_asr_feed(switch_asr_handle_t *ah, void *data, unsign
 		int is_48k = (len > 640 && (len % 6) == 0);
 
 		if (is_48k) {
-			/* Derive counts from len, not from hardcoded constants */
-			int in_sample_count = (int)(len / sizeof(int16_t)); /* e.g. 960 for 20ms@48k */
-			int out_sample_count = in_sample_count / 3;			/* e.g. 320 */
+			int in_sample_count = (int)(len / sizeof(int16_t));
+			int out_sample_count = in_sample_count / 3;
 			switch_size_t out_bytes = (switch_size_t)(out_sample_count * sizeof(int16_t));
 
 			int16_t *in_samples = (int16_t *)data;
-			int16_t *out_samples = (int16_t *)malloc(out_bytes);
-			if (!out_samples) {
-				switch_mutex_unlock(vosk->mutex);
-				return SWITCH_STATUS_MEMERR;
-			}
+
+			/*  Use the pre-allocated pool buffer for speed */
+			int16_t *out_samples = vosk->out_buffer;
 
 			/* 13-tap windowed-sinc low-pass FIR, cut-off at 8kHz */
 			static const float FILTER_TAPS[13] = {-0.0118f, -0.0253f, -0.0129f, 0.0573f,  0.1755f,	0.2647f, 0.3046f,
@@ -340,11 +382,10 @@ static switch_status_t vosk_asr_feed(switch_asr_handle_t *ah, void *data, unsign
 
 			for (int i = 0; i < out_sample_count; i++) {
 				float filtered = 0.0f;
-				int center = i * 3; /* 3:1 decimation */
+				int center = i * 3;
 
 				for (int tap = 0; tap < 13; tap++) {
 					int idx = center + (tap - 6);
-					/* FIX 6: zero-pad — out-of-range indices contribute 0 */
 					if (idx >= 0 && idx < in_sample_count) { filtered += (float)in_samples[idx] * FILTER_TAPS[tap]; }
 				}
 
@@ -356,11 +397,13 @@ static switch_status_t vosk_asr_feed(switch_asr_handle_t *ah, void *data, unsign
 			}
 
 			switch_status_t sr = ws_send_binary(vosk->ws, (const char *)out_samples, out_bytes);
-			free(out_samples);
+
+
 			if (sr != SWITCH_STATUS_SUCCESS) {
 				switch_mutex_unlock(vosk->mutex);
 				return SWITCH_STATUS_BREAK;
 			}
+		
 		} else {
 			/* Native 16kHz frame — pass through unchanged */
 			if (ws_send_binary(vosk->ws, (const char *)data, len) != SWITCH_STATUS_SUCCESS) {
@@ -429,13 +472,23 @@ static switch_status_t vosk_asr_feed(switch_asr_handle_t *ah, void *data, unsign
 	}
 
 	switch (opcode) {
+
 	case WS_OP_TEXT:
-		if (payload) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "mod_vosk: rx text frame: %s\n", payload);
-			switch_safe_free(vosk->result);
-			vosk->result = switch_safe_strdup(payload);
-		}
-		break;
+			if (payload) {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "mod_vosk: rx text frame: %s\n", payload);
+				switch_safe_free(vosk->result);
+				vosk->result = switch_safe_strdup(payload);
+				// endpoint updates
+				if (strstr(payload, "\"partial\"")) {
+					/* If the phrase text has changed, reset the microsecond timer */
+					if (!vosk->last_partial || strcmp(vosk->last_partial, payload) != 0) {
+						switch_safe_free(vosk->last_partial);
+						vosk->last_partial = switch_safe_strdup(payload);
+						vosk->last_partial_time = switch_micro_time_now(); /* Stamp current OS microsecond */
+					}
+				}
+			}
+			break;
 
 	case WS_OP_PING: {
 		unsigned char pong[2] = {(unsigned char)(0x80 | WS_OP_PONG), (unsigned char)(payload_len & 0x7F)};
@@ -484,16 +537,56 @@ static switch_status_t vosk_asr_unload_grammar(switch_asr_handle_t *ah, const ch
  * Vosk silent result:  {"text":""}
  * Vosk partial result: {"partial":"hello"}
  * ---------------------------------------------------------------------- */
+
 static switch_status_t vosk_asr_check_results(switch_asr_handle_t *ah, switch_asr_flag_t *flags)
 {
 	vosk_t *vosk = (vosk_t *)ah->private_info;
 
-	if (!vosk->result) return SWITCH_STATUS_FALSE;						   /* nothing yet        */
-	if (strstr(vosk->result, "\"partial\"")) return SWITCH_STATUS_FALSE;   /* still transcribing */
-	if (strstr(vosk->result, "\"text\":\"\"")) return SWITCH_STATUS_FALSE; /* silence / no text  */
+	if (!vosk->result) return SWITCH_STATUS_FALSE;
+	if (strstr(vosk->result, "\"text\":\"\"")) return SWITCH_STATUS_FALSE;
 
-	return SWITCH_STATUS_SUCCESS;
+	if (!strstr(vosk->result, "\"partial\"")) { return SWITCH_STATUS_SUCCESS; }
+
+	if (strstr(vosk->result, "\"partial\"")) {
+		if (strstr(vosk->result, "\"partial\":\"\"")) { return SWITCH_STATUS_FALSE; }
+
+		if (vosk->last_partial_time > 0) {
+			switch_time_t now = switch_micro_time_now();
+
+			/* TARGET OPTIMIZATION: Dynamically read from the XML configuration value */
+			switch_time_t silence_threshold_us = (switch_time_t)(globals.endpoint_silence_ms * 1000);
+
+			if ((now - vosk->last_partial_time) > silence_threshold_us) {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+								  "mod_vosk: Dynamic %dms endpoint triggered via XML config.\n",
+								  globals.endpoint_silence_ms);
+
+				cJSON *root = cJSON_Parse(vosk->result);
+				if (root && cJSON_HasObjectItem(root, "partial")) {
+					const char *partial_phrase = cJSON_GetObjectCstr(root, "partial");
+
+
+
+
+
+
+					char *forced_final = switch_mprintf("{\"text\":\"%s\"}", partial_phrase);
+
+					switch_safe_free(vosk->result);
+					vosk->result = forced_final;
+
+					cJSON_Delete(root);
+					return SWITCH_STATUS_SUCCESS;
+				}
+				if (root) cJSON_Delete(root);
+			}
+		}
+	}
+
+	return SWITCH_STATUS_FALSE;
 }
+
+
 
 /* -------------------------------------------------------------------------
  * vosk_asr_get_results
@@ -528,6 +621,12 @@ static switch_status_t vosk_asr_get_results(switch_asr_handle_t *ah, char **xmls
 
 	switch_safe_free(vosk->result);
 	vosk->result = NULL;
+
+	switch_safe_free(vosk->last_partial); /* Clear tracking text cache for the next sentence */
+	vosk->last_partial = NULL;
+	vosk->last_partial_time = 0; /* Clear stopwatch */
+
+
 	switch_mutex_unlock(vosk->mutex);
 	return ret;
 }
@@ -553,15 +652,52 @@ static switch_status_t load_config(void)
 			if (!strcasecmp(var, "server-url")) globals.server_url = switch_core_strdup(globals.pool, val);
 			if (!strcasecmp(var, "return-json")) globals.return_json = atoi(val);
 			if (!strcasecmp(var, "auto-reload")) globals.auto_reload = atoi(val);
+			if (!strcasecmp(var, "recognition-words"))
+				globals.recognition_words = switch_core_strdup(globals.pool, val);
+			if (!strcasecmp(var, "endpoint-silence-ms")) globals.endpoint_silence_ms = atoi(val); 
+
 		}
 	}
 done:
-	if (!globals.server_url) globals.server_url = switch_core_strdup(globals.pool, "ws://127.0.0.1:2700");
+	if (!globals.server_url) 
+		globals.server_url = switch_core_strdup(globals.pool, "ws://127.0.0.1:2700");
+	/* Fallback configuration if parameter is missing from the XML file */
+	if (globals.endpoint_silence_ms <= 0) {
+		globals.endpoint_silence_ms = 400; // High-concurrency performance fallback default
+	}
+	if (!globals.recognition_words) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+						  "mod_vosk: 'recognition-words' missing from XML. Using hardcoded production defaults.\n");
+
+		globals.recognition_words = switch_core_strdup(
+			globals.pool, "\"up\", \"down\", \"louder\", \"softer\", \"volume\", \"go\", \"to\", \"go to\", "
+						  "\"conference\", \"switch\", \"switch to\", "
+						  "\"connect\", \"connect to\", \"connect with\", \"join\", \"in\", \"with\", \"join in\", "
+						  "\"join with\", \"disconnect\", \"leave\", "
+						  "\"no\", \"no conference\", \"twenty\", \"thirty\", \"forty\", \"fifty\", \"sixty\", "
+						  "\"seventy\", \"eighty\", \"ninety\", "
+						  "\"one\", \"two\", \"three\", \"four\", \"five\", \"six\", \"seven\", \"eight\", \"nine\", "
+						  "\"27\", \"28\", \"29\", \"30\", \"31\", \"32\", \"33\", \"34\", \"35\", \"36\", \"37\", "
+						  "\"38\", \"39\", \"40\", "
+						  "\"41\", \"42\", \"43\", \"44\", \"45\", \"46\", \"47\", \"48\", \"49\", \"50\", \"51\", "
+						  "\"52\", \"53\", \"54\", "
+						  "\"55\", \"56\", \"57\", \"58\", \"59\", \"60\", \"61\", \"62\", \"63\", \"64\", \"65\", "
+						  "\"66\", \"67\", \"68\", "
+						  "\"69\", \"70\", \"71\", \"72\", \"73\", \"74\", \"75\", \"76\", \"77\", \"78\", \"79\", "
+						  "\"80\", \"81\", \"82\", "
+						  "\"83\", \"84\", \"85\", \"86\", \"87\", \"88\", \"89\", \"90\", \"91\", \"92\", \"93\", "
+						  "\"94\", \"95\", \"96\", "
+						  "\"97\", \"98\", \"99\", \"[unk]\"");
+	}
+
 	globals.server_ip = switch_core_strdup(globals.pool, "127.0.0.1");
 	globals.server_port = 2700;
 	if (xml) switch_xml_free(xml);
 	return status;
 }
+
+
+
 
 static void do_load(void)
 {

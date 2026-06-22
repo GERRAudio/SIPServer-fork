@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <include>
-	<context name="default">
+  <context name="default">
 	
-<extension name="vosk_asr_processing">
-    <condition field="destination_number" expression="^5602$">
+    <extension name="vosk_asr_processing">
+      <condition field="destination_number" expression="^5602$">
         <action application="answer"/>
         
         <action application="set" data="disable_break=true"/>
@@ -12,101 +12,90 @@
         <action application="playback" data="tone_stream://%(150,0,1000)"/>
         <action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
 
-        <!-- Run ASR Speech detection -->
         <action application="play_and_detect_speech" data="silence_stream://5000 detect:vosk default"/>
         
-        <!-- Capture the speech result string text -->
-        <action application="set" data="my_post_body={&quot;text&quot;:&quot;${detect_speech_result}&quot;}"/>
+        <action application="set" data="my_post_body=${detect_speech_result}"/>
 
-        <!-- Turn off break restriction before processing the network transaction -->
         <action application="set" data="disable_break=false"/>
 
-		<action application="curl" data="http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}'"/>
-
-        <!-- Stop the background ASR engine thread instance -->
+        <action application="set" data="res=${bgapi(curl http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}')}"/>
+		
         <action application="detect_speech" data="stop"/>
-
-        <!-- Stream raw silence frames to give Communicator a 5-second window -->
-        <!-- This satisfies mod_aes67's requirements and holds the slot for incoming REST injections -->
+		
         <action application="playback" data="silence_stream://5000"/>
         
-        <!-- Move to the holding room after the confirmation window closes -->
         <action application="conference" data="asr_holding_room@default+flags{mute|waste|nomoh}"/>
-    </condition>
-</extension>
+      </condition>
+    </extension>
 
+    <extension name="all_dial_in_conferences">
+      <condition field="destination_number" expression="^(${FirstNumber}\d{3,4})$">
+        <action application="log" data="INFO - Default/dial in conferences - dest conf:${destination_number} Caller ID: + ${caller_id_number}"/>
+        <action application="answer"/>
+        <action application="managed" data="CommunicatorConnector ConferenceChecker + ${destination_number} FROM_DIALPLAN"/>
+        <action application="set" data="api_hangup_hook=managed CommunicatorConnector ConferenceChecker - ${destination_number}"/>
+        <action application="conference" data="${destination_number}@default+flags{nomoh}"/>
+      </condition>
+    </extension>
 
+    <extension name="non-whitelisted-people-with-correct-PIN">
+      <condition field="destination_number" expression="^(9\d{3})$">
+        <action application="set" data="api_hangup_hook=managed CommunicatorConnector ConferenceChecker - $1"/>
+        <action application="playback" data="ConnectedToSystem.wav"/>
+        <action application="playback" data="conference\8000\conf-conference_will_start_shortly.wav"/>
+        <action application="conference_set_auto_outcall" data="aes67/endpoints/Announce"/>
+        <action application="conference" data="$1"/>
+      </condition>
+    </extension>
 
+    <extension name="dante_dial_conference">
+      <condition field="destination_number" expression="^99999(\d+)$">
+        <action application="set" data="continue_on_fail=true"/>
+        <action application="answer"/>
+        <action application="log" data="INFO Dante Port is '${interface}'"/>
+        <action application="managed" data="CommunicatorConnector AddDanteToCall $1"/>
+        <action application="set" data="api_hangup_hook=managed CommunicatorConnector RemoveDanteFromCall $1 ${interface}"/>
+        <action application="conference" data="$1+flags{noperpetual}"/>
+        <action application="transfer" data="${destination_number}"/>
+      </condition>
+    </extension>
 
+    <extension name="dante_connect">
+      <condition field="destination_number" expression="^[0-9]$">
+        <action application="managed" data="CommunicatorConnector OperatorChecker ${destination_number} ${uuid}"/>
+        <action application="sleep" data="1000"/>
+        <action application="set" data="rtp_jitter_buffer_plc=true"/>
+        
+        <action application="set" data="jitterbuffer_lookahead=true"/>
+        <action application="jitterbuffer" data="40"/>
+        
+        <action application="answer"/>
+        <action application="bridge" data="aes67/endpoints/Operator_${destination_number}"/>
+      </condition>
+    </extension>
 
+    <extension name="conference_failed_pin">
+      <condition field="destination_number" expression="^9999$">
+        <action application="playback" data="ThatConferenceNumIsIncorrect.wav"/>
+        <action application="sleep" data="1000"/>
+      </condition>
+    </extension>
 
+    <extension name="Tone_Stream_For_Beltpacks">
+      <condition field="destination_number" expression="^99998$">
+        <action application="answer"/>
+        <action application="set" data="api_hangup_hook=managed CommunicatorConnector LostToneStreamForBeltpacks - $1"/>
+        <action application="loop_playback" data="theoperatorhasbeencalledbeep.wav"/>
+      </condition>
+    </extension>
 
-		<extension name="all_dial_in_conferences">
-			<condition field="destination_number" expression="^(${FirstNumber}\d{3,4})$">
-				<action application="log" data="INFO - Default/dial in conferences - dest conf:${destination_number} Caller ID: + ${caller_id_number}"/>
-				<action application="answer"/>
-				<action application="managed" data="CommunicatorConnector ConferenceChecker + ${destination_number} FROM_DIALPLAN"/>
-				<action application="set" data="api_hangup_hook=managed CommunicatorConnector ConferenceChecker - ${destination_number}"/>
-				<action application="conference" data="${destination_number}@default+flags{nomoh}"/>
-			</condition>
-		</extension>
+    <extension name="Broadcast_Announce">
+      <condition field="destination_number" expression="^99991$">
+        <action application="answer"/>
+        <action application="set" data="api_hangup_hook=managed CommunicatorConnector LostBroadcastAnnounce - $1"/>
+        <action application="record" data="shout://source:pass@127.0.0.1:8000/stream.ogg"/>
+      </condition>
+    </extension>
 
-		<extension name="non-whitelisted-people-with-correct-PIN">
-			<condition field="destination_number" expression="^(9\d{3})$">
-				<action application="set" data="api_hangup_hook=managed CommunicatorConnector ConferenceChecker - $1"/>
-				<action application="playback" data="ConnectedToSystem.wav"/>
-				<action application="playback" data="conference\8000\conf-conference_will_start_shortly.wav"/>
-				<action application="conference_set_auto_outcall" data="aes67/endpoints/Announce"/>
-				<action application="conference" data="$1"/>
-			</condition>
-		</extension>
-
-		<extension name="dante_dial_conference">
-			<condition field="destination_number" expression="^99999(\d+)$">
-				<action application="set" data="continue_on_fail=true"/>
-				<action application="answer"/>
-				<action application="log" data="INFO Dante Port is '${interface}'"/>
-				<action application="managed" data="CommunicatorConnector AddDanteToCall $1"/>
-				<action application="set" data="api_hangup_hook=managed CommunicatorConnector RemoveDanteFromCall $1 ${interface}"/>
-				<action application="conference" data="$1+flags{noperpetual}"/>
-				<action application="transfer" data="${destination_number}"/>
-			</condition>
-		</extension>
-
-		<extension name="dante_connect">
-			<condition field="destination_number" expression="^[0-9]$">
-				<action application="managed" data="CommunicatorConnector OperatorChecker ${destination_number} ${uuid}"/>
-				<action application="sleep" data="1000"/>
-				<action application="set" data="rtp_jitter_buffer_plc=true"/>
-				<param name="use-jb-lookahead" value="1"/>
-				<action application="jitterbuffer" data="40"/>
-				<action application="answer"/>
-				<action application="bridge" data="aes67/endpoints/Operator_${destination_number}"/>
-			</condition>
-		</extension>
-
-		<extension name="conference_failed_pin">
-			<condition field="destination_number" expression="^9999$">
-				<action application="playback" data="ThatConferenceNumIsIncorrect.wav"/>
-				<action application="sleep" data="1000"/>
-			</condition>
-		</extension>
-
-		<extension name="Tone_Stream_For_Beltpacks">
-			<condition field="destination_number" expression="^99998$">
-				<action application="answer"/>
-				<action application="set" data="api_hangup_hook=managed CommunicatorConnector LostToneStreamForBeltpacks - $1"/>
-				<action application="loop_playback" data="theoperatorhasbeencalledbeep.wav"/>
-			</condition>
-		</extension>
-
-		<extension name="Broadcast_Announce">
-			<condition field="destination_number" expression="^99991$">
-				<action application="answer"/>
-				<action application="set" data="api_hangup_hook=managed CommunicatorConnector LostBroadcastAnnounce - $1"/>
-				<action application="record" data="shout://source:pass@127.0.0.1:8000/stream.ogg"/>
-			</condition>
-		</extension>
-
-	</context>
+  </context>
 </include>
