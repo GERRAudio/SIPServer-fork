@@ -1,29 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <context name="default">
+<extension name="vosk_asr_processing">
+  <condition field="destination_number" expression="^5602$">
+    <action application="answer"/>
+    <action application="sleep" data="20"/>
+    <action application="set" data="disable_break=true"/>
+
+    <action application="playback" data="tone_stream://%(150,0,1000)"/>
+    <action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
+	<action application="play_and_detect_speech" data="silence_stream://5000 detect:vosk default"/>
+<action application="set" data="my_post_body=${detect_speech_result}"/>
+<action application="set" data="disable_break=false"/>
+<action application="set" data="res=${bgapi(curl http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}')}"/>
+<action application="detect_speech" data="stop"/>
+<action application="playback" data="silence_stream://4000"/>
+<action application="conference" data="asr_holding_room@default+flags{mute|waste|nomoh}"/>
 	
-    <extension name="vosk_asr_processing">
-      <condition field="destination_number" expression="^5602$">
-        <action application="answer"/>
-        <action application="sleep" data="20"/>
-        <action application="set" data="disable_break=true"/>
+
 	
-		<action application="playback" data="tone_stream://%(150,0,1000)"/>
-        <action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
-
-
-        <action application="play_and_detect_speech" data="silence_stream://5000 detect:vosk default"/>
-        <action application="set" data="my_post_body=${detect_speech_result}"/>
-
-        <action application="set" data="disable_break=false"/>
-
-        <action application="set" data="res=${bgapi(curl http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}')}"/>
-		
-        <action application="detect_speech" data="stop"/>
-        <action application="playback" data="silence_stream://4000"/>
-        <action application="conference" data="asr_holding_room@default+flags{mute|waste|nomoh}"/>
-      </condition>
-    </extension>
+  </condition>
+</extension>
 
     <extension name="all_dial_in_conferences">
       <condition field="destination_number" expression="^(${FirstNumber}\d{3,4})$">
