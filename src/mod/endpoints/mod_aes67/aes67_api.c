@@ -1279,16 +1279,28 @@ void flush_all_queues(g_stream_t *stream)
 	while (gst_iterator_next(iter, &item) == GST_ITERATOR_OK) {
 		GstElement *element = g_value_get_object(&item);
 		GstElementFactory *factory = gst_element_get_factory(element);
-		const gchar *factory_name = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory));
 
-		// Check if this is a queue element
-		if (g_strcmp0(factory_name, "queue") == 0 || g_strcmp0(factory_name, "ts-queue") == 0) {
-			// Send flush events to drain the queue
-			GstPad *sinkpad = gst_element_get_static_pad(element, "sink");
-			if (sinkpad) {
-				gst_pad_send_event(sinkpad, gst_event_new_flush_start());
-				gst_pad_send_event(sinkpad, gst_event_new_flush_stop(TRUE));
-				gst_object_unref(sinkpad);
+		if (factory) {
+			const gchar *factory_name = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory));
+
+			// Flush Queues
+			if (g_strcmp0(factory_name, "queue") == 0 || g_strcmp0(factory_name, "ts-queue") == 0) {
+				GstPad *sinkpad = gst_element_get_static_pad(element, "sink");
+				if (sinkpad) {
+					gst_pad_send_event(sinkpad, gst_event_new_flush_start());
+					gst_pad_send_event(sinkpad, gst_event_new_flush_stop(TRUE));
+					gst_object_unref(sinkpad);
+				}
+			}
+			// Flush AppSrc
+			else if (g_strcmp0(factory_name, "appsrc") == 0) {
+				GstPad *srcpad = gst_element_get_static_pad(element, "src");
+				if (srcpad) {
+					// Send flush downstream from appsrc
+					gst_pad_send_event(srcpad, gst_event_new_flush_start());
+					gst_pad_send_event(srcpad, gst_event_new_flush_stop(TRUE));
+					gst_object_unref(srcpad);
+				}
 			}
 		}
 		g_value_reset(&item);

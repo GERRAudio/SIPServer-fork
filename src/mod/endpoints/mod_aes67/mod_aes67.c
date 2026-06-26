@@ -3146,6 +3146,8 @@ void deep_clean_gst()
 // Called periodically from a timer to clean up gstreamer mem specifically
 void check_pipeline_memory_pressure(g_stream_t *stream)
 {
+	if (!stream || !stream->pipeline) return;
+
 	GstIterator *iter = gst_bin_iterate_elements(GST_BIN(stream->pipeline));
 	GValue item = G_VALUE_INIT;
 	guint total_queued_buffers = 0;
@@ -3155,25 +3157,33 @@ void check_pipeline_memory_pressure(g_stream_t *stream)
 		GstElement *element = g_value_get_object(&item);
 
 		GstElementFactory *factory = gst_element_get_factory(element);
-		const gchar *factory_name = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory));
+		if (factory) {
+			const gchar *factory_name = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory));
 
-		if (g_strcmp0(factory_name, "queue") == 0 || g_strcmp0(factory_name, "ts-queue") == 0) {
-			guint buffers = 0, bytes = 0;
-			g_object_get(element, "current-level-buffers", &buffers, "current-level-bytes", &bytes, NULL);
-			total_queued_buffers += buffers;
-			total_queued_bytes += bytes;
+			// Check standard queues
+			if (g_strcmp0(factory_name, "queue") == 0 || g_strcmp0(factory_name, "ts-queue") == 0) {
+				guint buffers = 0, bytes = 0;
+				g_object_get(element, "current-level-buffers", &buffers, "current-level-bytes", &bytes, NULL);
+				total_queued_buffers += buffers;
+				total_queued_bytes += bytes;
+			}
+			// Check AppSrc limits
+			else if (g_strcmp0(factory_name, "appsrc") == 0) {
+				guint64 bytes = 0; // appsrc current-level-bytes is guint64
+				g_object_get(element, "current-level-bytes", &bytes, NULL);
+				total_queued_bytes += (guint)bytes;
+			}
 		}
-
 		g_value_reset(&item);
 	}
 
 	gst_iterator_free(iter);
 
-	// If memory pressure is too high, trigger aggressive flush
+	// If memory pressure is too high (e.g., > 10MB across the pipeline), trigger aggressive flush
 	if (total_queued_buffers > 500 || total_queued_bytes > 10 * 1024 * 1024) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-						  "HIGH MEMORY PRESSURE: %u buffers, %u bytes - flushing!\n", total_queued_buffers,
-						  total_queued_bytes);
+						  "HIGH MEMORY PRESSURE DETECTED: %u buffers, %u bytes - flushing pipeline!\n",
+						  total_queued_buffers, total_queued_bytes);
 
 		// Trigger flush
 		flush_all_queues(stream);
@@ -3182,36 +3192,39 @@ void check_pipeline_memory_pressure(g_stream_t *stream)
 
 
 
-
-
-
 void error_callback(char *msg, g_stream_t *stream)
 {
-	// switch_event_t *event;
-	switch_channel_t *channel;
 	private_t *tp;
-	if (msg) switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Stream error: %s\n", msg); // added check
+	switch_core_session_t *sessions_to_hangup[256];
+	int hangup_count = 0;
+
+	if (msg) switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Stream error: %s\n", msg);
+
+	switch_mutex_lock(aes67_globals.pvt_lock);
 
 	for (tp = aes67_globals.call_list; tp; tp = tp->next) {
-		if (!tp->audio_endpoint || !tp->audio_endpoint->in_stream) continue;
-		STREAM_READER_LOCK(tp->audio_endpoint->in_stream);		//added
-		if ((tp->audio_endpoint->in_stream && (tp->audio_endpoint->in_stream->stream == stream)) ||
-			(tp->audio_endpoint->out_stream && (tp->audio_endpoint->out_stream->stream == stream))) {
-			channel = switch_core_session_get_channel(tp->session);
-			STREAM_READER_UNLOCK(tp->audio_endpoint->in_stream);
-			goto hangup;
+		if (!tp->audio_endpoint) continue;
+
+		//  pointer comparison without requiring the reader lock
+		g_stream_t *in_gst = tp->audio_endpoint->in_stream ? tp->audio_endpoint->in_stream->stream : NULL;
+		g_stream_t *out_gst = tp->audio_endpoint->out_stream ? tp->audio_endpoint->out_stream->stream : NULL;
+
+		if (in_gst == stream || out_gst == stream) {
+			// cap the array to prevent overflow 
+			if (hangup_count < 256) { sessions_to_hangup[hangup_count++] = tp->session; }
 		}
-		STREAM_READER_UNLOCK(tp->audio_endpoint->in_stream);
 	}
 
-	return;
+	// unlock  before calling FreeSWITCH core functions
+	switch_mutex_unlock(aes67_globals.pvt_lock);
 
-hangup:
-	//switch_mutex_unlock(aes67_globals.pvt_lock); // added check
-	// Note: this could be sync blocking call, would prefer a more asyn event kind which will call channel_kill
-	// switch_channel_hangup(channel, SWITCH_CAUSE_PROTOCOL_ERROR);
-	if (channel) switch_channel_hangup(channel, SWITCH_CAUSE_PROTOCOL_ERROR); // check
+	// hang up the orphaned channels
+	for (int i = 0; i < hangup_count; i++) {
+		switch_channel_t *channel = switch_core_session_get_channel(sessions_to_hangup[i]);
+		if (channel) { switch_channel_hangup(channel, SWITCH_CAUSE_PROTOCOL_ERROR); }
+	}
 }
+
 
 static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
 {
@@ -3258,6 +3271,37 @@ static switch_status_t list_endpoints(switch_stream_handle_t *stream)
 	stream->write_function(stream, "Total endpoints: %d\n", cnt);
 	return SWITCH_STATUS_SUCCESS;
 }
+
+void check_all_streams_memory_pressure(void)
+{
+	switch_hash_index_t *hi;
+
+	// Skip if we are currently tearing down all streams
+	if (g_atomic_int_get(&aes67_globals.destroying_streams)) { return; }
+
+	switch_mutex_lock(aes67_globals.sh_shtreams_lock);
+
+	for (hi = switch_core_hash_first(aes67_globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
+		const void *key;
+		void *val;
+		shared_audio_stream_t *s;
+
+		switch_core_hash_this(hi, &key, NULL, &val);
+		s = val;
+
+		if (s && s->stream && g_atomic_int_get(&s->stream->pipeline_active)) {
+			// Use TryLock to avoid blocking the heartbeat if the stream is heavily contended
+			if (STREAM_READER_TRYLOCK(s)) {
+				check_pipeline_memory_pressure(s->stream);
+				STREAM_READER_UNLOCK(s);
+			}
+		}
+	}
+
+	switch_mutex_unlock(aes67_globals.sh_shtreams_lock);
+}
+
+
 
 static switch_status_t reload_config()
 {
