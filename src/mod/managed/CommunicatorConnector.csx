@@ -888,6 +888,13 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         return "FAILURE";
     }
 
+    /// <summary>
+    /// Joins the call to a conference
+    /// </summary>
+    /// <param name="callerID"></param>
+    /// <param name="conference"></param>
+    /// <returns></returns>
+    /// 
     public string OperatorJoin(string callerID, string conference)
     {
         string uuid = GetIDFromCaller(callerID);
@@ -907,6 +914,10 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         return apiResponse;
     }
 
+    /// <summary>
+    /// Seems unused. Kills calls an operator has
+    /// </summary>
+    /// <param name="arguments"></param>
     public string CheckOperator(string operatorNumber, string currentUUID)
     {
         try
@@ -923,6 +934,11 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         return "CheckOperator complete.";
     }
 
+    /// <summary>
+    /// Used by HangupPorts to make sure ports are hung up.
+    /// </summary>
+    /// <param name="arguments"></param>
+    /// <returns></returns>
     public string HangUpChannel(string channelString)
     {
         try
@@ -985,6 +1001,8 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         WriteToLog(LogLevel.Info, string.Format("CommunicatorConnector on a background thread #({0}), with args '{1}'.", System.Threading.Thread.CurrentThread.ManagedThreadId, context.Arguments));
         string returnString = Process(context.Arguments.Split(' '));
     }
+
+
 
     public string Process(string[] arguments)
     {
@@ -1128,6 +1146,27 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         return returnString;
     }
 
+    // -----------------------------------------------------------------------
+    // AsrVoskHandler
+    //
+    // Drives the full Vosk ASR interaction for a belt-pack voice command
+    // entirely from C# via the embedded FreeSWITCH API, bypassing the
+    // play_and_detect_speech dialplan app which is fragile against AES67
+    // codec-change events.
+    //
+    // Key API choice: uuid_broadcast fires an application on an existing
+    // channel from the API thread without blocking here.  It is the correct
+    // embedded-API equivalent of the ESL "uuid_execute" command, which is NOT
+    // available through fsApi.ExecuteString in the managed plugin host.
+    //
+    // Sequence:
+    //   1. Arm detect_speech on the channel via uuid_broadcast
+    //   2. Play the ready prompt via uuid_broadcast (non-blocking)
+    //   3. Poll uuid_getvar detect_speech_result until non-empty or 8s timeout
+    //   4. POST the result to /api/asr/voicecommand
+    //   5. Stop detect_speech and hang up the channel
+    // -----------------------------------------------------------------------
+
     internal async Task<string> AsrVoskHandler(string channelUUID, string beltpackName)
     {
         WriteToLog(LogLevel.Info, string.Format(
@@ -1144,17 +1183,46 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
 
         try
         {
+            // ------------------------------------------------------------------
+            // Arm the ASR engine on the channel.
+            //
+            // uuid_broadcast syntax:
+            //   uuid_broadcast <uuid> <app>::<data> [aleg|bleg|both]
+            //
+            // The "aleg" flag targets the channel itself (not a bridged peer).
+            // detect_speech syntax: <engine> <grammar_file> <grammar_name>
+            // ------------------------------------------------------------------
+
             string armResult = fsApi.ExecuteString(
                 "uuid_broadcast " + channelUUID + " detect_speech::vosk default default aleg");
             WriteToLog(LogLevel.Info, "AsrVoskHandler: detect_speech arm result: " + armResult);
 
+            // Allow the ASR engine to open and attach its media bug before
+            // audio from the prompt playback starts arriving.
             await Task.Delay(300);
 
+
+            // ------------------------------------------------------------------
+            // Play the ready prompt — non-blocking fire-and-forget.
+            // uuid_broadcast returns immediately; playback runs on the channel
+            // thread while this C# thread polls for the ASR result.
+            // ------------------------------------------------------------------
             const string promptPath = "C:/inetpub/SIPServer/sounds/custom/asr_ready.wav";
             string playResult = fsApi.ExecuteString(
                 "uuid_broadcast " + channelUUID + " playback::" + promptPath + " aleg");
             WriteToLog(LogLevel.Info, "AsrVoskHandler: playback result: " + playResult);
 
+
+            // ------------------------------------------------------------------
+            // Poll for the ASR result.
+            //
+            // detect_speech sets channel variable detect_speech_result when the
+            // engine returns a final result.  uuid_getvar reads it from the API
+            // thread.  FreeSWITCH returns "_undef_" for unset variables.
+            //
+            // Timing: prompt is ~0.5s, Vosk returns a final result after the
+            // speaker pauses.  8s gives ~0.5s prompt + 5s listen + 2.5s margin.
+            // ------------------------------------------------------------------
             const int pollIntervalMs = 200;
             const int maxWaitMs      = 8000;
             int       elapsed        = 0;
@@ -1199,6 +1267,10 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                     maxWaitMs, beltpackName));
             }
 
+
+            // ------------------------------------------------------------------
+            // POST the recognised text to the Communicator API.
+            // ------------------------------------------------------------------
             try
             {
                 string apiUrl = apiServer + "asr/voicecommand?beltpack="
@@ -1225,6 +1297,10 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         }
         finally
         {
+            // ------------------------------------------------------------------
+            // Clean up — stop ASR engine then kill the channel.
+            // Best-effort; harmless if channel is already gone.
+            // ------------------------------------------------------------------
             try
             {
                 fsApi.ExecuteString(
