@@ -142,6 +142,9 @@
 			<Custom Action="SetIP"			      Before="InstallService"/>
 			<Custom Action="InstallService"   Before="InstallFinalize"   />
 			<Custom Action="ConfigSvcSetup"   After="InstallService"/>
+			<Custom Action="InstallVoskService"   Before="InstallFinalize"   />
+			<Custom Action="ConfigVoskSvcSetup"   After="InstallVoskService"/>
+			<Custom Action="SetArgsVoskService"   After="ConfigVoskSvcSetup"/>
 			<Custom Action="LaunchReadme"	    After ="InstallFinalize" Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT Installed'/>
 		</InstallExecuteSequence>
 	</Package>
@@ -157,7 +160,8 @@
 
 					<!-- Explicitly creating the required Queue Directories -->
 					<Directory Id="ASR_QUEUE" Name="asr-queue"/>
-		
+					<Directory Id="VOSKFOLDER" Name="Vosk"/>
+
 					<!-- Explicitly creating the Sounds Directory -->
 					<Directory Id="SOUNDS_DIR" Name="sounds">
 						<Directory Id="CUSTOM_SOUNDS_DIR" Name="custom"/>
@@ -361,10 +365,15 @@
 		<CustomAction Id="StopApp" ExeCommand='cmd.exe /c  echo Stopping SIPServer... please do not close window &amp;&amp; [MYAPPFOLDER]\SIPServer.exe -stop 2>NUL >NUL &amp;&amp; taskkill /F /IM gst-ptp-helper.exe 2>NUL >NUL' Directory="MYAPPFOLDER" Execute="deferred" Return="ignore" Impersonate="no" />
 		<CustomAction Id="StopSvc" ExeCommand='cmd.exe /c echo Stopping service... please do not close window &amp;&amp; sc stop SIPServer 2>NUL >NUL &amp;&amp; sc stop "SIP Server" 2>NUL >NUL' Directory="MYAPPFOLDER" Execute="deferred" Return="ignore" Impersonate="no" />
 		<CustomAction Id="DeleteSvc" ExeCommand='cmd.exe /c echo Uninstalling service... please do not close window &amp;&amp; sc delete SIPServer 2>NUL >NUL  sc delete "SIP Server" 2>NUL >NUL' Directory="MYAPPFOLDER" Execute="deferred" Return="ignore" Impersonate="no" />
+		<CustomAction Id="StopVoskSvc" ExeCommand='cmd.exe /c echo Stopping ASR service... please do not close window &amp;&amp; sc stop VoskASR 2>NUL >NUL &amp;' Directory="VOSKFOLDER" Execute="deferred" Return="ignore" Impersonate="no" />
+		<CustomAction Id="DeleteVoskSvc" ExeCommand='cmd.exe /c echo Uninstalling service... please do not close window &amp;&amp; sc delete VoskASR 2>' Directory="VOSKFOLDER" Execute="deferred" Return="ignore" Impersonate="no" />
 		<CustomAction Id="Backup" ExeCommand='cmd.exe /c echo Backing up... please do not close window. This may take some time depending on the size of the log files. &amp;&amp; XCOPY [MYAPPFOLDER] [APPROOT]\SIPServerTemp /Y/C/H/E/J/K/O/Q/I >NUL 2>NUL' Directory="APPROOT" Execute="deferred" Return="ignore" Impersonate="no" />
 		<CustomAction Id="Rename" ExeCommand='cmd.exe /c [MYAPPFOLDER]\RenBackup.bat [APPROOT] ' Directory="APPROOT" Execute="deferred" Return="ignore" Impersonate="no" />
 		<CustomAction Id="SetIP" ExeCommand='cmd.exe /c [MYAPPFOLDER]\SetIP.bat [TCPADR] [UDPADR] [MYAPPFOLDER]' Directory="MYAPPFOLDER" Execute="deferred" Return="ignore" Impersonate="no" />
 		<CustomAction Id="InstallService" ExeCommand='[MYAPPFOLDER]\nssm install SIPServer "[MYAPPFOLDER]\SIPServer.exe"' Directory="MYAPPFOLDER" Execute="deferred" Impersonate="no" Return="ignore" />
-		<CustomAction Id="ConfigSvcSetup" ExeCommand='cmd.exe /c echo Configuring service... please do not close window &amp;&amp; sc failure SIPServer reset=259100 actions=restart/10000 2>NUL >NUL' Directory="MYAPPFOLDER" Execute="deferred" Return="ignore" Impersonate="no" />
+		<CustomAction Id="ConfigSvcSetup" ExeCommand='cmd.exe /c echo Configuring service... please do not close window &amp;&amp; sc failure SIPServer reset=259100 actions=restart/10000 2>NUL >NUL' Directory="VOSKFOLDER" Execute="deferred" Return="ignore" Impersonate="no" />
+		<CustomAction Id="InstallVoskService" ExeCommand='[MYAPPFOLDER]\nssm install VoskASR "[MYAPPFOLDER]\Vosk\Vosk_server.exe"' Directory="VOSKFOLDER" Execute="deferred" Impersonate="no" Return="ignore" />
+		<CustomAction Id="ConfigVoskSvcSetup" ExeCommand='cmd.exe /c echo Configuring service... please do not close window &amp;&amp; sc failure VoskASR reset=259100 actions=restart/10000 2>NUL >NUL' Directory="VOSKFOLDER" Execute="deferred" Return="ignore" Impersonate="no" />
+		<CustomAction Id="SetArgsVoskService" ExeCommand='[MYAPPFOLDER]\nssm set VoskASR AppParameters "[VOSKFOLDER]\models\vosk-model-small-en-us-0.15 2700" ' Directory="MYAPPFOLDER" />
 	</Fragment>
 </Wix>

@@ -4,3 +4,8 @@ C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\src\mod\languages\mod_mana
 C:\Development\GitHub\SIPServer-fork\SIPServer\src\mod\languages\mod_managed\x64\mod_managed.2017.vcxproj.AssemblyReference.cache
 C:\Development\GitHub\GERRAudio\SIPServer-fork\src\mod\languages\mod_managed\x64\mod_managed.2017.vcxproj.AssemblyReference.cache
 E:\Development\SIPServerFork\src\mod\languages\mod_managed\x64\mod_managed.2017.vcxproj.AssemblyReference.cache
+C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\libgcc_s_seh-1.dll
+C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\libstdc++-6.dll
+C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\libvosk.dll
+C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\libwinpthread-1.dll
+C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\x64\mod_managed.2017.vcxproj.AssemblyReference.cache
