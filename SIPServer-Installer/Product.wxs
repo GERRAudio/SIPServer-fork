@@ -31,6 +31,8 @@
 	<?define ReleaseBuildDirectoryPath = "..\..\SIPServer\x64\Release\" ?>
 	<!-- where to harvest gstreamer files from -->
 	<?define GSTMediaDirectoryPath = "..\..\SIPServer\x64\Media\" ?>
+	<!-- where to harvest VoskASR files from -->
+	<?define VoskASRDirectoryPath = "..\..\SIPServer\x64\Vosk\" ?>
 	<!-- where to harvest utility installer files from -->
 	<?define IconsEtcPath= ".\InstallUtils\" ?>
 	<!-- where to get license related files -->
