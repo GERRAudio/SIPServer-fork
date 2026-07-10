@@ -39,6 +39,8 @@
 	<?define LicensePath= "..\..\Licensing\" ?>
 	<!-- where to harvest custom audio prompts from -->
 	<?define CustomSoundsPath = "..\..\SIPServer\conf\Bruce\custom" ?>
+	<!-- where to harvest custom config from -->
+	<?define CustomConfPath = "..\..\SIPServer\conf\Bruce\conf" ?>
 
 
 	<?define SIPServerVersion=1.10.14?>
@@ -59,6 +61,25 @@
 		<Property Id="MSIUSEREALADMINDETECTION" Value="1" />
 		<MediaTemplate EmbedCab="yes" />
 
+		<!--for check box, if not initialized will remain unchecked-->
+		<Property Id="OVERWRITE_CONFIGS" Secure="yes" />
+
+		<!-- TODO
+		<DirectoryRef Id="DialplanDir">
+				<Component Id="VanillaDefaultXml" Condition="NOT OVERWRITE_CONFIGS = &quot;1&quot;">
+					<File Id="VanillaDefaultFile"
+						  Source="$(CustomConfPath\dialplan\"
+						  Name="001_asr.xml" />
+				</Component>
+				<Component Id="CustomDefaultXml" Condition="OVERWRITE_CONFIGS = &quot;1&quot;">
+					<File Id="CustomDefaultFile"
+						  Source="$(CustomConfPath\dialplan\"
+						  Name="default.xml" />
+				</Component>
+			</DirectoryRef>
+		-->
+		
+		
 		<Property Id="ROOTDRIVE" Value="C:\"/>
 		<Feature Id="SIPSERVER" Title="IP Telephony Server" Level="1">
 			<ComponentGroupRef Id="HarvestedComponents"/>
@@ -74,6 +95,7 @@
 			<ComponentRef Id="ApplicationShortcutDesktop" />
 		</Feature>
 
+		
 		<!-- VC redistributable install C:\Windows\System32-->
 		<DirectoryRef Id="TARGETDIR">
 			<Merge Id="VCRedist"
@@ -89,7 +111,7 @@
 		<UIRef Id="CustomUI_IP" />
 		<Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Display important setup information" />
 
-		<UI>
+		<!--UI>
 			<ui:WixUI
 			  Id="WixUI_InstallDir_WithIP"
 			  InstallDirectory="AppRoot"
@@ -100,8 +122,48 @@
 			  Event="DoAction"
 			  Value="LaunchReadme"
 			  Condition='(WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1)  and NOT Installed'/>
-		</UI>
+		</UI-->
 
+
+		<UI>
+			<ui:WixUI Id="WixUI_InstallDir_WithIP" InstallDirectory="AppRoot" />
+
+			<Dialog Id="ConfigOptionsDlg" Width="370" Height="270" Title="Configuration Options">
+
+				<Control Id="Title" Type="Text" X="15" Y="15" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="Advanced Configuration" />
+				<Control Id="Description" Type="Text" X="25" Y="35" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Select how you want to handle existing configuration files." />
+				<Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+
+				<Control Id="OverwriteConfigsCheckbox" Type="CheckBox" X="25" Y="80" Width="320" Height="17"
+						 Property="OVERWRITE_CONFIGS" CheckBoxValue="1"
+						 Text="Overwrite existing configuration files?" />
+
+				<Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+				<Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="Next" />
+				<Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="Back" />
+				<Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+					<Publish Event="SpawnDialog" Value="CancelDlg" />
+				</Control>
+			</Dialog>
+			
+			<Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="ConfigOptionsDlg" Order="3" Condition="LicenseAccepted = &quot;1&quot;" />
+
+			<Publish Dialog="ConfigOptionsDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" />
+
+			<Publish Dialog="ConfigOptionsDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" />
+
+			<Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="ConfigOptionsDlg" Order="3" />
+
+			<Publish Dialog="ExitDialog"
+					 Control="Finish"
+					 Event="DoAction"
+					 Value="LaunchReadme"
+					 Condition="(WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1) and NOT Installed"/>
+		</UI>
+		
+		
+		
+		
 		<Binary Id="readme.txt" SourceFile="$(IconsEtcPath)readme.txt" />
 		<Property Id="WixShellExecBinaryId" Value="readme.txt" />
 		<CustomAction Id="LaunchReadme" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
