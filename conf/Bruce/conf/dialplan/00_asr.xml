@@ -1,7 +1,14 @@
 <include>
   
   <context name="default">
-    
+<extension name="asr_hold_queue">
+  <condition field="destination_number" expression="^5601$">
+    <action application="answer"/>
+    <action application="sched_hangup" data="+20 alloc_failure"/>
+    <action application="loop_playback" data="C:/inetpub/SIPServer/sounds/custom/asr_please_wait.wav"/>
+  </condition>
+</extension>
+
     <extension name="vosk_asr_processing">
       <condition field="destination_number" expression="^5602$">
         <action application="answer"/>
@@ -19,6 +26,14 @@
         <action application="conference" data="asr_holding_room@default+flags{mute|waste|nomoh}"/>
       </condition>
     </extension>
+	
+	<extension name="asr_announce_only">
+		<condition field="destination_number" expression="^5603$">
+			<action application="answer"/>
+			<action application="sleep" data="50"/>
+			<action application="playback" data="silence_stream://20000"/>
+		</condition>
+	</extension>
 
   </context>
 
