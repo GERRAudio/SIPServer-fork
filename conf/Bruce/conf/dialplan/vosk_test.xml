@@ -1,0 +1,22 @@
+<include>
+  <extension name="vosk_test_9996">
+    <condition field="destination_number" expression="^9996$">
+      <action application="answer"/>
+      <action application="sleep" data="500"/>
+
+      <action application="set" data="play_and_detect_speech_close_asr=true"/>
+      
+      <action application="play_and_detect_speech" data="tone_stream://%(200,100,800,1000) detect:vosk default"/>
+
+      <action application="log" data="WARNING Raw Vosk Result: ${detect_speech_result}"/>
+    </condition>
+
+    <condition field="${detect_speech_result}" expression='"text"\s*:\s*"([^"]+)"'>
+      
+      <action application="log" data="WARNING SUCCESS! You said: $1"/>
+
+      <action application="playback" data="tone_stream://%(150,50,1000,1200);%(150,50,1200,1400)"/>
+      <action application="hangup"/>
+    </condition>
+  </extension>
+</include>
