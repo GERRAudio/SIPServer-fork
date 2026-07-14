@@ -1,6 +1,5 @@
 <include>
-  
-  <context name="default">
+
 <extension name="asr_hold_queue">
   <condition field="destination_number" expression="^5601$">
     <action application="answer"/>
@@ -34,7 +33,5 @@
 			<action application="playback" data="silence_stream://20000"/>
 		</condition>
 	</extension>
-
-  </context>
 
 </include>
