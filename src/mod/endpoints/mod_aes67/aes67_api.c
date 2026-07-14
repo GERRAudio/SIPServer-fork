@@ -701,6 +701,12 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	GstElement *rtpdepay = NULL;
 	GstElement *rtpjitbuf = NULL;
 	char *pipeline_name = NULL;
+	// Tracks whether the TX element set (tx_valve/capsfilter/tx_audioconv/rtp_pay/
+	// udpsink) has already been transferred to the bin via gst_bin_add_many(). Once
+	// TRUE, the bin is the sole owner of rtp_pay - the outer `error:` label must not
+	// gst_object_unref() it again after the pipeline itself has already been torn
+	// down (that would be a use-after-free on an element the bin already freed).
+	gboolean tx_added_to_bin = FALSE;
 
 	// init entire structure
 	g_stream_t *stream = g_new0(g_stream_t, 1);			
@@ -737,6 +743,15 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		GstCaps *udp_caps = NULL;
 		GstCaps *rx_caps = NULL;
+		// Tracks whether gst_bin_add_many() below has already transferred ownership
+		// of udp_source/rtpdepay/rtpjitbuf/rx_audioconv/capsfilter/split/deinterleave
+		// to the pipeline. Once TRUE, the bin owns the sole reference to each of
+		// these and ddirRX_error must NOT call gst_object_unref() on them again -
+		// doing so over-releases a live, bin-owned element and leaves a dangling
+		// pointer in the bin's child list (crashes later when something walks it,
+		// e.g. flush_all_queues()/check_pipeline_memory_pressure() during a memory
+		// cleanup pass, or pipeline teardown at the outer `error:` label).
+		gboolean rx_added_to_bin = FALSE;
 
 #ifndef ENABLE_THREADSHARE
 		udp_source = AL_gst_element_factory_make("udpsrc", "rx-src");
@@ -844,6 +859,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		gst_bin_add_many(GST_BIN(pipeline), udp_source, rtpdepay, rtpjitbuf, rx_audioconv, capsfilter, split, deinterleave, NULL);
 		g_atomic_int_add(&stream->pipeline_elements_count, 7);
+		rx_added_to_bin = TRUE; // bin now owns these - ddirRX_error must not unref them
 
 		if (!gst_element_link_many(udp_source, rtpjitbuf, rtpdepay, split, rx_audioconv, capsfilter, deinterleave, NULL)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements in the rx pipeline");
@@ -858,20 +874,39 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		udp_caps = NULL;
 		DA_gst_caps_unref(rx_caps); 
 		rx_caps = NULL;
-		DA_gst_object_unref(GST_OBJECT(udp_source));
+		tee = NULL; // always bin-owned as soon as created in the loop above, never ours to free here
+		if (rx_added_to_bin) {
+			// gst_bin_add_many() already ran: the pipeline is the sole owner of each
+			// of these elements now. Do NOT gst_object_unref() them - that would
+			// over-release a live, bin-owned element and leave a dangling pointer in
+			// the bin's child list. Just correct the debug accounting, exactly like
+			// ddirRX_exit does; the bin will free them for real when the pipeline is
+			// torn down at the outer `error:` label.
+			if (udp_source) DA_NoNulling_dec_objs(udp_source);
+			if (rtpdepay) DA_NoNulling_dec_objs(rtpdepay);
+			if (rtpjitbuf) DA_NoNulling_dec_objs(rtpjitbuf);
+			if (rx_audioconv) DA_NoNulling_dec_objs(rx_audioconv);
+			if (capsfilter) DA_NoNulling_dec_objs(capsfilter);
+			if (split) DA_NoNulling_dec_objs(split);
+			if (deinterleave) DA_NoNulling_dec_objs(deinterleave);
+		} else {
+			// Failed before gst_bin_add_many() ran: these elements (whichever were
+			// successfully created) have no owner yet, so they really do need a
+			// real unref here or they leak.
+			DA_gst_object_unref(GST_OBJECT(udp_source));
+			DA_gst_object_unref(GST_OBJECT(deinterleave));
+			DA_gst_object_unref(GST_OBJECT(rx_audioconv));
+			DA_gst_object_unref(GST_OBJECT(capsfilter));
+			DA_gst_object_unref(GST_OBJECT(split));
+			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+			DA_gst_object_unref(GST_OBJECT(rtpdepay));
+		}
 		udp_source = NULL;
-		DA_gst_object_unref(GST_OBJECT(deinterleave));
 		deinterleave = NULL;
-		DA_gst_object_unref(GST_OBJECT(rx_audioconv));
 		rx_audioconv = NULL;
-		DA_gst_object_unref(GST_OBJECT(capsfilter));
 		capsfilter = NULL;
-		tee = NULL;
-		DA_gst_object_unref(GST_OBJECT(split));
 		split = NULL;
-		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));		//added to pipeline
 		rtpjitbuf = NULL;
-		DA_gst_object_unref(GST_OBJECT(rtpdepay));		// added to pipeline
 		rtpdepay = NULL;
 		goto error;
 
@@ -1005,6 +1040,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		gst_bin_add_many(GST_BIN(pipeline), tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL);
 		g_atomic_int_add(&stream->pipeline_elements_count, 5);
+		tx_added_to_bin = TRUE; // bin now owns these (incl. rtp_pay) - do not unref them again
 
 		if (!gst_element_link_many(audiointerleave, tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements");
@@ -1017,18 +1053,35 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	ddirTX_error:
 		DA_gst_caps_unref(caps);
 		caps = NULL;
-		DA_gst_object_unref(GST_OBJECT(udpsink));
-		udpsink = NULL;
-		DA_gst_object_unref(GST_OBJECT(tx_audioconv));
-		tx_audioconv = NULL;
-		DA_gst_object_unref(GST_OBJECT(audiointerleave));
+		// audiointerleave is added to the bin unconditionally right after creation,
+		// and any appsrc reaching here was added to the bin inside the loop before
+		// its own link check could fail - both are ALWAYS bin-owned by the time we
+		// can land here. Never gst_object_unref() them; the bin frees them when the
+		// pipeline is torn down at the outer `error:` label.
+		if (audiointerleave) DA_NoNulling_dec_objs(audiointerleave);
 		audiointerleave = NULL;
-		DA_gst_object_unref(GST_OBJECT(capsfilter));
+		appsrc = NULL; // bin-owned (added to pipeline in loop), not counted, never ours to free here
+		if (tx_added_to_bin) {
+			// gst_bin_add_many() already ran: tx_valve/capsfilter/tx_audioconv/
+			// rtp_pay/udpsink are bin-owned now - accounting only, same reasoning
+			// as ddirRX_error above.
+			if (udpsink) DA_NoNulling_dec_objs(udpsink);
+			if (tx_audioconv) DA_NoNulling_dec_objs(tx_audioconv);
+			if (capsfilter) DA_NoNulling_dec_objs(capsfilter);
+			if (tx_valve) DA_NoNulling_dec_objs(tx_valve);
+			// rtp_pay accounted for by the outer `error:` label
+		} else {
+			// Failed before gst_bin_add_many() ran: these have no owner yet and
+			// really do need a real unref here, or they leak.
+			DA_gst_object_unref(GST_OBJECT(udpsink));
+			DA_gst_object_unref(GST_OBJECT(tx_audioconv));
+			DA_gst_object_unref(GST_OBJECT(capsfilter));
+			DA_gst_object_unref(GST_OBJECT(tx_valve));
+		}
+		udpsink = NULL;
+		tx_audioconv = NULL;
 		capsfilter = NULL;
-		DA_gst_object_unref(GST_OBJECT(tx_valve));
 		tx_valve = NULL;
-		gst_object_unref(GST_OBJECT(appsrc));
-		appsrc = NULL; // added to pipeline in loop, not counted
 		goto error;
 
 	ddirTX_exit:
@@ -1048,6 +1101,9 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	GstElement *udpsrc = NULL;
 	GstElement *fakesink = NULL;
 	GstCaps *caps = NULL;
+	// Tracks whether udpsrc/fakesink have already been transferred to the bin via
+	// gst_bin_add_many() below - once TRUE, bksnd_error must not unref them again.
+	gboolean bksnd_added_to_bin = FALSE;
 	if (data->is_backup_sender) {
 
 		/* create a dummy pipeline with `udpsrc ! fakesink` just to receive on udp and read the last-sample from
@@ -1095,6 +1151,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			// Count backup sender elements that were allocated via AL_ wrappers:
 			// udpsrc, fakesink = 2 elements
 			g_atomic_int_add(&stream->pipeline_elements_count, 2);
+			bksnd_added_to_bin = TRUE; // bin now owns these - bksnd_error must not unref them
 
 			if (!gst_element_link_many(udpsrc, fakesink, NULL)) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -1130,9 +1187,19 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	bksnd_error:
 		DA_gst_caps_unref(caps);
 		caps = NULL;
-		DA_gst_object_unref(GST_OBJECT(udpsrc));
+		if (bksnd_added_to_bin) {
+			// gst_bin_add_many() already ran (link failure or the PAUSED state
+			// change failing afterwards): the bin owns these now - accounting
+			// only, same reasoning as ddirRX_error/ddirTX_error above.
+			if (udpsrc) DA_NoNulling_dec_objs(udpsrc);
+			if (fakesink) DA_NoNulling_dec_objs(fakesink);
+		} else {
+			// Failed before gst_bin_add_many() ran (creation failure): no owner
+			// yet, so a real unref is needed here or they leak.
+			DA_gst_object_unref(GST_OBJECT(udpsrc));
+			DA_gst_object_unref(GST_OBJECT(fakesink));
+		}
 		udpsrc = NULL;
-		DA_gst_object_unref(GST_OBJECT(fakesink));
 		fakesink = NULL;
 		goto error;
 	}
@@ -1191,7 +1258,18 @@ error:
 	if (pipeline) gst_element_set_state(pipeline, GST_STATE_NULL); // added check
 	DA_gst_object_unref(GST_OBJECT(pipeline));
 	pipeline = NULL;
-	DA_gst_object_unref(GST_OBJECT(rtp_pay));
+	// If the TX element set was already handed to the bin (tx_added_to_bin), the
+	// gst_object_unref(pipeline) above just tore rtp_pay down along with the rest
+	// of the bin's children - unreffing it again here would be a use-after-free.
+	// Only real-unref it when it was never given to a bin (RX-only pipelines where
+	// rtp_pay stays NULL, or a TX failure that happened before gst_bin_add_many()
+	// ran, in which case ddirTX_error already real-freed it and set it NULL, making
+	// this a safe no-op).
+	if (!tx_added_to_bin) {
+		DA_gst_object_unref(GST_OBJECT(rtp_pay));
+	} else if (rtp_pay) {
+		DA_NoNulling_dec_objs(rtp_pay); // bin already freed it - accounting only
+	}
 	rtp_pay = NULL;
 
 	if (stream != NULL) {

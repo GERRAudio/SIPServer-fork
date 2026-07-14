@@ -3090,9 +3090,9 @@ static int is_sock_equal(udp_sock_t *a, udp_sock_t *b)
 }
 
 // Clean memory on a periodic basis, polled and called on a timer
-void periodic_mem_check(BOOL force)
+BOOL periodic_mem_check(BOOL force)
 {
-	if (!memcheck_active) return;
+	if (!memcheck_active) return FALSE;
 	// IDLE DETECTION and mem clr
 	switch_time_t now = switch_micro_time_now();
 	static switch_time_t last_check = 0; // persists
@@ -3100,9 +3100,24 @@ void periodic_mem_check(BOOL force)
 	if (last_check == 0) last_check = now;
 
 	if ((now - last_check) < IDLE_POLLING_SEC * 1000000LL) {
-		return; // Skip - too soon
+		return FALSE; // Skip - too soon
 	}
 	last_check = now;
+
+	// Never touch process heaps while streams are actively being created or
+	// torn down (config reload, stream add/remove - see destroying_streams
+	// elsewhere in this file). That's exactly when GStreamer/GLib are creating
+	// and destroying their own private heaps, and CompactHeaps() racing against
+	// that churn is what exposed the GetProcessHeaps() TOCTOU bug in
+	// trim_mem.c. force=TRUE (used to guarantee cleanup fires even on a server
+	// that's never truly idle) must not override this - skip this cycle and
+	// let the caller decide whether to retry sooner rather than waiting for
+	// the next full interval.
+	if (g_atomic_int_get(&aes67_globals.destroying_streams)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+						  "Skipping periodic mem check - streams are being created/torn down\n");
+		return FALSE;
+	}
 
 	switch_time_t idle_time = now - aes67_globals.last_call_activity;
 	if (force || (idle_time > (IDLE_THRESHOLD_SEC * 1000000LL))) {
@@ -3114,7 +3129,9 @@ void periodic_mem_check(BOOL force)
 		aes67_globals.last_call_activity = now;
 		switch_mutex_unlock(aes67_globals.pvt_lock);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Periodic mem clear firing\n");
+		return TRUE;
 	}
+	return FALSE;
 }
 
 

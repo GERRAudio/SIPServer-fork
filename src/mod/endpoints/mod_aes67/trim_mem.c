@@ -1,4 +1,4 @@
-﻿#include "aes67_api.h"
+#include "aes67_api.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -30,14 +30,51 @@ volatile BOOL memcheck_active = TRUE;			//default is on
 
 void CompactHeaps(void)
 {
-	// Get count first
-	DWORD numHeaps = GetProcessHeaps(0, NULL);
-	if (numHeaps == 0) return;
+	// NOTE: GetProcessHeaps() is called twice - once to get the current heap
+	// count, then again to actually fill a buffer sized for that count. If any
+	// thread creates a new private heap (GStreamer/GLib and the CRT do this
+	// dynamically, e.g. while pipelines are being built/torn down) in the window
+	// between those two calls, the second call's return value ("filled") comes
+	// back LARGER than the buffer we allocated, and per the Win32 docs the buffer
+	// is not guaranteed to have been filled with valid handles in that case.
+	// Blindly looping "filled" times over a buffer sized for the old, smaller
+	// count reads past the end of the allocation and hands HeapCompact() garbage
+	// HANDLE values - undefined behavior, and a very plausible source of the
+	// intermittent crash during memory cleanup, especially under Dante
+	// reconnect churn where pipelines (and their heaps) are being created/torn
+	// down around the same time the cleanup timer fires.
+	//
+	// Fix: loop until a fill actually fits the buffer we sized for it, growing
+	// the buffer and retrying if the heap count grew out from under us.
+	DWORD capacity = 0;
+	HANDLE *heaps = NULL;
+	DWORD filled = 0;
 
-	HANDLE *heaps = (HANDLE *)HeapAlloc(GetProcessHeap(), 0, numHeaps * sizeof(HANDLE));
-	if (!heaps) return;
+	do {
+		DWORD needed = GetProcessHeaps(0, NULL);
+		if (needed == 0) {
+			if (heaps) HeapFree(GetProcessHeap(), 0, heaps);
+			return;
+		}
 
-	DWORD filled = GetProcessHeaps(numHeaps, heaps);
+		if (needed > capacity) {
+			HANDLE *resized = heaps
+				? (HANDLE *)HeapReAlloc(GetProcessHeap(), 0, heaps, needed * sizeof(HANDLE))
+				: (HANDLE *)HeapAlloc(GetProcessHeap(), 0, needed * sizeof(HANDLE));
+			if (!resized) {
+				if (heaps) HeapFree(GetProcessHeap(), 0, heaps);
+				return;
+			}
+			heaps = resized;
+			capacity = needed;
+		}
+
+		filled = GetProcessHeaps(capacity, heaps);
+		// If filled > capacity, another heap was created in the race window
+		// between the two calls above - retry with a bigger buffer instead of
+		// trusting a stale count.
+	} while (filled > capacity);
+
 	for (DWORD i = 0; i < filled; ++i) { HeapCompact(heaps[i], 0); }
 
 	HeapFree(GetProcessHeap(), 0, heaps);
@@ -80,8 +117,13 @@ void heartbeat_callback(switch_event_t *event)
 	gint threshold = (gint)(((3600L / 20L) * g_atomic_int_get(&interval_min)) / 60L);
 
 	if (g_atomic_int_get(&call_count) >= threshold) {
-		g_atomic_int_set(&call_count, 0);
-		periodic_mem_check(TRUE);
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "AES67: Cleaning memory ---\n");
+		if (periodic_mem_check(TRUE)) {
+			g_atomic_int_set(&call_count, 0);
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "AES67: Cleaning memory ---\n");
+		}
+		// else: periodic_mem_check skipped this cycle (e.g. streams are mid
+		// create/teardown right now) - leave call_count where it is so we
+		// retry on the very next heartbeat tick instead of waiting a full
+		// interval_min again.
 	}
 }

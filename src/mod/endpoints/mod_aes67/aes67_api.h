@@ -102,7 +102,7 @@ void dump_pipeline(GstPipeline *pipe, const char *name);
 void CompactHeaps(void);
 void TrimCurrentProcessWorkingSet(void);
 
-void periodic_mem_check(BOOL force);
+BOOL periodic_mem_check(BOOL force);
 void deep_clean_gst(void);
 void check_pipeline_memory_pressure(g_stream_t *stream);
 void flush_all_queues(g_stream_t *stream);
