@@ -574,7 +574,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "conf", "conf", "{C8FF8DCB-F
 		src\mod\asr_tts\mod_vosk\conf\default.esl.xml = src\mod\asr_tts\mod_vosk\conf\default.esl.xml
 		conf\Bruce\conf\README.md = conf\Bruce\conf\README.md
 		conf\Bruce\conf\vars.xml = conf\Bruce\conf\vars.xml
-		src\mod\asr_tts\mod_vosk\conf\vosk.conf.xml = src\mod\asr_tts\mod_vosk\conf\vosk.conf.xml
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "autoload_configs", "autoload_configs", "{0644AC71-76A5-4DC5-BEFD-25F515CA97CE}"
@@ -582,7 +581,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "autoload_configs", "autoloa
 		conf\Bruce\conf\autoload_configs\aes67.conf.xml = conf\Bruce\conf\autoload_configs\aes67.conf.xml
 		conf\Bruce\conf\autoload_configs\conference.conf.xml = conf\Bruce\conf\autoload_configs\conference.conf.xml
 		conf\Bruce\conf\autoload_configs\licensing.conf.xml = conf\Bruce\conf\autoload_configs\licensing.conf.xml
-		src\mod\asr_tts\mod_vosk\conf\vosk.conf.xml = src\mod\asr_tts\mod_vosk\conf\vosk.conf.xml
+		conf\Bruce\conf\autoload_configs\vosk.conf.xml = conf\Bruce\conf\autoload_configs\vosk.conf.xml
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dialplan", "dialplan", "{93DAB5BC-D36F-4CEF-9E37-71324B0198C2}"
