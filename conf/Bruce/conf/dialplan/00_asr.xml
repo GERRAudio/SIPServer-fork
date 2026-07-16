@@ -15,7 +15,7 @@
         <action application="set" data="disable_break=true"/>
         <action application="playback" data="tone_stream://%(150,0,1000)"/>
         <action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
-        <action application="sleep" data="50"/>
+        <!--action application="sleep" data="50"/-->
         <action application="play_and_detect_speech" data="silence_stream://5000 detect:vosk default"/>
         <action application="set" data="my_post_body=${detect_speech_result}"/>
         <action application="set" data="disable_break=false"/>
