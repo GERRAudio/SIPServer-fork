@@ -2,7 +2,7 @@
 <configuration name="vosk.conf" description="Vosk ASR Configuration">
   <settings>
     <!-- Minimum confidence required (0.0 to 1.0). Speech under this threshold is ignored. -->
-    <param name="min-confidence" value="0.65"/> 
+    <param name="min-confidence" value="0.85"/> 
     <!-- Voice Activity Detection: controls how strictly silence vs voice is separated. 
          Higher values require clearer, louder speech to trigger an utterance start. -->
     <param name="vad-mode" value="3"/> <!-- Mode 0 (least strict) to 3 (most strict filtering) -->
