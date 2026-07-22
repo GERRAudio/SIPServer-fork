@@ -16,13 +16,21 @@
         <action application="playback" data="tone_stream://%(150,0,1000)"/>
         <action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
         <!--action application="sleep" data="50"/-->
+		<!-- Attenuate the incoming audio (read stream) to suppress the noise floor -->
+		<action application="set" data="rx_gain=-5"/>
 		<action application="play_and_detect_speech" data="silence_stream://10000 detect:vosk default"/>
         <action application="set" data="my_post_body=${detect_speech_result}"/>
         <action application="set" data="disable_break=false"/>
         <action application="set" data="res=${bgapi(curl http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}')}"/>
         <action application="detect_speech" data="stop"/>
-        <action application="playback" data="silence_stream://4000"/>
+		
+		<!-- Hold the channel open with 6 seconds of silence, waiting for C# to hijack it -->
+        <action application="playback" data="silence_stream://6000"/>
+        
+        <!--failsafe action -->
+        <!-- If Communicator never responded, drop them in the hold room -->
         <action application="conference" data="asr_holding_room@default+flags{mute|waste|nomoh}"/>
+
       </condition>
     </extension>
 	
