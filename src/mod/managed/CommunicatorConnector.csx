@@ -127,6 +127,8 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         return MakeCall(portAudioInterface, destination, ++attempts).Result;
     }
 
+    // Requires IIS/Communicator to be up and running. If IIS is restarted, there is no need to clean out phone bridges.
+    // Made Async 3.28.26 so it's fire and forget - if IIS isn't running, we don't care if it succeeds
     internal void CleanOutPhoneConferences()
     {
         string apiUrl = String.Format(apiServer + "phone/CleanUpAllPhoneBridges/on/Start-Up");
