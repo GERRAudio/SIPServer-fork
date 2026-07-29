@@ -36,6 +36,7 @@
  *
  */
 
+//#define LICENSING_ENABLED
 #include "aes67_alloc.h"
 #include "aes67_api.h"
 #include "aes67_counters.h"
@@ -1664,7 +1665,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	 switch_stream_handle_t stream = {0};
 
 	*module_interface = switch_loadable_module_create_module_interface(pool, modname);
-
+#ifdef LICENSING_ENABLED
 	/* Check if this module is licensed */
 	SWITCH_STANDARD_STREAM(stream);
 	switch_api_execute("check_module", "aes67", NULL, &stream);
@@ -1675,10 +1676,12 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 		switch_safe_free(stream.data);
 		return SWITCH_STATUS_GENERR;
 	}
+
 	switch_safe_free(stream.data);
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_aes67: License verified, loading...\n");
 
+#endif
 	/* resume normal operation */
 	switch_status_t status;
 	switch_api_interface_t *api_interface;
