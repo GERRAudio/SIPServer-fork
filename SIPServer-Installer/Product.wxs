@@ -33,6 +33,8 @@
 	<?define GSTMediaDirectoryPath = "..\..\Media" ?>
 	<!-- where to harvest VoskASR files from -->
 	<?define VoskASRDirectoryPath = "..\..\SIPServer\Vosk\" ?>
+	<!-- where to harvest SipServerDASH GUI files from -->
+	<?define SIPServerDASHDirectoryPath = "..\..\SIPServer GUI\SIPServerDashboard\obj\x64\Release\" ?>
 	<!-- where to harvest utility installer files from -->
 	<?define IconsEtcPath= ".\InstallUtils\" ?>
 	<!-- where to get license related files -->
@@ -44,8 +46,8 @@
 
 
 	<?define SIPServerVersion=1.10.14?>
-	<?define MSIVersion=1.7?>
-	<!-- Update for new releases of this installer licensing begins at 1.10.14 1.7 -->
+	<?define MSIVersion=1.8?>
+
 
 	<Package Name="IP Telephony &#13;&#10;SIPServer v$(SIPServerVersion)-msi v$(MSIVersion)"
 		 Language="1033"
@@ -88,6 +90,13 @@
 			<ComponentGroupRef Id="QueueFolders"/>
 			<ComponentGroupRef Id="CustomSoundsComponents"/>
 			<ComponentGroupRef Id="VoskASREngine"/>
+
+			<ComponentRef Id="CreateConfFolder"/>
+			<ComponentGroupRef Id="ConfDefaultsComponents"/>
+
+			<ComponentGroupRef Id="SIPServerDASH"/>
+			<ComponentGroupRef Id="enSoundsComponents"/>
+			<ComponentRef Id="CreateLogFolder"/>
 		</Feature>
 
 		<Feature Id="ProductFeature" Title="Main Product" Level="1">
@@ -202,16 +211,26 @@
 			<Custom Action="StopApp"		      After="InstallInitialize"  />
 			<Custom Action="StopSvc"		      After="StopApp"  />
 			<Custom Action="DeleteSvc"	      After="StopSvc"  />
-			<Custom Action="Backup"			      After="DeleteSvc"
-					Condition ='UPGRADINGPRODUCTCODE AND REMOVE~="ALL" AND NOT REINSTALL="ALL"'/>
-			<Custom Action="Rename"			      After="Backup"/>
-			<Custom Action="SetIP"			      Before="InstallService"/>
-			<Custom Action="InstallService"   Before="InstallFinalize"   />
-			<Custom Action="ConfigSvcSetup"   After="InstallService"/>
+
+			<!-- Added Vosk Stop and Delete Actions -->
+			<Custom Action="StopVoskSvc"          After="DeleteSvc" />
+			<Custom Action="DeleteVoskSvc"        After="StopVoskSvc" />
+
+			<Custom Action="Backup"               After="DeleteVoskSvc" Condition ='UPGRADINGPRODUCTCODE AND REMOVE~="ALL" AND NOT REINSTALL="ALL"'/>
+			<Custom Action="Rename"               After="Backup"/>
+			<Custom Action="SetIP"                Before="InstallService" Condition='NOT REMOVE="ALL"' />
+
+			<Custom Action="InstallService"       Before="InstallFinalize"   />
+			<Custom Action="ConfigSvcSetup"       After="InstallService"/>
+
+			<!-- Vosk Install Actions -->
 			<Custom Action="InstallVoskService"   Before="InstallFinalize"   />
 			<Custom Action="ConfigVoskSvcSetup"   After="InstallVoskService"/>
 			<Custom Action="SetArgsVoskService"   After="ConfigVoskSvcSetup"/>
-			<Custom Action="LaunchReadme"	    After ="InstallFinalize" Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT Installed'/>
+			<Custom Action="StartVoskSvc"         After="SetArgsVoskService" Condition='NOT REMOVE="ALL"' />
+			<Custom Action="DeployMissingConfigs" Before="SetIP" Condition='NOT REMOVE="ALL"' />
+
+			<Custom Action="LaunchReadme"		  After ="InstallFinalize" Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT Installed'/>
 		</InstallExecuteSequence>
 	</Package>
 
@@ -220,17 +239,30 @@
 			<Directory Id="AppRoot">
 				<Directory Id="MyAppFolder" Name="SIPServer">
 
+					<!-- The live configuration directory (created empty if it doesn't exist) -->
 					<Directory Id="CONF" Name="conf">
-						<Directory Id="AutoLoadConf" Name="AutoLoadConfigs"/>
+						<Component Id="CreateConfFolder" Guid="A1B2C3D4-E5F6-47A8-9B0C-1D2E3F4A5B6D">
+							<CreateFolder />
+						</Component>
+					</Directory>
+
+					<!-- The hidden staging directory where the installer drops the defaults -->
+					<Directory Id="CONF_DEFAULTS" Name="conf_defaults" />
+					<Directory Id="AutoLoadConf" Name="autoload_configs"/>
+					<Directory Id="LOG" Name="log">
+						<Component Id="CreateLogFolder" Guid="3DE37BDE-621C-4CCD-A653-C31A5B3B37D8">
+							<CreateFolder />
+						</Component>
 					</Directory>
 
 					<!-- Creating the required ASR Directories -->
 					<Directory Id="Asr_Queue" Name="asr-queue"/>
 					<Directory Id="VoskDir" Name="Vosk"/>
-
-					<!-- Creating the Sounds Directory for the ASR prompts-->
-					<Directory Id="Sounds_DIr" Name="sounds">
-						<Directory Id="Custom_Sounds_DIr" Name="custom"/>
+					<Directory Id="SIPServerDASHDir" Name="SipServerDASH"/>
+					<!-- Creating the Sounds Directory for the ASR prompts etc-->
+					<Directory Id="Sounds_Dir" Name="sounds">
+						<Directory Id="Custom_Sounds_Dir" Name="custom"/>
+						<Directory Id="en_Sounds_Dir" Name="en"/>
 					</Directory>
 
 				</Directory>
@@ -243,7 +275,8 @@
 
 		<Icon Id="GerrIcon.ico"   SourceFile="$(IconsEtcPath)\GerrAudio.ico"/>
 		<Icon Id="GerrIconW.ico"  SourceFile="$(IconsEtcPath)\GerrAudioW.ico"/>
-
+		<Icon Id="GerrAudioDash.ico"  SourceFile="$(IconsEtcPath)\GerrAudioDash.ico"/>
+		
 		<!-- Create and Purge Queue Folders on Install/Upgrade -->
 		<ComponentGroup Id="QueueFolders">
 			<Component Id="AsrQueueFolder" Guid="D3A7B6B0-1A2B-4C3D-8E9F-0123456789AB" Directory="Asr_Queue">
@@ -254,7 +287,7 @@
 		</ComponentGroup>
 
 		<!-- Custom Sounds Prompt Folder -->
-		<ComponentGroup Id="CustomSoundsComponents" Directory="Custom_Sounds_DIr">
+		<ComponentGroup Id="CustomSoundsComponents" Directory="Custom_Sounds_Dir">
 			<!-- Harvest all .wav files from the defined CustomSoundsPath -->
 			<Files Include="$(CustomSoundsPath)\**\*.wav" />
 		</ComponentGroup>
@@ -265,6 +298,13 @@
 			<Files Include="$(VoskASRDirectoryPath)\**\*" />
 		</ComponentGroup>
 
+		<!-- SIPServer DASH GUI Folder -->
+		<ComponentGroup Id="SIPServerDASH" Directory="SIPServerDASHDir">
+			<!-- Harvest all executables and config  -->
+			<Files Include="$(SIPServerDASHDirectoryPath)\**\*.exe" />
+			<Files Include="$(SIPServerDASHDirectoryPath)\**\*.xml" />
+		</ComponentGroup>
+
 		<DirectoryRef Id="DesktopFolder">
 			<!--Desktop shortcut-->
 			<Component Id="ApplicationShortcutDesktop" Guid="335335B2-F691-408E-A857-56C3D30DA636">
@@ -272,7 +312,8 @@
 				<Shortcut Id="ServiceStopDesktopShortcut" Name="Stop SIPServer Service" Description="SIPServer Service Stop" Target="[MyAppFolder]SvcStop.bat" WorkingDirectory="MyAppFolder" Icon="GerrIcon.ico" />
 				<Shortcut Id="CLIApplicationDesktopShortcut" Name="Command Line Interface (CLI)" Description="SIPServer Command Line Interface (CLI)" Target="[MyAppFolder]EngineCommandLine.exe" WorkingDirectory="MyAppFolder" Icon="GerrIconW.ico"/>
 				<Shortcut Id="ServiceQueryDesktopShortcut" Name="Service Status" Description="SIPServer Service Query Status" Target="[MyAppFolder]SvcQuery.bat" WorkingDirectory="MyAppFolder" Icon="GerrIcon.ico"/>
-
+				<Shortcut Id="SIPServerDASHDesktopShortcut" Name="SIPServer DASH" Description="SIPServer Dashboard GUI" Target="[MyAppFolder]/SIPServerDASH/SipServer DASH.exe" WorkingDirectory="MyAppFolder" Icon="GerrAudioDash.ico"/>
+				
 				<RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPServerIDT" Name="installed1" Type="integer" Value="1" KeyPath="yes"/>
 				<RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPServerDT" Name="installed1" Type="string" Value="SIPServer"  />
 				<RegistryValue Root="HKCU" Key="Software\GerrAudio\fs_cliIDT" Name="installed2" Type="integer" Value="1" />
@@ -291,7 +332,8 @@
 				<Shortcut Id="CLIApplicationStartMenuShortcut" Name="3 - Command Line Interface (CLI)" Description="Command Line Interface (CLI) to access the service" Target="[MyAppFolder]EngineCommandLine.exe" WorkingDirectory="MyAppFolder" Icon="GerrIconW.ico"/>
 				<Shortcut Id="ServiceQueryStartMenuShortcut" Name="4 - Service Status" Description="SIPServer Service Query Status" Target="[MyAppFolder]SvcQuery.bat" WorkingDirectory="MyAppFolder" Icon="GerrIcon.ico"/>
 				<Shortcut Id="ApplicationStartMenuShortcut" Name="5 - SIPServer Console" Description="SIPServer Console" Target="[MyAppFolder]SIPServer.exe" WorkingDirectory="MyAppFolder" Icon="GerrIcon.ico"/>
-
+				<Shortcut Id="SIPServerDASHShortcut" Name="6 - SIPServer GUI" Description="SIPServer Dashboard GUI" Target="[MyAppFolder]/SIPServerDASH/SipServer DASH.exe" WorkingDirectory="MyAppFolder" Icon="GerrAudioDash.ico"/>
+				
 				<RemoveFolder Id="UninstallShortcut" Directory="MyStartFolder" On="uninstall"/>
 
 				<RegistryValue Root="HKCU" Key="Software\GerrAudio\SIPSvcStartI" Name="installed3" Type="integer" Value="1" />
@@ -317,7 +359,19 @@
 					KeyPath="yes"/>
 			</Component>
 		</ComponentGroup>
-
+		
+		
+		<ComponentGroup Id="ConfDefaultsComponents" Directory="CONF_DEFAULTS">
+			<!-- Harvest all configs into the defaults folder -->
+			<Files Include="$(CustomConfPath)\**" />
+		</ComponentGroup>
+		
+		<!-- Standard English Sounds Prompt Folder -->
+		<ComponentGroup Id="enSoundsComponents" Directory="en_Sounds_Dir">
+			<!-- Harvest all files from the sounds\en path -->
+			<Files Include="$(ReleaseBuildDirectoryPath)\sounds\en\**\*.*" />
+		</ComponentGroup>
+		
 		<ComponentGroup  Id="HarvestedComponents" Directory="MyAppFolder">
 			<Component Id="VCRuntime" Guid="E194CCDE-5D35-4284-AAC2-552A81C663E5">
 				<File Id="VCRuntime" Source="$(IconsEtcPath)\VCRUNTIME140.dll" KeyPath="yes" />
@@ -350,15 +404,16 @@
 				<File Id="readme.txt" Source="$(IconsEtcPath)\readme.txt" KeyPath="yes" />
 			</Component>
 
+			
+			
+			
 			<Files Include="$(ReleaseBuildDirectoryPath)\**">
+				
 				<!-- SECURITY/CONFIG OVERWRITE EXCLUSIONS -->
-				<Exclude Files ="$(ReleaseBuildDirectoryPath)\cert\**"/>
-				<Exclude Files ="$(ReleaseBuildDirectoryPath)\cert\*"/>
-				<Exclude Files ="$(ReleaseBuildDirectoryPath)\cert"/>
 
 				<!-- EXCLUDE THE CONF FOLDER ENTIRELY IF YOU DON'T WANT WIX TO TOUCH IT -->
-				<!-- Note: If you uncomment the line below, fresh installations will NOT have ANY config files. -->
-				<!-- <Exclude Files ="$(ReleaseBuildDirectoryPath)\conf\**" /> -->
+
+				<Exclude Files ="$(ReleaseBuildDirectoryPath)\conf\**" />
 
 				<!-- Product Keys & Licensing -->
 				<Exclude Files="$(ReleaseBuildDirectoryPath)\Product Keys\status.html"/>
@@ -366,7 +421,8 @@
 				<Exclude Files="$(ReleaseBuildDirectoryPath)\Product Keys\license.machine-id"/>
 
 				<!-- Exclude Custom Sounds from Main Harvest (Preventing Duplicate ID Compiler Errors) -->
-				<Exclude Files="$(ReleaseBuildDirectoryPath)\sounds\custom\**"/>
+				<Exclude Files="$(CustomSoundsPath)\**"/>
+				<Exclude Files="$(ReleaseBuildDirectoryPath)\sounds\en\**"/>
 
 				<!-- Installer Utility Scripts -->
 				<Exclude Files ="$(ReleaseBuildDirectoryPath)\**\VCRUNTIME140.dll"/>
@@ -437,15 +493,33 @@
 		<CustomAction Id="StopApp" ExeCommand='cmd.exe /c  echo Stopping SIPServer... please do not close window &amp;&amp; [MyAppFolder]\SIPServer.exe -stop 2>NUL >NUL &amp;&amp; taskkill /F /IM gst-ptp-helper.exe 2>NUL >NUL' Directory="MyAppFolder" Execute="deferred" Return="ignore" Impersonate="no" />
 		<CustomAction Id="StopSvc" ExeCommand='cmd.exe /c echo Stopping service... please do not close window &amp;&amp; sc stop SIPServer 2>NUL >NUL &amp;&amp; sc stop "SIP Server" 2>NUL >NUL' Directory="MyAppFolder" Execute="deferred" Return="ignore" Impersonate="no" />
 		<CustomAction Id="DeleteSvc" ExeCommand='cmd.exe /c echo Uninstalling service... please do not close window &amp;&amp; sc delete SIPServer 2>NUL >NUL  sc delete "SIP Server" 2>NUL >NUL' Directory="MyAppFolder" Execute="deferred" Return="ignore" Impersonate="no" />
-		<CustomAction Id="StopVoskSvc" ExeCommand='cmd.exe /c echo Stopping ASR service... please do not close window &amp;&amp; sc stop VoskASR 2>NUL >NUL &amp;' Directory="VoskDir" Execute="deferred" Return="ignore" Impersonate="no" />
-		<CustomAction Id="DeleteVoskSvc" ExeCommand='cmd.exe /c echo Uninstalling service... please do not close window &amp;&amp; sc delete VoskASR 2>' Directory="VoskDir" Execute="deferred" Return="ignore" Impersonate="no" />
+		
+		<CustomAction Id="StopVoskSvc" ExeCommand='cmd.exe /c echo Stopping ASR service... please do not close window &amp;&amp; sc stop VoskASR 2>NUL >NUL &amp;' Directory="MyAppFolder" Execute="deferred" Return="ignore" Impersonate="no" />
+		<CustomAction Id="DeleteVoskSvc" ExeCommand='cmd.exe /c echo Uninstalling service... please do not close window &amp;&amp; sc delete VoskASR 2>' Directory="MyAppFolder" Execute="deferred" Return="ignore" Impersonate="no" />
+		
 		<CustomAction Id="Backup" ExeCommand='cmd.exe /c echo Backing up... please do not close window. This may take some time depending on the size of the log files. &amp;&amp; XCOPY [MyAppFolder] [AppRoot]\SIPServerTemp /Y/C/H/E/J/K/O/Q/I >NUL 2>NUL' Directory="AppRoot" Execute="deferred" Return="ignore" Impersonate="no" />
 		<CustomAction Id="Rename" ExeCommand='cmd.exe /c [MyAppFolder]\RenBackup.bat [AppRoot] ' Directory="AppRoot" Execute="deferred" Return="ignore" Impersonate="no" />
 		<CustomAction Id="SetIP" ExeCommand='cmd.exe /c [MyAppFolder]\SetIP.bat [TCPADR] [UDPADR] [MyAppFolder]' Directory="MyAppFolder" Execute="deferred" Return="ignore" Impersonate="no" />
+		
 		<CustomAction Id="InstallService" ExeCommand='[MyAppFolder]\nssm install SIPServer "[MyAppFolder]\SIPServer.exe"' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
-		<CustomAction Id="ConfigSvcSetup" ExeCommand='cmd.exe /c echo Configuring service... please do not close window &amp;&amp; sc failure SIPServer reset=259100 actions=restart/10000 2>NUL >NUL' Directory="VoskDir" Execute="deferred" Return="ignore" Impersonate="no" />
-		<CustomAction Id="InstallVoskService" ExeCommand='[MyAppFolder]\nssm install VoskASR "[MyAppFolder]\Vosk\Vosk_server.exe"' Directory="VoskDir" Execute="deferred" Impersonate="no" Return="ignore" />
-		<CustomAction Id="ConfigVoskSvcSetup" ExeCommand='cmd.exe /c echo Configuring service... please do not close window &amp;&amp; sc failure VoskASR reset=259100 actions=restart/10000 2>NUL >NUL' Directory="VoskDir" Execute="deferred" Return="ignore" Impersonate="no" />
-		<CustomAction Id="SetArgsVoskService" ExeCommand='[MyAppFolder]\nssm set VoskASR AppParameters "[VoskDir]\models\vosk-model-small-en-us-0.15 2700" ' Directory="MyAppFolder" />
+		<CustomAction Id="ConfigSvcSetup" ExeCommand='cmd.exe /c echo Configuring service... please do not close window &amp;&amp; sc failure SIPServer reset=259100 actions=restart/10000 2>NUL >NUL' Directory="MyAppFolder" Execute="deferred" Return="ignore" Impersonate="no" />
+		
+		<CustomAction Id="InstallVoskService" ExeCommand='[MyAppFolder]\nssm install VoskASR "[MyAppFolder]\Vosk\Vosk_server.exe"' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
+		<CustomAction Id="ConfigVoskSvcSetup" ExeCommand='cmd.exe /c echo Configuring service... please do not close window &amp;&amp; sc failure VoskASR reset=259100 actions=restart/10000 2>NUL >NUL' Directory="MyAppFolder" Execute="deferred" Return="ignore" Impersonate="no" />
+		<CustomAction Id="SetArgsVoskService" ExeCommand='[MyAppFolder]\nssm set VoskASR AppParameters "[VoskDir]\models\vosk-model-small-en-us-0.15 2700" ' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
+		<CustomAction Id="StartVoskSvc" 
+              ExeCommand='cmd.exe /c echo Starting ASR service... please do not close window &amp;&amp; sc start VoskASR 2>NUL >NUL' 
+              Directory="MyAppFolder" 
+              Execute="deferred" 
+              Impersonate="no" 
+              Return="ignore" />
+
+		<CustomAction Id="DeployMissingConfigs"
+					  ExeCommand='cmd.exe /c robocopy "[MyAppFolder]conf_defaults" "[MyAppFolder]conf" /E /XC /XN /XO 2&gt;NUL &gt;NUL'
+					  Directory="MyAppFolder"
+					  Execute="deferred"
+					  Impersonate="no"
+					  Return="ignore" />
+	
 	</Fragment>
 </Wix>

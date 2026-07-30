@@ -27,7 +27,7 @@ if (Args.Count < 2)
 string targetFileName = Args[0];
 string textPrompt     = Args[1];
 
-// Base path mapping pointing straight to your custom sound asset directory
+// Base path mapping pointing straight to custom sound asset directory
 string baseSoundsPath = @"C:\inetpub\SIPServer\sounds\custom\";
 string outputPath     = Path.Combine(baseSoundsPath, targetFileName);
 
@@ -43,7 +43,7 @@ Console.WriteLine($"Synthesizing text text: \"{textPrompt}\"");
 using (SpeechSynthesizer synth = new SpeechSynthesizer())
 {
     // Explicitly target Microsoft Zira
-    // Bulletproof matching: finds the voice even if it has "Desktop" in the name
+    // matching: finds the voice even if it has "Desktop" in the name
 var ziraVoice = synth.GetInstalledVoices()
     .FirstOrDefault(v => v.VoiceInfo.Name.Contains("Microsoft Zira"));
 
@@ -70,4 +70,4 @@ else
     synth.Speak(textPrompt);
 }
 
-Console.WriteLine("Success: Voice prompt generated cleanly at 48kHz Mono.");
+Console.WriteLine("Success: Voice prompt generated at 48kHz Mono.");
