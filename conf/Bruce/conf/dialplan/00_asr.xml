@@ -3,6 +3,7 @@
 	<extension name="asr_hold_queue">
 		<condition field="destination_number" expression="^5601$">
 			<action application="answer"/>
+			<!-- Long last-resort safety net only - normal cleanup is via uuid_kill from AsrAudioRouter -->
 			<action application="sched_hangup" data="+20 alloc_failure"/>
 			<action application="loop_playback" data="C:/inetpub/SIPServer/sounds/custom/asr_please_wait.wav"/>
 		</condition>
@@ -15,28 +16,43 @@
 			<action application="set" data="disable_break=true"/>
 			<action application="playback" data="tone_stream://%(150,0,1000)"/>
 			<action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
-			
-			<!-- brief sleep for noise absorption on switching -->
 			<action application="sleep" data="150"/>
- 			<!-- Attenuate the incoming audio slightly  to bury the room noise -->
-			<action application="set" data="rx_gain=-10"/>
+			<action application="set" data="rx_gain=-6"/>  <!--ADJUST to reduce sensitivity to noise (go more negative)-->
 
+			<!-- Attempt 1 -->
 			<action application="play_and_detect_speech" data="silence_stream://10000 detect:vosk default"/>
+
+			<!-- Retry gates if attempt produced no usable speech.
+				Nested condition if it doesn't match, its actions are simply
+				skipped and execution falls through to the POST below. -->
+
+			<condition field="${detect_speech_result}" expression="^($|_undef_|false)|\[unk\]|&quot;text&quot;\s*:\s*&quot;&quot;" break="never" ><!--inline="true"-->
+				<action application="log" data="INFO ASR 5602: attempt 2 empty/unk, retrying again"/>
+				<action application="sleep" data="150"/>
+				<action application="play_and_detect_speech" data="silence_stream://10000 detect:vosk default"/>
+			</condition>
+			
+			<condition field="${detect_speech_result}" expression="^($|_undef_|false)|\[unk\]|&quot;text&quot;\s*:\s*&quot;&quot;" break="never"  ><!--inline="true"-->
+				<action application="log" data="INFO ASR 5602: attempt 3 empty/unk, retrying again"/>
+				<action application="sleep" data="150"/>
+				<action application="play_and_detect_speech" data="silence_stream://10000 detect:vosk default"/>
+			</condition>
+			
+			<condition field="${detect_speech_result}" expression="^($|_undef_|false)|\[unk\]|&quot;text&quot;\s*:\s*&quot;&quot;" break="never" ><!--inline="true"-->
+				<action application="log" data="INFO ASR 5602: attempt 4 empty/unk, retrying again"/>
+				<action application="sleep" data="150"/>
+				<action application="play_and_detect_speech" data="silence_stream://10000 detect:vosk default"/>
+			</condition>
+
 			<action application="set" data="my_post_body=${detect_speech_result}"/>
 			<action application="set" data="disable_break=false"/>
 			<action application="set" data="res=${bgapi(curl http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}')}"/>
 			<action application="detect_speech" data="stop"/>
 
-			<!--action application="park"/--> <!--Communicator can kill-->
-
+			<!-- failsafe -->
 			<action application="playback" data="silence_stream://6000"/>
-			<!--failsafe action -->
-			<!--play an error tone so the user knows it failed --> 
 			<action application="playback" data="tone_stream://%(200,200,400,450);loops=3"/>
-            
-			<!-- infinite hold--> 
-			<action application="conference" data="asr_holding_room@default+flags{mute|waste|nomoh}"/>>
-
+			<action application="conference" data="asr_holding_room@default+flags{mute|waste|nomoh}"/>
 		</condition>
 	</extension>
 
@@ -49,3 +65,4 @@
 	</extension>
 
 </include>
+

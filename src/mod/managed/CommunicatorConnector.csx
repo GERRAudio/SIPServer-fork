@@ -1119,6 +1119,7 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                 }
                 break;
 			case "asrvoskhandler":
+                /*  not needed, kept for reference - diaplan/IIS does the wotk now
                 if (arguments.Length >= 3)
                 {
                     System.Threading.ThreadPool.QueueUserWorkItem(_ => 
@@ -1140,6 +1141,7 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                     returnString = "MISSING_ARGS";
                 }
                 break;
+                */
             default:
                 WriteToLog(LogLevel.Error, "Unable to work out what was meant by " + arguments[0]);
                 break;
@@ -1148,16 +1150,17 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         return returnString;
     }
 
+    /* Removed - dialpaln does it all better
     // -----------------------------------------------------------------------
     // AsrVoskHandler
     //
     // Drives the full Vosk ASR interaction for a belt-pack voice command
     // entirely from C# via the embedded FreeSWITCH API, bypassing the
-    // play_and_detect_speech dialplan app which is fragile against AES67
+    // play_and_detect_speech dialplan app which may be fragile against AES67
     // codec-change events.
     //
     // Key API choice: uuid_broadcast fires an application on an existing
-    // channel from the API thread without blocking here.  It is the correct
+    // channel from the API thread without blocking here.  It is the 
     // embedded-API equivalent of the ESL "uuid_execute" command, which is NOT
     // available through fsApi.ExecuteString in the managed plugin host.
     //
@@ -1323,7 +1326,7 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
 
         return "AsrVoskHandler complete.";
     }
-
+    */
     public static void Main()
     {
         switch (FreeSWITCH.Script.ContextType)

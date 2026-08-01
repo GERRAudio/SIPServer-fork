@@ -46,7 +46,7 @@
 
 
 	<?define SIPServerVersion=1.10.14?>
-	<?define MSIVersion=1.8?>
+	<?define MSIVersion=1.9?>
 
 
 	<Package Name="IP Telephony &#13;&#10;SIPServer v$(SIPServerVersion)-msi v$(MSIVersion)"
