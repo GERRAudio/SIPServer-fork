@@ -52,8 +52,12 @@ static struct {
 	switch_port_t server_port;
 	int return_json;
 	int auto_reload;
-	int endpoint_silence_ms; /* Track the silence window via XML configuration */
-	char *recognition_words; /* Added for configuration file mapping */
+	int endpoint_silence_ms;	 
+	int speech_complete_timeout;
+	char *recognition_words; 
+	float min_confidence;
+	int vad_mode;
+
 	switch_memory_pool_t *pool;
 } globals;
 
@@ -272,9 +276,10 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 	/* --- Send Vosk configuration JSON ------------------------------------ */
 	{
 		/* Dynamically format the JSON using  custom XML configuration array */
-		char *cfg_json =
-			switch_mprintf("{\"config\":{\"sample_rate\":16000,\"words\":[%s]}}", globals.recognition_words);
-
+		char *cfg_json = switch_mprintf("{\"config\":{\"sample_rate\":16000,\"min_confidence\":%f,\"vad_mode\":%d,"
+										"\"speech_complete_timeout\":%d,\"words\":[%s]}}",
+										globals.min_confidence, globals.vad_mode, globals.speech_complete_timeout,
+										globals.recognition_words);
 		if (!cfg_json) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 							  "mod_vosk: failed to allocate config JSON memory\n");
@@ -654,7 +659,15 @@ static switch_status_t load_config(void)
 			if (!strcasecmp(var, "auto-reload")) globals.auto_reload = atoi(val);
 			if (!strcasecmp(var, "recognition-words"))
 				globals.recognition_words = switch_core_strdup(globals.pool, val);
-			if (!strcasecmp(var, "endpoint-silence-ms")) globals.endpoint_silence_ms = atoi(val); 
+			if (!strcasecmp(var, "endpoint-silence-ms")) globals.endpoint_silence_ms = atoi(val);
+			if (!strcasecmp(var, "speech-complete-timeout")) globals.speech_complete_timeout = atoi(val);
+			if (!strcasecmp(var, "recognition-words"))
+				globals.recognition_words = switch_core_strdup(globals.pool, val);
+			if (!strcasecmp(var, "speech-complete-timeout")) globals.endpoint_silence_ms = atoi(val);
+
+			if (!strcasecmp(var, "min-confidence")) globals.min_confidence = (float)atof(val);
+			if (!strcasecmp(var, "vad-mode")) globals.vad_mode = atoi(val);
+			if (!strcasecmp(var, "speech-complete-timeout")) globals.speech_complete_timeout = atoi(val);
 
 		}
 	}
