@@ -1,4 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+- ACTIVE PARAMETERS:
+    * endpoint-silence-ms : Silence duration (ms) before mod_vosk forces speech result.
+    * recognition-words   : Constrained grammar array sent to Vosk server (vosk_recognizer_new_grm).
+    * server-url          : Target WebSocket server IP & port.
+    * return-json         : Payload formatting flag for FreeSWITCH.
+    * auto-reload         : Enables on-the-fly 'reloadxml' updates.
+
+- IGNORED / INFORMATIONAL ONLY:
+    * min-confidence        : Ignored by ASR server. Confidence is enforced downstream in IIS .
+    * speech-complete-timeout: Ignored by mod_vosk (endpoint-silence-ms is used instead).
+    * vad-mode              : Ignored (unsupported by the libvosk C API).
+
+-->
 <configuration name="vosk.conf" description="Vosk ASR Configuration">
   <settings>
     <!-- Minimum confidence required (0.0 to 1.0). Speech under this threshold is ignored. -->
