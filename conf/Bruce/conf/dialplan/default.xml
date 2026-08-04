@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <include>
 	<context name="default">
-
+		<!-- Pull in ASR rules so they evaluate first -->
+        <X-PRE-PROCESS cmd="include" data="00_asr.xml"/>
 		<!-- Drop conference access when it's the All Call -->
 		<extension name="stop_all_call">
 			<condition field="destination_number" expression="^${ProtectedAllCall}$">

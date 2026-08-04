@@ -49,6 +49,10 @@
         "net8.0": {
           "targetAlias": "net8.0",
           "dependencies": {
+            "Azure.Identity": {
+              "target": "Package",
+              "version": "[1.17.1, )"
+            },
             "Google.Protobuf": {
               "target": "Package",
               "version": "[3.27.1, )"

@@ -146,20 +146,17 @@ static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpoint
 
 	// Check if shutdown is in progress BEFORE any allocations
 	if (!stream || !g_atomic_int_get(&stream->pipeline_active)) {
-		goto done; // Bail immediately, no allocations
+		goto done; // Bail immediately
 	}
 
 
 	GstElement *pipeline = NULL; 
-
 	GstElement *tee = NULL;
 	GstPad *tee_sink_pad = NULL;
 	gchar name[ELEMENT_NAME_SIZE];
 	gchar *pad_name = NULL;
 	guint ch_idx;
 
-
-	// no check for shutdown in progress here
 
 	pipeline = GST_ELEMENT(AL_gst_element_get_parent(deinterleave));		
 	pad_name = AL_gst_pad_get_name(pad);
@@ -192,11 +189,11 @@ done:
 	return;
 }
 
-gboolean update_clock(gpointer userdata)			//is this a (critical) section
+gboolean update_clock(gpointer userdata)			//is this a (critical) section?
 {
 	g_stream_t *stream = (g_stream_t *)userdata;
 
-	if (!g_atomic_int_get(&stream->pipeline_active)) {
+	if (!stream|| !g_atomic_int_get(&stream->pipeline_active)) {
 		goto done_no_unlock;	// Fast path exit
 	}
 
@@ -212,7 +209,7 @@ gboolean update_clock(gpointer userdata)			//is this a (critical) section
 	rtpdepay = AL_gst_bin_get_by_name(GST_BIN(pipeline), RTP_DEPAY);
 	if (!rtpdepay) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "rtpdepay not found in pipeline");
-		goto done;
+		goto done_no_unlock;
 	}
 
 	g_object_get(G_OBJECT(rtpdepay), "stats", &stats, NULL);		//allocates
@@ -234,7 +231,7 @@ gboolean update_clock(gpointer userdata)			//is this a (critical) section
 
 	DA_gst_structure_free(stats);
 	DA_gst_object_unref(GST_OBJECT(rtpdepay));
-done:
+
 done_no_unlock:
 	return G_SOURCE_CONTINUE;
 }
@@ -255,8 +252,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 {
 	gboolean ret = FALSE;
 
-	// Also check atomic flag
-	if (!g_atomic_int_get(&stream->pipeline_active)) {
+	if (!stream|| !g_atomic_int_get(&stream->pipeline_active)) {
 		goto done_no_unlock;
 	
 	}
@@ -270,7 +266,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GstElement *appsink = NULL;
 
 
-	if (!stream || ch_idx >= MAX_IO_CHANNELS) goto error; //added check
+	if ( ch_idx >= MAX_IO_CHANNELS) goto error; //added check
 
 	NAME_ELEMENT(name, "tee", ch_idx);
 
@@ -325,20 +321,29 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	}
 
 	g_rec_mutex_lock(ch_mutex);
+	// Check AGAIN while holding lock
+	if (!g_atomic_int_get(&stream->pipeline_active)) {
+		g_rec_mutex_unlock(ch_mutex);
+		DA_gst_object_unref(GST_OBJECT(appsink));
+		DA_gst_object_unref(GST_OBJECT(queue));
+		DA_gst_object_unref(GST_OBJECT(tee));
+		goto done_no_unlock;
+	}
+
 	g_object_set(appsink, "emit-signals", FALSE, "sync", FALSE, "async", FALSE, "drop", TRUE, "max-buffers", 1,
 				 "enable-last-sample", FALSE, NULL);
 
 	gboolean retval = gst_bin_add(GST_BIN(stream->pipeline), appsink);
-	g_rec_mutex_unlock(ch_mutex);
+
 
 	if (!retval) {
+		g_rec_mutex_unlock(ch_mutex);
 		DA_gst_object_unref(appsink);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to add appsink to the pipeline ch: %d, session: %s", ch_idx, session);
 		goto error;
 	}
 
-	g_rec_mutex_lock(ch_mutex);
 	retval = gst_bin_add(GST_BIN(stream->pipeline), queue);
 	g_rec_mutex_unlock(ch_mutex);
 
@@ -356,6 +361,10 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	// Both queue and appsink were successfully added to pipeline
 	// These were allocated via AL_ wrappers, so increment counter:
 	g_atomic_int_add(&stream->pipeline_elements_count, 2);
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+					  "ADD_APPSINK: ch=%d session=%s, pipeline_active=%d, elem_count=%d\n", ch_idx, session,
+					  g_atomic_int_get(&stream->pipeline_active), g_atomic_int_get(&stream->pipeline_elements_count));
 
 	if (!(tee_src_pad = AL_gst_element_request_pad_simple(tee, "src_%u"))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -432,7 +441,8 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GstPad *tee_src_pad = NULL;
 	GstPad *queue_sink_pad = NULL;
 
-	if (!stream || ch_idx >= MAX_IO_CHANNELS) goto exit; // added check
+	if (!stream || ch_idx >= MAX_IO_CHANNELS) 
+		goto done_no_unlock;
 	if (!g_atomic_int_get(&stream->pipeline_active)) { 
 		goto done_no_unlock; 
 	}
@@ -598,7 +608,7 @@ static gboolean backup_sender_timeout_cb(gpointer userdata)
 			//switch_log_printf(...);
 			DA_gst_object_unref(GST_OBJECT(GST_OBJECT(fakesink))); // added
 			retval = G_SOURCE_CONTINUE;
-	   	    goto done;
+			goto done_no_unlock;
 		} 
 
 		if (clock) {
@@ -676,7 +686,7 @@ exit:
 	DA_gst_object_unref(GST_OBJECT(clock));
 	DA_gst_object_unref(GST_OBJECT(fakesink));
 	g_free(host);			//not counted
-done:
+
 done_no_unlock:
 	return retval;
 }
@@ -691,6 +701,12 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	GstElement *rtpdepay = NULL;
 	GstElement *rtpjitbuf = NULL;
 	char *pipeline_name = NULL;
+	// Tracks whether the TX element set (tx_valve/capsfilter/tx_audioconv/rtp_pay/
+	// udpsink) has already been transferred to the bin via gst_bin_add_many(). Once
+	// TRUE, the bin is the sole owner of rtp_pay - the outer `error:` label must not
+	// gst_object_unref() it again after the pipeline itself has already been torn
+	// down (that would be a use-after-free on an element the bin already freed).
+	gboolean tx_added_to_bin = FALSE;
 
 	// init entire structure
 	g_stream_t *stream = g_new0(g_stream_t, 1);			
@@ -700,7 +716,6 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	char fixed_name[25] = {"pipeline"};
 	char *ts_ctx = DEFAULT_CONTEXT_NAME;
 
-	stream->bus_watch_id = gst_bus_add_watch(bus, bus_callback, stream);		//added
 
 	if (data->name)
 		pipeline_name = data->name;
@@ -728,6 +743,15 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		GstCaps *udp_caps = NULL;
 		GstCaps *rx_caps = NULL;
+		// Tracks whether gst_bin_add_many() below has already transferred ownership
+		// of udp_source/rtpdepay/rtpjitbuf/rx_audioconv/capsfilter/split/deinterleave
+		// to the pipeline. Once TRUE, the bin owns the sole reference to each of
+		// these and ddirRX_error must NOT call gst_object_unref() on them again -
+		// doing so over-releases a live, bin-owned element and leaves a dangling
+		// pointer in the bin's child list (crashes later when something walks it,
+		// e.g. flush_all_queues()/check_pipeline_memory_pressure() during a memory
+		// cleanup pass, or pipeline teardown at the outer `error:` label).
+		gboolean rx_added_to_bin = FALSE;
 
 #ifndef ENABLE_THREADSHARE
 		udp_source = AL_gst_element_factory_make("udpsrc", "rx-src");
@@ -769,8 +793,10 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		#endif
 
 		g_object_set(rtpjitbuf, "latency", data->rtp_jitbuf_latency,
-		 "mode", 0 /* none */, 
-		 NULL);
+			"mode", 0 /* none */, 
+			"drop-on-latency", TRUE, // drop late packets
+			NULL);
+
 		rx_audioconv = AL_gst_element_factory_make("audioconvert", "rx-aconv");
 		g_object_set(rx_audioconv, "dithering", 0 /* none */, NULL);
 
@@ -833,6 +859,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		gst_bin_add_many(GST_BIN(pipeline), udp_source, rtpdepay, rtpjitbuf, rx_audioconv, capsfilter, split, deinterleave, NULL);
 		g_atomic_int_add(&stream->pipeline_elements_count, 7);
+		rx_added_to_bin = TRUE; // bin now owns these - ddirRX_error must not unref them
 
 		if (!gst_element_link_many(udp_source, rtpjitbuf, rtpdepay, split, rx_audioconv, capsfilter, deinterleave, NULL)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements in the rx pipeline");
@@ -847,20 +874,39 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		udp_caps = NULL;
 		DA_gst_caps_unref(rx_caps); 
 		rx_caps = NULL;
-		DA_gst_object_unref(GST_OBJECT(udp_source));
+		tee = NULL; // always bin-owned as soon as created in the loop above, never ours to free here
+		if (rx_added_to_bin) {
+			// gst_bin_add_many() already ran: the pipeline is the sole owner of each
+			// of these elements now. Do NOT gst_object_unref() them - that would
+			// over-release a live, bin-owned element and leave a dangling pointer in
+			// the bin's child list. Just correct the debug accounting, exactly like
+			// ddirRX_exit does; the bin will free them for real when the pipeline is
+			// torn down at the outer `error:` label.
+			if (udp_source) DA_NoNulling_dec_objs(udp_source);
+			if (rtpdepay) DA_NoNulling_dec_objs(rtpdepay);
+			if (rtpjitbuf) DA_NoNulling_dec_objs(rtpjitbuf);
+			if (rx_audioconv) DA_NoNulling_dec_objs(rx_audioconv);
+			if (capsfilter) DA_NoNulling_dec_objs(capsfilter);
+			if (split) DA_NoNulling_dec_objs(split);
+			if (deinterleave) DA_NoNulling_dec_objs(deinterleave);
+		} else {
+			// Failed before gst_bin_add_many() ran: these elements (whichever were
+			// successfully created) have no owner yet, so they really do need a
+			// real unref here or they leak.
+			DA_gst_object_unref(GST_OBJECT(udp_source));
+			DA_gst_object_unref(GST_OBJECT(deinterleave));
+			DA_gst_object_unref(GST_OBJECT(rx_audioconv));
+			DA_gst_object_unref(GST_OBJECT(capsfilter));
+			DA_gst_object_unref(GST_OBJECT(split));
+			DA_gst_object_unref(GST_OBJECT(rtpjitbuf));
+			DA_gst_object_unref(GST_OBJECT(rtpdepay));
+		}
 		udp_source = NULL;
-		DA_gst_object_unref(GST_OBJECT(deinterleave));
 		deinterleave = NULL;
-		DA_gst_object_unref(GST_OBJECT(rx_audioconv));
 		rx_audioconv = NULL;
-		DA_gst_object_unref(GST_OBJECT(capsfilter));
 		capsfilter = NULL;
-		tee = NULL;
-		DA_gst_object_unref(GST_OBJECT(split));
 		split = NULL;
-		DA_gst_object_unref(GST_OBJECT(rtpjitbuf));		//added to pipeline
 		rtpjitbuf = NULL;
-		DA_gst_object_unref(GST_OBJECT(rtpdepay));		// added to pipeline
 		rtpdepay = NULL;
 		goto error;
 
@@ -994,6 +1040,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		gst_bin_add_many(GST_BIN(pipeline), tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL);
 		g_atomic_int_add(&stream->pipeline_elements_count, 5);
+		tx_added_to_bin = TRUE; // bin now owns these (incl. rtp_pay) - do not unref them again
 
 		if (!gst_element_link_many(audiointerleave, tx_valve, capsfilter, tx_audioconv, rtp_pay, udpsink, NULL)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link elements");
@@ -1006,18 +1053,35 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	ddirTX_error:
 		DA_gst_caps_unref(caps);
 		caps = NULL;
-		DA_gst_object_unref(GST_OBJECT(udpsink));
-		udpsink = NULL;
-		DA_gst_object_unref(GST_OBJECT(tx_audioconv));
-		tx_audioconv = NULL;
-		DA_gst_object_unref(GST_OBJECT(audiointerleave));
+		// audiointerleave is added to the bin unconditionally right after creation,
+		// and any appsrc reaching here was added to the bin inside the loop before
+		// its own link check could fail - both are ALWAYS bin-owned by the time we
+		// can land here. Never gst_object_unref() them; the bin frees them when the
+		// pipeline is torn down at the outer `error:` label.
+		if (audiointerleave) DA_NoNulling_dec_objs(audiointerleave);
 		audiointerleave = NULL;
-		DA_gst_object_unref(GST_OBJECT(capsfilter));
+		appsrc = NULL; // bin-owned (added to pipeline in loop), not counted, never ours to free here
+		if (tx_added_to_bin) {
+			// gst_bin_add_many() already ran: tx_valve/capsfilter/tx_audioconv/
+			// rtp_pay/udpsink are bin-owned now - accounting only, same reasoning
+			// as ddirRX_error above.
+			if (udpsink) DA_NoNulling_dec_objs(udpsink);
+			if (tx_audioconv) DA_NoNulling_dec_objs(tx_audioconv);
+			if (capsfilter) DA_NoNulling_dec_objs(capsfilter);
+			if (tx_valve) DA_NoNulling_dec_objs(tx_valve);
+			// rtp_pay accounted for by the outer `error:` label
+		} else {
+			// Failed before gst_bin_add_many() ran: these have no owner yet and
+			// really do need a real unref here, or they leak.
+			DA_gst_object_unref(GST_OBJECT(udpsink));
+			DA_gst_object_unref(GST_OBJECT(tx_audioconv));
+			DA_gst_object_unref(GST_OBJECT(capsfilter));
+			DA_gst_object_unref(GST_OBJECT(tx_valve));
+		}
+		udpsink = NULL;
+		tx_audioconv = NULL;
 		capsfilter = NULL;
-		DA_gst_object_unref(GST_OBJECT(tx_valve));
 		tx_valve = NULL;
-		gst_object_unref(GST_OBJECT(appsrc));
-		appsrc = NULL; // added to pipeline in loop, not counted
 		goto error;
 
 	ddirTX_exit:
@@ -1037,6 +1101,9 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	GstElement *udpsrc = NULL;
 	GstElement *fakesink = NULL;
 	GstCaps *caps = NULL;
+	// Tracks whether udpsrc/fakesink have already been transferred to the bin via
+	// gst_bin_add_many() below - once TRUE, bksnd_error must not unref them again.
+	gboolean bksnd_added_to_bin = FALSE;
 	if (data->is_backup_sender) {
 
 		/* create a dummy pipeline with `udpsrc ! fakesink` just to receive on udp and read the last-sample from
@@ -1084,6 +1151,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			// Count backup sender elements that were allocated via AL_ wrappers:
 			// udpsrc, fakesink = 2 elements
 			g_atomic_int_add(&stream->pipeline_elements_count, 2);
+			bksnd_added_to_bin = TRUE; // bin now owns these - bksnd_error must not unref them
 
 			if (!gst_element_link_many(udpsrc, fakesink, NULL)) {
 				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -1119,9 +1187,19 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	bksnd_error:
 		DA_gst_caps_unref(caps);
 		caps = NULL;
-		DA_gst_object_unref(GST_OBJECT(udpsrc));
+		if (bksnd_added_to_bin) {
+			// gst_bin_add_many() already ran (link failure or the PAUSED state
+			// change failing afterwards): the bin owns these now - accounting
+			// only, same reasoning as ddirRX_error/ddirTX_error above.
+			if (udpsrc) DA_NoNulling_dec_objs(udpsrc);
+			if (fakesink) DA_NoNulling_dec_objs(fakesink);
+		} else {
+			// Failed before gst_bin_add_many() ran (creation failure): no owner
+			// yet, so a real unref is needed here or they leak.
+			DA_gst_object_unref(GST_OBJECT(udpsrc));
+			DA_gst_object_unref(GST_OBJECT(fakesink));
+		}
 		udpsrc = NULL;
-		DA_gst_object_unref(GST_OBJECT(fakesink));
 		fakesink = NULL;
 		goto error;
 	}
@@ -1129,6 +1207,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	// ---
 bksnd_continue: 
 	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(pipeline));
+	stream->bus_watch_id = gst_bus_add_watch(bus, bus_callback, stream);
 	gst_bus_add_watch(bus, bus_callback, stream);
 	DA_gst_object_unref(GST_OBJECT(bus));
 	bus = NULL;
@@ -1179,7 +1258,18 @@ error:
 	if (pipeline) gst_element_set_state(pipeline, GST_STATE_NULL); // added check
 	DA_gst_object_unref(GST_OBJECT(pipeline));
 	pipeline = NULL;
-	DA_gst_object_unref(GST_OBJECT(rtp_pay));
+	// If the TX element set was already handed to the bin (tx_added_to_bin), the
+	// gst_object_unref(pipeline) above just tore rtp_pay down along with the rest
+	// of the bin's children - unreffing it again here would be a use-after-free.
+	// Only real-unref it when it was never given to a bin (RX-only pipelines where
+	// rtp_pay stays NULL, or a TX failure that happened before gst_bin_add_many()
+	// ran, in which case ddirTX_error already real-freed it and set it NULL, making
+	// this a safe no-op).
+	if (!tx_added_to_bin) {
+		DA_gst_object_unref(GST_OBJECT(rtp_pay));
+	} else if (rtp_pay) {
+		DA_NoNulling_dec_objs(rtp_pay); // bin already freed it - accounting only
+	}
 	rtp_pay = NULL;
 
 	if (stream != NULL) {
@@ -1212,8 +1302,7 @@ exit:
 
 void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locked by caller
 {
-	if (!stream) goto error; //added check
-	if (!g_atomic_int_get(&stream->pipeline_active)) { 
+	if (!stream|| !g_atomic_int_get(&stream->pipeline_active)) { 
 		goto error;
 	}
 
@@ -1257,21 +1346,67 @@ void *start_pipeline(void *data)
 }
 
 
-// Here be demons - be careful what you change and maintain order of operations
+
+void flush_all_queues(g_stream_t *stream)
+{
+	if (!stream || !stream->pipeline) return;
+
+	GstIterator *iter = gst_bin_iterate_elements(GST_BIN(stream->pipeline));
+	GValue item = G_VALUE_INIT;
+
+	while (gst_iterator_next(iter, &item) == GST_ITERATOR_OK) {
+		GstElement *element = g_value_get_object(&item);
+		GstElementFactory *factory = gst_element_get_factory(element);
+
+		if (factory) {
+			const gchar *factory_name = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory));
+
+			// Flush Queues
+			if (g_strcmp0(factory_name, "queue") == 0 || g_strcmp0(factory_name, "ts-queue") == 0) {
+				GstPad *sinkpad = gst_element_get_static_pad(element, "sink");
+				if (sinkpad) {
+					gst_pad_send_event(sinkpad, gst_event_new_flush_start());
+					gst_pad_send_event(sinkpad, gst_event_new_flush_stop(TRUE));
+					gst_object_unref(sinkpad);
+				}
+			}
+			// Flush AppSrc
+			else if (g_strcmp0(factory_name, "appsrc") == 0) {
+				GstPad *srcpad = gst_element_get_static_pad(element, "src");
+				if (srcpad) {
+					// Send flush downstream from appsrc
+					gst_pad_send_event(srcpad, gst_event_new_flush_start());
+					gst_pad_send_event(srcpad, gst_event_new_flush_stop(TRUE));
+					gst_object_unref(srcpad);
+				}
+			}
+		}
+		g_value_reset(&item);
+	}
+	gst_iterator_free(iter);
+}
+
+
+
+// Here be demons/dragons - be careful what you change and maintain order of operations
 // if this runs while calls are in progress, some deallocations do not occur
 // this is why there is the atomic flag that indicates it is in progress
 // and it must be checked in critical sections push pull bufs and pad ops
 //
 void stop_pipeline(g_stream_t *stream)
 {
-	if (!stream) goto error_no_unlock;
+	if (!stream || !g_atomic_int_get(&stream->pipeline_active)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline already stopped, skipping\n");
+		goto error;
+	}
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Stopping pipeline...\n");
-	// CRITICAL: Set flag to 0  this immediately stops audio I/O
+
+	// immediately stops audio I/O
 	g_atomic_int_set(&stream->pipeline_active, 0);
 
 	// Give active threads time to see flag and exit cleanly
-	g_usleep(50000); // 50ms should be sufficient (pull timeout is 10ms)
+	g_usleep(100000); // 100ms should be sufficient (pull timeout is 10ms)
 
 	// STOP ALL TIMERS/SOURCES FIRST (atomic)
 	gint timer_id = g_atomic_int_exchange_and_add(&stream->backup_sender_idle_timer, 0);
@@ -1281,6 +1416,15 @@ void stop_pipeline(g_stream_t *stream)
 	}
 
 	if (stream->bus_watch_id > 0) {
+		// Drain all pending messages first
+		GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(stream->pipeline));
+		if (bus) {
+			GstMessage *msg;
+			while ((msg = gst_bus_pop(bus)) != NULL) {
+				gst_message_unref(msg); // Free queued messages
+			}
+			gst_object_unref(bus);
+		}
 		g_source_remove(stream->bus_watch_id);
 		stream->bus_watch_id = 0;
 	}
@@ -1330,22 +1474,68 @@ void stop_pipeline(g_stream_t *stream)
 	// Drain all appsinks BEFORE setting pipeline to NULL
 	GstIterator *iter = gst_bin_iterate_elements(GST_BIN(stream->pipeline));
 	GValue item = G_VALUE_INIT;
+	int total_drained = 0;
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "=== Pipeline Memory Diagnostic ===\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Flushing all pipeline elements...\n");
 
 	while (gst_iterator_next(iter, &item) == GST_ITERATOR_OK) {
 		GstElement *element = g_value_get_object(&item);
+		//const gchar *name = gst_element_get_name(element);
+		
 
-		// Check if this is an appsink
-		if (GST_IS_APP_SINK(element)) {
-			GstSample *sample;
-
-			// Drain all samples from this appsink
-			while ((sample = gst_app_sink_try_pull_sample(GST_APP_SINK(element), 0))) { DA_gst_sample_unref(sample); }
+		// Force flush on ALL elements
+		GstPad *sinkpad = gst_element_get_static_pad(element, "sink");
+		if (sinkpad) {
+			gst_pad_send_event(sinkpad, gst_event_new_flush_start());
+			gst_pad_send_event(sinkpad, gst_event_new_flush_stop(TRUE));
+			gst_object_unref(sinkpad);
 		}
 
+		GstElementFactory *factory = gst_element_get_factory(element);
+		const gchar *factory_name = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory));
+
+		// Check if this is a queue element
+		if (g_strcmp0(factory_name, "queue") == 0 || g_strcmp0(factory_name, "ts-queue") == 0) {
+			guint current_level_buffers = 0;
+			guint current_level_bytes = 0;
+			g_object_get(element, "current-level-buffers", &current_level_buffers, "current-level-bytes",
+						 &current_level_bytes, NULL);
+
+			if (current_level_buffers > 0) {
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Queue '%s': %u buffers, %u bytes\n",
+								  GST_ELEMENT_NAME(element),
+								  current_level_buffers, current_level_bytes);
+			}
+		}
+
+		if (GST_IS_APP_SINK(element)) {
+			// Check if samples are queued
+			GstSample *sample;
+			int drained = 0;
+
+			// Force EOS first
+			gst_app_sink_set_emit_signals(GST_APP_SINK(element), FALSE);
+
+			// Aggressive drain with timeout
+			while ((sample = gst_app_sink_try_pull_sample(GST_APP_SINK(element), 50 * GST_MSECOND))) {
+				DA_gst_sample_unref(sample);
+				drained++;
+				if (drained > 1000) 
+					break; // Safety limit
+			}
+			total_drained += drained;
+		}
 		g_value_reset(&item);
 	}
 
 	gst_iterator_free(iter);
+
+	if (total_drained > 0) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Drained %d orphaned samples during shutdown\n",
+						  total_drained);
+	}
+
 
 	// NULL STATE - destroys ALL elements safely
 	//switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Setting pipeline to NULL...\n");
@@ -1357,8 +1547,6 @@ void stop_pipeline(g_stream_t *stream)
 
 	if (ret != GST_STATE_CHANGE_SUCCESS || state != GST_STATE_NULL) { 
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Unable to stop pipeline ..\n");
-		// goto exit_unlock; 
-		// drop through to cleanup anyhow
 	}
 
 	// UNREF PIPELINE (frees everything)
@@ -1382,27 +1570,44 @@ void stop_pipeline(g_stream_t *stream)
 
 	// MUTEX CLEANUP 
 	for (int i = 0; i < MAX_IO_CHANNELS; i++) {
-		// Try to ensure mutex is unlocked
-		if (g_rec_mutex_trylock(&stream->appsrc_mutexes[i])) { g_rec_mutex_unlock(&stream->appsrc_mutexes[i]); }
+		gint timeout_count = 0;
+		const gint MAX_TIMEOUT = 100; // 1 second (100 * 10ms)
+		gboolean got_lock = FALSE;
+
+		// Keep trying to acquire the lock
+		while (!got_lock && timeout_count < MAX_TIMEOUT) {
+			got_lock = g_rec_mutex_trylock(&stream->appsrc_mutexes[i]);
+			if (!got_lock) {
+				g_usleep(10000); // 10ms
+				timeout_count++;
+			}
+		}
+
+		if (!got_lock) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+							  "Mutex %d still locked after 1s timeout - NOT clearing (leak to avoid crash)\n", i);
+			// DO NOT call g_rec_mutex_clear() - leak it instead of crashing
+			continue;
+		}
+
+		// Successfully acquired lock - safe to clear
+		g_rec_mutex_unlock(&stream->appsrc_mutexes[i]);
 		g_rec_mutex_clear(&stream->appsrc_mutexes[i]);
 	}
 
+
+	int elem_count_final = g_atomic_int_get(&stream->pipeline_elements_count);
+	int objs_final = g_alloc_counts.objs;
+
 	//  FINAL FREE
 	g_free(stream);
-
-
-exit_unlock:
-	if (timer_id > 0) {
-		g_source_remove(timer_id);
-		g_atomic_int_set(&stream->backup_sender_idle_timer, 0);
-	}
-	//
+	stream = NULL;
+exit:
 	periodic_mem_check(FALSE); // de allocate memory here if required
-	//
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline and mainloop cleaned up\n");
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Pipeline cleaned. Final elem_count=%d, objs=%d\n",
+					  elem_count_final, objs_final);
 	return;
-
-error_no_unlock:
+error:
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Pipeline stop error, no stream found\n");
 	return;
 }
@@ -1670,6 +1875,9 @@ error:
 	return (int) total_bytes;
 }
 
+
+
+
 void drop_input_buffers(gboolean drop, g_stream_t *stream, guint32 ch_idx)
 {
 	GstElement *valve = NULL;
@@ -1709,10 +1917,11 @@ gchar *get_rtp_stats(g_stream_t *stream)
 {
 	GstElement *rtpjitbuf = NULL;
 	gchar *stats_str = NULL;		//fixed: dynamic allocation required since this is NOT on the stack
-	if (!g_atomic_int_get(&stream->pipeline_active)) { 
+
+	if (!stream || !g_atomic_int_get(&stream->pipeline_active)) { 
 		goto done_no_unlock; 
 	}
-	if (!stream) goto exit; //added check
+
 
 	rtpjitbuf = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
 
@@ -1727,19 +1936,21 @@ gchar *get_rtp_stats(g_stream_t *stream)
 	} else {
 		stats_str = g_strdup_printf(""); // must be heap
 	}
-exit:
+
 done_no_unlock:
 	return stats_str;			//deallocated by caller!!
 }
 
+
+
 void drop_output_buffers(gboolean drop, g_stream_t *stream)
 {
-	if (!g_atomic_int_get(&stream->pipeline_active)) { 
+	if (!stream || !g_atomic_int_get(&stream->pipeline_active)) { 
 		goto done_no_unlock; 
 	}
 	GstElement *tx_valve = NULL;
 	gchar name[ELEMENT_NAME_SIZE];
-	if (!stream) goto exit;
+
 
 	tx_valve = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), "tx-valve"); 
 	if (!tx_valve) {

@@ -1,6 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
 <include>
   <context name="public">
 	
+
+
 	<!-- User calls specific number to get in -->
     <extension name="white_list_select_conference">
       <condition field="destination_number" expression="^${WhiteListDial}$">

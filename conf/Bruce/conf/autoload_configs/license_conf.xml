@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<document type="freeswitch/xml">
+	<section name="configuration">
+		<configuration name="license.conf" description="License">
+			<settings>
+				<param name="license_file" value="$${conf_dir}/license.key"/>
+			</settings>
+		</configuration>
+	</section>
+</document>

@@ -1,5 +1,6 @@
 <!-- http://wiki.freeswitch.org/wiki/Mod_conference -->
 <!-- None of these paths are real if you want any of these options you need to really set them up -->
+
 <configuration name="conference.conf" description="Audio Conference">
   <!-- Advertise certain presence on startup . -->
   <advertise>
@@ -126,7 +127,9 @@
       <!-- <param name="conference-flags" value="audio-always"/> -->
       <!-- Allow live array sync for Verto -->
       <!-- <param name="conference-flags" value="livearray-sync"/> -->
-    </profile>
+	</profile> 
+	  
+
 
     <profile name="wideband">
       <param name="domain" value="$${domain}"/>
