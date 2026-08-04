@@ -1,5 +1,4 @@
 <include>
-
 	<extension name="asr_hold_queue">
 		<condition field="destination_number" expression="^5601$">
 			<action application="answer"/>
@@ -9,53 +8,32 @@
 		</condition>
 	</extension>
 
-	<extension name="vosk_asr_processing">
-		<condition field="destination_number" expression="^5602$">
-			<action application="answer"/>
-			<action application="sleep" data="150"/>
-			<action application="set" data="disable_break=true"/>
-			<action application="playback" data="tone_stream://%(150,0,1000)"/>
-			<action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
-			<action application="sleep" data="150"/>
-			<action application="set" data="rx_gain=-5"/>  <!--ADJUST to reduce sensitivity to noise (go more negative)-->
+<extension name="vosk_asr_processing">
+	<condition field="destination_number" expression="^5602$">
+		<action application="answer"/>
+		<action application="log" data="INFO ASR 5602: grace=${asr_grace_ms} listen=${asr_listen_ms}"/>
+		
+		<!-- Prevent line pops from aborting the listen window -->
+		<action application="set" data="disable_break=true"/>
+		
+			<action application="sleep" data="${asr_grace_ms}"/>
+		<action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
 
-			<!-- Attempt 1 -->
-			<action application="play_and_detect_speech" data="silence_stream://10000 detect:vosk default"/>
+		<!--action application="set" data="rx_gain=-5"/-->
+		<!--action application="record_session" data="C:/inetpub/SIPServer/sounds/custom/asr_debug/${uuid}.wav"/-->
 
-			<!-- Retry gates if attempt produced no usable speech.
-				Nested condition if it doesn't match, its actions are simply
-				skipped and execution falls through to the POST below. -->
+		<action application="play_and_detect_speech" data="silence_stream://${asr_listen_ms} detect:vosk default"/>
+		
+		
+		<action application="set" data="my_post_body=${detect_speech_result}"/>
+		<action application="set" data="disable_break=false"/>
+		<action application="set" data="res=${bgapi(curl http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}')}"/>
+		<action application="detect_speech" data="stop"/>
 
-			<condition field="${detect_speech_result}" expression="^($|_undef_|false)|\[unk\]|&quot;text&quot;\s*:\s*&quot;&quot;" break="never" inline="true"><!--inline="true"-->
-				<action application="log" data="INFO ASR 5602: attempt 2 empty/unk, retrying again"/>
-				<action application="sleep" data="150"/>
-				<action application="play_and_detect_speech" data="silence_stream://10000 detect:vosk default"/>
-			</condition>
-			
-			<condition field="${detect_speech_result}" expression="^($|_undef_|false)|\[unk\]|&quot;text&quot;\s*:\s*&quot;&quot;" break="never" inline="true" ><!--inline="true"-->
-				<action application="log" data="INFO ASR 5602: attempt 3 empty/unk, retrying again"/>
-				<action application="sleep" data="150"/>
-				<action application="play_and_detect_speech" data="silence_stream://10000 detect:vosk default"/>
-			</condition>
-			
-			<condition field="${detect_speech_result}" expression="^($|_undef_|false)|\[unk\]|&quot;text&quot;\s*:\s*&quot;&quot;" break="never" inline="true"><!--inline="true"-->
-				<action application="log" data="INFO ASR 5602: attempt 4 empty/unk, retrying again"/>
-				<action application="sleep" data="150"/>
-				<action application="play_and_detect_speech" data="silence_stream://10000 detect:vosk default"/>
-			</condition>
-
-			<action application="set" data="my_post_body=${detect_speech_result}"/>
-			<action application="set" data="disable_break=false"/>
-			<action application="set" data="res=${bgapi(curl http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}')}"/>
-			<action application="detect_speech" data="stop"/>
-
-			<!-- failsafe -->
-			<action application="playback" data="silence_stream://6000"/>
-			<action application="playback" data="tone_stream://%(200,200,400,450);loops=3"/>
-			<action application="conference" data="asr_holding_room@default+flags{mute|waste|nomoh}"/>
-		</condition>
-	</extension>
-
+		<!-- Safely park until IIS tears it down -->
+		<action application="park"/>
+	</condition>
+</extension>
 	<extension name="asr_announce_only">
 		<condition field="destination_number" expression="^5603$">
 			<action application="answer"/>
@@ -65,4 +43,3 @@
 	</extension>
 
 </include>
-
