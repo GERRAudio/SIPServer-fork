@@ -39,6 +39,7 @@
 #pragma GCC visibility push(default)
 #endif
 
+#include "D:/Downloads/ptlib-2.18.7-src/ptlib/lib/Win32/include/ptlib_config.h"
 #include <ptlib.h>
 #include <h323.h>
 #include <h323neg.h>

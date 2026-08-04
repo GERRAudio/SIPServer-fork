@@ -1,5 +1,6 @@
 @echo off
 sc query SIPServer
+sc query VoskASR
 echo ========================================================
 echo Note: 
 echo you can also optionally use the readonly Web interface:

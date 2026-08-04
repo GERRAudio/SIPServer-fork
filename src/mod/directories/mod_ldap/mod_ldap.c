@@ -30,6 +30,9 @@
  *
  */
 #include <switch.h>
+#ifdef WIN32
+#define MSLDAP 1
+#endif
 #ifdef MSLDAP
 #include <windows.h>
 #include <winldap.h>

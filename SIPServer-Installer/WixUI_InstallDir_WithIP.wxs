@@ -98,7 +98,7 @@ Patch dialog sequence:
     <!-- Custom IP -->
     <PropertyRef Id="TCPADR" />
     <PropertyRef Id="UDPADR" />
-    <PropertyRef Id="APPROOT"/>
+    <PropertyRef Id="AppRoot"/>
 
 
     <UI Id="CustomUI_IP">

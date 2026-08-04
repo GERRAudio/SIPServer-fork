@@ -41,6 +41,9 @@
     <ClInclude Include="..\..\..\src\mod\endpoints\mod_gsmopen\libctb-0.16\include\ctb-0.16\serportx.h" />
     <ClInclude Include="..\..\..\src\mod\endpoints\mod_gsmopen\libctb-0.16\include\ctb-0.16\timer.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{77BC1DD2-C9A1-44D7-BFFA-1320370CACB9}</ProjectGuid>
     <ProjectName>libcbt</ProjectName>
@@ -164,5 +167,12 @@
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="..\..\..\packages\Vosk.0.3.38\build\Vosk.targets" Condition="Exists('..\..\..\packages\Vosk.0.3.38\build\Vosk.targets')" />
   </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\..\..\packages\Vosk.0.3.38\build\Vosk.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\packages\Vosk.0.3.38\build\Vosk.targets'))" />
+  </Target>
 </Project>

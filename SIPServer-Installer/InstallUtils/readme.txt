@@ -62,5 +62,7 @@
 	- Communicator at localhost 
 		
 	- Kiosk at localhost/Kiosk 
+	
+9. If you require licensing for certain modules, please contact GERR Audio directly for instructions
 
 

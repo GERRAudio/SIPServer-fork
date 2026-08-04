@@ -31,6 +31,13 @@ struct in_addr;
 #else
 
 #include <errno.h>
+#if defined(_WIN32)
+# include <winsock2.h>
+# include <ws2tcpip.h>
+# include <inaddr.h>
+#else
+# include <netinet/in.h>
+#endif
 
 #ifdef TEST
 
@@ -51,7 +58,7 @@ struct in_addr;
 #endif /* inet_XtoX_prototypes */
 
 #ifndef inet_XtoX_prefix
-# define inet_XtoX_prefix inet_
+# define inet_XtoX_prefix udns_inet_
 #endif
 #ifndef inet_XtoX_decl
 # define inet_XtoX_decl /* empty */

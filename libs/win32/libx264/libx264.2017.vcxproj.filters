@@ -124,6 +124,7 @@
     <None Include="..\..\libx264\common\opencl\motionsearch.cl" />
     <None Include="..\..\libx264\common\opencl\subpel.cl" />
     <None Include="..\..\libx264\common\opencl\weightp.cl" />
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <YASM Include="..\..\libx264\common\x86\bitstream-a.asm" />

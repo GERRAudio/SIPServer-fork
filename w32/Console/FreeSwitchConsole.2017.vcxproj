@@ -251,16 +251,27 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="Product Keys\Templates\status.html.template">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Product Keys\Templates\status.html.template</Link>
+      <DeploymentContent>true</DeploymentContent>
+    </None>
+    <None Include="sentry.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <DeploymentContent>true</DeploymentContent>
+    </None>
     <None Include="switch_version.rc2" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="..\..\packages\x64sentry-native.0.6.1\build\x64sentry-native.targets" Condition="Exists('..\..\packages\x64sentry-native.0.6.1\build\x64sentry-native.targets')" />
+    <Import Project="..\..\packages\Vosk.0.3.38\build\Vosk.targets" Condition="Exists('..\..\packages\Vosk.0.3.38\build\Vosk.targets')" />
   </ImportGroup>
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
       <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
     </PropertyGroup>
     <Error Condition="!Exists('..\..\packages\x64sentry-native.0.6.1\build\x64sentry-native.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\packages\x64sentry-native.0.6.1\build\x64sentry-native.targets'))" />
+    <Error Condition="!Exists('..\..\packages\Vosk.0.3.38\build\Vosk.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\packages\Vosk.0.3.38\build\Vosk.targets'))" />
   </Target>
 </Project>

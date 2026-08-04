@@ -25,8 +25,10 @@
 #include <stdlib.h>
 #include <assert.h>
 #ifndef __MINGW32__
+# ifndef _WIN32
 # include <sys/types.h>
 # include <netinet/in.h>
+# endif
 #endif
 #include "udns.h"
 

@@ -36,6 +36,7 @@
  *
  */
 
+//#define LICENSING_ENABLED
 #include "aes67_alloc.h"
 #include "aes67_api.h"
 #include "aes67_counters.h"
@@ -257,6 +258,7 @@ static struct {
 	switch_time_t last_stream_activity;		// Last pullbuffer/pushbuffer time
 	guint64 trim_cnt;
 	guint64 compact_heap_cnt;
+	guint64 gst_clean_cnt;
 
 	// added to track clr mem
 
@@ -349,6 +351,7 @@ static switch_status_t destroy_audio_stream(udp_sock_t *indev, udp_sock_t *outde
 static switch_status_t destroy_actual_stream(audio_stream_t *stream);
 static void destroy_audio_streams();
 static void destroy_shared_audio_streams();
+static void deep_destroy_shared_audio_streams();
 static switch_status_t validate_main_audio_stream();
 
 static switch_status_t load_config(void);
@@ -500,12 +503,25 @@ error:
 	return SWITCH_STATUS_FALSE;
 }
 
+
 static int clear_shared_audio_stream(shared_audio_stream_t *shstream)
 {
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Destroying shared audio stream %s\n", shstream->name);
-	if (shstream->stream) { stop_pipeline(shstream->stream); }
+	if (!shstream) return -1;
 
-	shstream->stream = NULL; // deallocated in stop pipeline
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Destroying shared audio stream %s\n", shstream->name);
+
+	if (shstream->stream) {
+		// Set shutdown flag FIRST - this stops all I/O immediately
+		g_atomic_int_set(&shstream->stream->pipeline_active, 0);
+
+		// Give threads 200ms to see flag and exit
+		g_usleep(200000);
+
+		// Now safe to call stop_pipeline
+		stop_pipeline(shstream->stream);
+	}
+
+	shstream->stream = NULL;
 	return 0;
 }
 
@@ -571,7 +587,6 @@ static void destroy_shared_audio_streams()
 	switch_hash_index_t *hi;
 	shared_audio_stream_t *stream;
 
-	// aes67_globals.destroying_streams = 1;
 	g_atomic_int_set(&aes67_globals.destroying_streams, 1); // added
 
 	switch_mutex_lock(aes67_globals.sh_shtreams_lock);
@@ -586,9 +601,70 @@ static void destroy_shared_audio_streams()
 	}
 
 	switch_mutex_unlock(aes67_globals.sh_shtreams_lock);
-	g_atomic_int_set(&aes67_globals.destroying_streams, 0); // added
-													  // aes67_globals.destroying_streams = 0;
+	g_atomic_int_set(&aes67_globals.destroying_streams, 0); 
 }
+
+static void deep_destroy_shared_audio_streams()
+{
+	switch_hash_index_t *hi;
+	shared_audio_stream_t *stream;
+
+	g_atomic_int_set(&aes67_globals.destroying_streams, 1); 
+
+	switch_mutex_lock(aes67_globals.sh_shtreams_lock);
+
+	const void *key;
+	for (hi = switch_core_hash_first(aes67_globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
+		switch_core_hash_this(hi, &key, NULL, (void **)&stream);
+
+		// CRITICAL: Set shutdown flag BEFORE trying to acquire lock
+		if (stream->stream) { 
+			g_atomic_int_set(&stream->stream->pipeline_active, 0); 
+		}
+		// Give I/O threads time to release locks (they check pipeline_active)
+		g_usleep(100000); // 100ms
+
+		// Try to acquire lock with timeout using trylock
+		int retries = 20; // 2 seconds total
+		gboolean got_lock = FALSE;
+		while (retries-- > 0) {
+			if (g_rw_lock_writer_trylock(&stream->rwlock)) {
+				got_lock = TRUE;
+				g_rw_lock_writer_unlock(&stream->rwlock); // release before free_shared_audio_stream re-acquires
+				break;
+			}
+			g_usleep(100000);
+		}
+
+		if (got_lock) {
+			free_shared_audio_stream(stream); // acquires lock internally
+		} else {
+			// Couldn't get lock - force cleanup anyway
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+							  "Stream %s locked during shutdown - forcing cleanup\n", stream->name);
+			// Aggressive flag setting
+			g_atomic_int_set(&stream->reloading, 1);
+			// Wait a bit more
+			g_usleep(200000);
+			// Force cleanup without lock (we're shutting down anyway)
+			if (stream->stream) {
+				g_atomic_int_set(&stream->stream->pipeline_active, 0);
+				g_usleep(100000);
+				stop_pipeline(stream->stream);
+				stream->stream = NULL;
+			}
+			switch_safe_free(stream->indev);
+			switch_safe_free(stream->outdev);
+			switch_safe_free(stream);
+		}
+	}
+	switch_mutex_unlock(aes67_globals.sh_shtreams_lock);
+	g_atomic_int_set(&aes67_globals.destroying_streams, 0);
+}
+
+
+
+
 
 static switch_status_t validate_main_audio_stream()
 {
@@ -1124,22 +1200,16 @@ static switch_status_t channel_read_frame(switch_core_session_t *session, switch
 
 	if (tech_pvt->hfh) { tech_close_file(tech_pvt); }
 
-	//switch_mutex_lock(aes67_globals.device_lock);
-	STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream);	//added
-
-	//Added check
-	if (g_atomic_int_get(&tech_pvt->audio_endpoint->in_stream->reloading) || tech_pvt->flags & TFLAG_HUP) {
-		STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream);
-		goto error; // Bail during teardown
+	// Check if shutdown in progress 
+	if (g_atomic_int_get(&aes67_globals.destroying_streams)) {
+		goto cng_wait; 
 	}
-	//added check
 
 	bytes = pull_buffers(aes67_globals.main_stream->stream, (unsigned char *)aes67_globals.read_frame.data,
 						 aes67_globals.read_codec.implementation->samples_per_packet * 2 /* FIXME: S16LE-only */, 0,
 						 &aes67_globals.read_timer, session_id);
 	// FIXME: won't work for L24/L32
 	samples = bytes / sizeof(int16_t);
-	STREAM_READER_UNLOCK(tech_pvt->audio_endpoint->in_stream); // added
 
 	// poll for clear mem
 	// After pullbuffers() or pushbuffer() succeeds
@@ -1222,15 +1292,18 @@ static switch_status_t channel_write_frame(switch_core_session_t *session, switc
 	if (switch_test_flag(tech_pvt, TFLAG_HUP)) { return SWITCH_STATUS_FALSE; }
 
 	if (!is_master(tech_pvt) || !switch_test_flag(tech_pvt, TFLAG_IO)) { return SWITCH_STATUS_SUCCESS; }
+	// Check if shutdown in progress 
+	if (g_atomic_int_get(&aes67_globals.destroying_streams)) { return SWITCH_STATUS_SUCCESS; }
+
 
 	if (aes67_globals.main_stream) {
 		if (switch_test_flag((&aes67_globals), GFLAG_EAR)) {
 			// Note: 0 is passed as the channel index because main stream can have only one out channel
-			switch_mutex_lock(aes67_globals.streams_lock); /// check added to avoid contention on globals stream - should it
+			//switch_mutex_lock(aes67_globals.streams_lock); /// check added to avoid contention on globals stream - should it
 													 /// be device_lock as in pull for similar parms?
 			push_buffer(aes67_globals.main_stream->stream, (unsigned char *)frame->data, frame->datalen, 0,
 						&(aes67_globals.main_stream->write_timer));
-			switch_mutex_unlock(aes67_globals.streams_lock); /// check added
+			//switch_mutex_unlock(aes67_globals.streams_lock); /// check added
 		}
 		status = SWITCH_STATUS_SUCCESS;
 	}
@@ -1588,6 +1661,28 @@ static void gst_logger(GstDebugCategory *category, GstDebugLevel level, const gc
 
 SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 {
+
+	 switch_stream_handle_t stream = {0};
+
+	*module_interface = switch_loadable_module_create_module_interface(pool, modname);
+#ifdef LICENSING_ENABLED
+	/* Check if this module is licensed */
+	SWITCH_STANDARD_STREAM(stream);
+	switch_api_execute("check_module", "aes67", NULL, &stream);
+
+	if (!stream.data || !strstr((char *)stream.data, "+OK")) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT,
+						  "mod_aes67: Not licensed. Please obtain a valid license.\n");
+		switch_safe_free(stream.data);
+		return SWITCH_STATUS_GENERR;
+	}
+
+	switch_safe_free(stream.data);
+
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_aes67: License verified, loading...\n");
+
+#endif
+	/* resume normal operation */
 	switch_status_t status;
 	switch_api_interface_t *api_interface;
 #define MAX_PATH_LEN 10000
@@ -1633,6 +1728,15 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 #endif
 	}
 
+
+// turn this on if you want gstreamer mem stats, then check gstreamer_leaks.log file
+#ifdef _DEBUG_MEM
+	g_setenv("GST_DEBUG", "GST_TRACER:7", TRUE);
+	g_setenv("GST_TRACERS", "leaks", TRUE);
+	g_setenv("GST_DEBUG_FILE", "/tmp/gstreamer_leaks.log", TRUE);
+#endif
+
+
 	gst_init(NULL, NULL);
 	// gst_debug_remove_log_function (NULL);
 	// gst_debug_set_default_threshold (GST_LEVEL_WARNING);
@@ -1665,8 +1769,11 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 	if ((status = load_config()) != SWITCH_STATUS_SUCCESS) { return status; }
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Input : %s:%d, Output : %s:%d, Sample Rate: %d MS: %d\n",
-					  aes67_globals.indev->ip_addr, aes67_globals.indev->port, aes67_globals.outdev->ip_addr, aes67_globals.outdev->port,
-					  aes67_globals.sample_rate, aes67_globals.codec_ms);
+		aes67_globals.indev->ip_addr, 
+		aes67_globals.indev->port, 
+		aes67_globals.outdev->ip_addr, 
+		aes67_globals.outdev->port,
+		aes67_globals.sample_rate, aes67_globals.codec_ms);
 
 	if (switch_event_reserve_subclass(MY_EVENT_RINGING) != SWITCH_STATUS_SUCCESS) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Couldn't register subclass!\n");
@@ -2103,7 +2210,7 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 			} else if (!strcmp(var, "rx-address")) {
 				if (stream->indev == NULL) {
 					switch_malloc(stream->indev, sizeof(udp_sock_t));
-					stream->indev->port = aes67_globals.indev->port ? aes67_globals.indev->port : 0;
+					stream->indev->port = (aes67_globals.indev ? aes67_globals.indev->port : 0);
 				}
 				strncpy(stream->indev->ip_addr, val, IP_ADDR_MAX_LEN - 1);
 			} else if (!strcmp(var, "rx-port")) {
@@ -2882,8 +2989,11 @@ static int create_shared_audio_stream(shared_audio_stream_t *shstream) /// check
 	switch_event_t *event;
 	if (-1 == open_shared_audio_stream(shstream)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-						  "Can't open audio device (indev = %s:%d, outdev = %s:%d)\n", shstream->indev->ip_addr,
-						  shstream->indev->port, shstream->outdev->ip_addr, shstream->outdev->port);
+						  "Can't open audio device (indev = %s:%d, outdev = %s:%d)\n", 
+						(shstream->indev?shstream->indev->ip_addr:0),
+						(shstream->indev?shstream->indev->port: 0),
+						(shstream->outdev?shstream->outdev->ip_addr:0),
+						(shstream->outdev?shstream->outdev->port:0) );
 		if (switch_event_create_subclass(&event, SWITCH_EVENT_CUSTOM, MY_EVENT_ERROR_AUDIO_DEV) ==
 			SWITCH_STATUS_SUCCESS) {
 			switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Reason", "Failed to create gstreamer pipeline");
@@ -2982,10 +3092,10 @@ static int is_sock_equal(udp_sock_t *a, udp_sock_t *b)
 	return (a->port == b->port) && (addr_a.s_addr == addr_b.s_addr);
 }
 
-// cleans memory on a periodic basis, called from call routines
-void periodic_mem_check(BOOL force)
+// Clean memory on a periodic basis, polled and called on a timer
+BOOL periodic_mem_check(BOOL force)
 {
-	if (!memcheck_active) return;
+	if (!memcheck_active) return FALSE;
 	// IDLE DETECTION and mem clr
 	switch_time_t now = switch_micro_time_now();
 	static switch_time_t last_check = 0; // persists
@@ -2993,9 +3103,24 @@ void periodic_mem_check(BOOL force)
 	if (last_check == 0) last_check = now;
 
 	if ((now - last_check) < IDLE_POLLING_SEC * 1000000LL) {
-		return; // Skip - too soon
+		return FALSE; // Skip - too soon
 	}
 	last_check = now;
+
+	// Never touch process heaps while streams are actively being created or
+	// torn down (config reload, stream add/remove - see destroying_streams
+	// elsewhere in this file). That's exactly when GStreamer/GLib are creating
+	// and destroying their own private heaps, and CompactHeaps() racing against
+	// that churn is what exposed the GetProcessHeaps() TOCTOU bug in
+	// trim_mem.c. force=TRUE (used to guarantee cleanup fires even on a server
+	// that's never truly idle) must not override this - skip this cycle and
+	// let the caller decide whether to retry sooner rather than waiting for
+	// the next full interval.
+	if (g_atomic_int_get(&aes67_globals.destroying_streams)) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+						  "Skipping periodic mem check - streams are being created/torn down\n");
+		return FALSE;
+	}
 
 	switch_time_t idle_time = now - aes67_globals.last_call_activity;
 	if (force || (idle_time > (IDLE_THRESHOLD_SEC * 1000000LL))) {
@@ -3007,36 +3132,119 @@ void periodic_mem_check(BOOL force)
 		aes67_globals.last_call_activity = now;
 		switch_mutex_unlock(aes67_globals.pvt_lock);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Periodic mem clear firing\n");
+		return TRUE;
+	}
+	return FALSE;
+}
+
+
+void deep_clean_gst()
+{
+	switch_mutex_lock(aes67_globals.pvt_lock);
+	if (aes67_globals.call_list != NULL) {
+		switch_mutex_unlock(aes67_globals.pvt_lock);
+		return;
+	}
+	switch_mutex_unlock(aes67_globals.pvt_lock);
+
+	// Flush queues in all active streams without destroying them
+	switch_mutex_lock(aes67_globals.sh_shtreams_lock);
+	switch_hash_index_t *hi;
+	for (hi = switch_core_hash_first(aes67_globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
+		const void *key;
+		void *val;
+		shared_audio_stream_t *s;
+		switch_core_hash_this(hi, &key, NULL, &val);
+		s = val;
+		if (s->stream) flush_all_queues(s->stream);
+	}
+	switch_mutex_unlock(aes67_globals.sh_shtreams_lock);
+
+	aes67_globals.gst_clean_cnt++;
+}
+
+// Called periodically from a timer to clean up gstreamer mem specifically
+void check_pipeline_memory_pressure(g_stream_t *stream)
+{
+	if (!stream || !stream->pipeline) return;
+
+	GstIterator *iter = gst_bin_iterate_elements(GST_BIN(stream->pipeline));
+	GValue item = G_VALUE_INIT;
+	guint total_queued_buffers = 0;
+	guint total_queued_bytes = 0;
+
+	while (gst_iterator_next(iter, &item) == GST_ITERATOR_OK) {
+		GstElement *element = g_value_get_object(&item);
+
+		GstElementFactory *factory = gst_element_get_factory(element);
+		if (factory) {
+			const gchar *factory_name = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory));
+
+			// Check standard queues
+			if (g_strcmp0(factory_name, "queue") == 0 || g_strcmp0(factory_name, "ts-queue") == 0) {
+				guint buffers = 0, bytes = 0;
+				g_object_get(element, "current-level-buffers", &buffers, "current-level-bytes", &bytes, NULL);
+				total_queued_buffers += buffers;
+				total_queued_bytes += bytes;
+			}
+			// Check AppSrc limits
+			else if (g_strcmp0(factory_name, "appsrc") == 0) {
+				guint64 bytes = 0; // appsrc current-level-bytes is guint64
+				g_object_get(element, "current-level-bytes", &bytes, NULL);
+				total_queued_bytes += (guint)bytes;
+			}
+		}
+		g_value_reset(&item);
+	}
+
+	gst_iterator_free(iter);
+
+	// If memory pressure is too high (e.g., > 10MB across the pipeline), trigger aggressive flush
+	if (total_queued_buffers > 500 || total_queued_bytes > 10 * 1024 * 1024) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+						  "HIGH MEMORY PRESSURE DETECTED: %u buffers, %u bytes - flushing pipeline!\n",
+						  total_queued_buffers, total_queued_bytes);
+
+		// Trigger flush
+		flush_all_queues(stream);
 	}
 }
+
+
 
 void error_callback(char *msg, g_stream_t *stream)
 {
-	// switch_event_t *event;
-	switch_channel_t *channel;
 	private_t *tp;
-	if (msg) switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Stream error: %s\n", msg); // added check
+	switch_core_session_t *sessions_to_hangup[256];
+	int hangup_count = 0;
+
+	if (msg) switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Stream error: %s\n", msg);
+
+	switch_mutex_lock(aes67_globals.pvt_lock);
 
 	for (tp = aes67_globals.call_list; tp; tp = tp->next) {
 		if (!tp->audio_endpoint) continue;
-		STREAM_READER_LOCK(tp->audio_endpoint->in_stream);		//added
-		if ((tp->audio_endpoint->in_stream && (tp->audio_endpoint->in_stream->stream == stream)) ||
-			(tp->audio_endpoint->out_stream && (tp->audio_endpoint->out_stream->stream == stream))) {
-			channel = switch_core_session_get_channel(tp->session);
-			STREAM_READER_UNLOCK(tp->audio_endpoint->in_stream);
-			goto hangup;
+
+		//  pointer comparison without requiring the reader lock
+		g_stream_t *in_gst = tp->audio_endpoint->in_stream ? tp->audio_endpoint->in_stream->stream : NULL;
+		g_stream_t *out_gst = tp->audio_endpoint->out_stream ? tp->audio_endpoint->out_stream->stream : NULL;
+
+		if (in_gst == stream || out_gst == stream) {
+			// cap the array to prevent overflow 
+			if (hangup_count < 256) { sessions_to_hangup[hangup_count++] = tp->session; }
 		}
-		STREAM_READER_UNLOCK(tp->audio_endpoint->in_stream);
 	}
 
-	return;
+	// unlock  before calling FreeSWITCH core functions
+	switch_mutex_unlock(aes67_globals.pvt_lock);
 
-hangup:
-	//switch_mutex_unlock(aes67_globals.pvt_lock); // added check
-	// Note: this could be sync blocking call, would prefer a more asyn event kind which will call channel_kill
-	// switch_channel_hangup(channel, SWITCH_CAUSE_PROTOCOL_ERROR);
-	if (channel) switch_channel_hangup(channel, SWITCH_CAUSE_PROTOCOL_ERROR); // check
+	// hang up the orphaned channels
+	for (int i = 0; i < hangup_count; i++) {
+		switch_channel_t *channel = switch_core_session_get_channel(sessions_to_hangup[i]);
+		if (channel) { switch_channel_hangup(channel, SWITCH_CAUSE_PROTOCOL_ERROR); }
+	}
 }
+
 
 static switch_status_t list_shared_streams(switch_stream_handle_t *stream)
 {
@@ -3084,6 +3292,37 @@ static switch_status_t list_endpoints(switch_stream_handle_t *stream)
 	return SWITCH_STATUS_SUCCESS;
 }
 
+void check_all_streams_memory_pressure(void)
+{
+	switch_hash_index_t *hi;
+
+	// Skip if we are currently tearing down all streams
+	if (g_atomic_int_get(&aes67_globals.destroying_streams)) { return; }
+
+	switch_mutex_lock(aes67_globals.sh_shtreams_lock);
+
+	for (hi = switch_core_hash_first(aes67_globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
+		const void *key;
+		void *val;
+		shared_audio_stream_t *s;
+
+		switch_core_hash_this(hi, &key, NULL, &val);
+		s = val;
+
+		if (s && s->stream && g_atomic_int_get(&s->stream->pipeline_active)) {
+			// Use TryLock to avoid blocking the heartbeat if the stream is heavily contended
+			if (STREAM_READER_TRYLOCK(s)) {
+				check_pipeline_memory_pressure(s->stream);
+				STREAM_READER_UNLOCK(s);
+			}
+		}
+	}
+
+	switch_mutex_unlock(aes67_globals.sh_shtreams_lock);
+}
+
+
+
 static switch_status_t reload_config()
 {
 	char *cf = "aes67.conf";
@@ -3125,7 +3364,7 @@ SWITCH_STANDARD_API(aes_cmd)
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
 	const char *usage_string = "USAGE:\n"
 							   "--------------------------------------------------------------------------------\n"
-							   "aes67 (for this list)\n"
+							   "aes67  (for this list)\n"
 							   "aes67 version\n"
 							   "aes67 streams\n"
 							   "aes67 endpoints\n"
@@ -3133,15 +3372,18 @@ SWITCH_STANDARD_API(aes_cmd)
 							   "aes67 rtpstats <stream>\n"
 							   "aes67 txflow <stream> <on|off>\n"
 							   "aes67 reloadconf\n"
-							   "aes67 dump <stream> <dotfile name>\n"
+							   "aes67 dump <stream> <dotfile name>\n" 
 #ifdef _WIN32
+							   "(cmds below never hangup calls & clrbufs will only act when no calls are active)\n"
 							   "aes67 autocleanmem <on|off>\n"
 							   "aes67 autocleanmem setmin [1-" XSTR(MAXMIN) "]\n"
 							   "aes67 clrwrkset\n"
 							   "aes67 compactheap\n"
 							   "aes67 memcleancount\n"
+							   "aes67 clrbufs \n"
 #endif
 							   "--------------------------------------------------------------------------------\n";
+
 	if (zstr(cmd)) {
 		stream->write_function(stream, "%s", usage_string);
 		goto done;
@@ -3232,7 +3474,7 @@ SWITCH_STANDARD_API(aes_cmd)
 			stream->write_function(stream, "%s", usage_string);
 			goto done;
 		}
-
+		if (!argv[2]) goto done;
 		if (!strcasecmp(argv[2], "on")) {
 			if (STREAM_READER_TRYLOCK(astream)) {
 				drop_output_buffers(FALSE, astream->stream);
@@ -3335,11 +3577,15 @@ SWITCH_STANDARD_API(aes_cmd)
 				errno = 0;
 				if (argv[2])
 					val	= strtol(argv[2], &end, 10);
+				else {
+					stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-%d]\n", MAXMIN);
+					break;
+				}
 				if (end == argv[2] || errno == ERANGE || val < 1 || val > MAXMIN) {
 					stream->write_function(stream, "Please 'set' interval in minutes with a value between [1-%d]\n", MAXMIN);
 					break;
 				}
-				interval_min = (long unsigned)val;
+				interval_min = (volatile gint)val;
 				memcheck_active = TRUE;
 				stream->write_function(stream,
 									   "Periodic autocleanmem is now on with interval: %d min(s) = %2d:%02d hh:mm\n",  interval_min, interval_min / 60, interval_min % 60);
@@ -3363,9 +3609,13 @@ SWITCH_STANDARD_API(aes_cmd)
 		CompactHeaps();
 		aes67_globals.compact_heap_cnt++;
 		stream->write_function(stream, "Compacted idle heap\n");
+	} else if (!strcasecmp(argv[0], "clrbufs")) {
+		deep_clean_gst();		//counter incremented inside
+		stream->write_function(stream, "Cleared buffers\n");
 	} else if (!strcasecmp(argv[0], "memcleancount")) {
-		stream->write_function(stream, "Mem cleanup counts: trim:%" G_GUINT64_FORMAT " heap:%" G_GUINT64_FORMAT "\n"
-			, aes67_globals.trim_cnt, aes67_globals.compact_heap_cnt);
+		stream->write_function(stream,
+							   "Mem cleanup counts:  trim:%" G_GUINT64_FORMAT "  heap:%" G_GUINT64_FORMAT "  bufs:%" G_GUINT64_FORMAT "\n",
+							   aes67_globals.trim_cnt, aes67_globals.compact_heap_cnt, aes67_globals.gst_clean_cnt);
 	}
 #endif
 

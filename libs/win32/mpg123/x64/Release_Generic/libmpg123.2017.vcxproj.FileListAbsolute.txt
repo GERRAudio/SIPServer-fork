@@ -2,4 +2,8 @@ C:\Development\GitHub\Forked-NetworkedAudio\SIPServer-master\libs\win32\mpg123\x
 C:\Development\GitHub\Forked-NetworkedAudio\SIPServer\libs\win32\mpg123\x64\Release_Generic\libmpg123.lib
 C:\Development\GitHub\SIPServer-fork\SIPServer\libs\win32\mpg123\x64\Release_Generic\libmpg123.lib
 C:\Development\GitHub\GERRAudio\SIPServer-fork\libs\win32\mpg123\x64\Release_Generic\libmpg123.lib
+C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\x64\Release_Generic\libgcc_s_seh-1.dll
+C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\x64\Release_Generic\libstdc++-6.dll
+C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\x64\Release_Generic\libvosk.dll
+C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\x64\Release_Generic\libwinpthread-1.dll
 C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\x64\Release_Generic\libmpg123.lib
