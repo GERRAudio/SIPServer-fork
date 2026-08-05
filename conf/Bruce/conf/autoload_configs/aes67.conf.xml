@@ -384,7 +384,7 @@
 			<param name="instream" value="Dante-AES67-57-64:5" />
 			<param name="outstream" value="Dante-AES67-57-64:5" />
 		</endpoint>
-
+		<!-- generates a beep continuously -->
 		<endpoint name="BeltpackMessages">
 			<param name="instream" value="Dante-AES67-57-64:6" />
 			<param name="outstream" value="Dante-AES67-57-64:6" />
