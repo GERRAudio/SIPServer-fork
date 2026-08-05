@@ -65,7 +65,31 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
     private void PeriodicCheck_Elapsed(object sender, ElapsedEventArgs e)
     {
         CheckChannelListSyncsWithConferenceList();
+        EnsureBeltpackMessagesAlive(); //the beep generator
     }
+
+    private volatile bool _beltpackMessagesRestarting = false;
+    private void EnsureBeltpackMessagesAlive()
+    {
+        if (_beltpackMessagesRestarting) return;
+        try
+        {
+            var channels = fsApi.ExecuteString("show channels as xml");
+            bool alive = channels != null &&
+                channels.IndexOf(moduleName + "/endpoint-BeltpackMessages", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (!alive)
+            {
+                _beltpackMessagesRestarting = true;
+                WriteToLog(LogLevel.Warning, "BeltpackMessages channel missing — re-originating.");
+                MakeCall("BeltpackMessages", "&endless_playback(single_beep_silence.wav)").Wait();
+            }
+        }
+        catch (Exception ex) { WriteToLog(LogLevel.Error, "EnsureBeltpackMessagesAlive failed: " + ex.Message); }
+        finally { _beltpackMessagesRestarting = false; }
+    }
+
+
 
     public void StartScheduledTasks(object sender, ElapsedEventArgs e)
     {
@@ -87,6 +111,7 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
 
         try
         {
+            // this is why pressing the A button beeps immediately
             id = MakeCall("BeltpackMessages", "&endless_playback(single_beep_silence.wav)").Result;
             if (!id.Equals(Guid.Empty))
             {
