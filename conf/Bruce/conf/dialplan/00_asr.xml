@@ -4,36 +4,51 @@
 			<action application="answer"/>
 			<!-- Long last-resort safety net only - keep hold channel open normal cleanup is via uuid_kill from AsrAudioRouter -->
 			<action application="sched_hangup" data="+1800 alloc_failure"/>
-			<action application="loop_playback" data="C:/inetpub/SIPServer/sounds/custom/asr_please_wait.wav"/>
+			<!--action application="loop_playback" data="C:/inetpub/SIPServer/sounds/custom/asr_please_wait.wav"/-->
+			<!-- Loop the wav file, followed by  silence, endlessly -->
+			<action application="endless_playback" data="file_string://C:/inetpub/SIPServer/sounds/custom/asr_please_wait.wav!silence_stream://10000"/>
 		</condition>
 	</extension>
+	
+	
+	<extension name="asr_hold_queue">
+    <condition field="destination_number" expression="^5601$">
+        <action application="answer"/>
+        <!-- Long last-resort safety net only - keep hold channel open normal cleanup is via uuid_kill from AsrAudioRouter -->
+        <action application="sched_hangup" data="+1800 alloc_failure"/>
+        
+        <!-- Loop the wav file, followed by 3000ms of silence, endlessly -->
+        <action application="endless_playback" data="file_string://C:/inetpub/SIPServer/sounds/custom/asr_please_wait.wav!silence_stream://10000"/>
+    </condition>
+</extension>
+	
 
-	<extension name="vosk_asr_processing">
-		<condition field="destination_number" expression="^5602$">
-			<action application="answer"/>
-			<action application="log" data="INFO ASR 5602: grace=${asr_grace_ms} listen=${asr_listen_ms}"/>
-
-			<!-- Prevent line pops from aborting the listen window -->
-			<action application="set" data="disable_break=true"/>
-
+<extension name="vosk_asr_processing">
+	<condition field="destination_number" expression="^5602$">
+		<action application="answer"/>
+		<action application="log" data="INFO ASR 5602: grace=${asr_grace_ms} listen=${asr_listen_ms}"/>
+		
+		<!-- Prevent line pops from aborting the listen window -->
+		<action application="set" data="disable_break=true"/>
+		
 			<action application="sleep" data="${asr_grace_ms}"/>
-			<action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
+		<action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
 
-			<!--action application="set" data="rx_gain=-5"/-->
-			<!--action application="record_session" data="C:/inetpub/SIPServer/sounds/custom/asr_debug/${uuid}.wav"/-->
+		<!--action application="set" data="rx_gain=-5"/-->
+		<!--action application="record_session" data="C:/inetpub/SIPServer/sounds/custom/asr_debug/${uuid}.wav"/-->
 
-			<!--action application="play_and_detect_speech" data="silence_stream://${asr_listen_ms} detect:vosk default"/-->
-			<action application="play_and_detect_speech" data="C:/inetpub/SIPServer/sounds/custom/asr_10s_silence.wav detect:vosk default"/>
+		<!--action application="play_and_detect_speech" data="silence_stream://${asr_listen_ms} detect:vosk default"/-->
+		<action application="play_and_detect_speech" data="C:/inetpub/SIPServer/sounds/custom/asr_10s_silence.wav detect:vosk default"/>
+		
+		<action application="set" data="my_post_body=${detect_speech_result}"/>
+		<action application="set" data="disable_break=false"/>
+		<action application="set" data="res=${bgapi(curl http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}')}"/>
+		<action application="detect_speech" data="stop"/>
 
-			<action application="set" data="my_post_body=${detect_speech_result}"/>
-			<action application="set" data="disable_break=false"/>
-			<action application="set" data="res=${bgapi(curl http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}')}"/>
-			<action application="detect_speech" data="stop"/>
-
-			<!-- Safely park until IIS tears it down -->
-			<action application="park"/>
-		</condition>
-	</extension>
+		<!-- Safely park until IIS tears it down -->
+		<action application="park"/>
+	</condition>
+</extension>
 	<extension name="asr_announce_only">
 		<condition field="destination_number" expression="^5603$">
 			<action application="answer"/>
