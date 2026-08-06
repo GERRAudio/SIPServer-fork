@@ -67,11 +67,11 @@ typedef struct {
 	switch_mutex_t *mutex;
 	int sample_rate;
 	int handshake_done;
-	int16_t *out_buffer;	   /* Permanent pre-allocated buffer */
-	switch_size_t out_max_len; /* Max sample capacity tracker */
-	// Added for local endpointing silence detection
-	char *last_partial;		   //Cache to store the previous partial phrase text 
-	switch_time_t last_partial_time; // 64-bit integer tracking the microsecond timestamp */
+	int16_t *out_buffer;		// Permanent pre-allocated buffer 
+	switch_size_t out_max_len;	// Max sample capacity tracker 
+								// Added for local endpointing silence detection
+	char *last_partial;			//Cache to store the previous partial phrase text 
+	switch_time_t last_partial_time; // 64-bit integer tracking the microsecond timestamp 
 } vosk_t;
 
 
@@ -84,7 +84,7 @@ static switch_status_t ws_send_binary(switch_socket_t *sock, const char *payload
 {
 	unsigned char hdr[8];
 	unsigned char mask[4];
-	char stack_masked[2048]; /* OPTIMIZATION: Use stack memory instead of heap malloc */
+	char stack_masked[2048];		 /* Use stack memory instead of heap malloc */
 	char *masked = stack_masked;
 	switch_size_t hlen, slen;
 
@@ -558,7 +558,7 @@ static switch_status_t vosk_asr_check_results(switch_asr_handle_t *ah, switch_as
 		if (vosk->last_partial_time > 0) {
 			switch_time_t now = switch_micro_time_now();
 
-			/* TARGET OPTIMIZATION: Dynamically read from the XML configuration value */
+			/* Dynamically read from the XML configuration value */
 			switch_time_t silence_threshold_us = (switch_time_t)(globals.endpoint_silence_ms * 1000);
 
 			if ((now - vosk->last_partial_time) > silence_threshold_us) {
@@ -569,11 +569,6 @@ static switch_status_t vosk_asr_check_results(switch_asr_handle_t *ah, switch_as
 				cJSON *root = cJSON_Parse(vosk->result);
 				if (root && cJSON_HasObjectItem(root, "partial")) {
 					const char *partial_phrase = cJSON_GetObjectCstr(root, "partial");
-
-
-
-
-
 
 					char *forced_final = switch_mprintf("{\"text\":\"%s\"}", partial_phrase);
 
@@ -688,7 +683,7 @@ done:
 						  "\"connect\", \"connect to\", \"connect with\", \"join\", \"in\", \"with\", \"join in\", "
 						  "\"join with\", \"disconnect\", \"leave\", "
 						  "\"no\", \"no conference\", \"twenty\", \"thirty\", \"forty\", \"fifty\", \"sixty\", "
-						  "\"seventy\", \"eighty\", \"ninety\", "
+						  "\"seventy\", \"eighty\", \"ninety\", \"pre\",\"vault\",\"pre-vault\","
 						  "\"one\", \"two\", \"three\", \"four\", \"five\", \"six\", \"seven\", \"eight\", \"nine\", "
 						  "\"27\", \"28\", \"29\", \"30\", \"31\", \"32\", \"33\", \"34\", \"35\", \"36\", \"37\", "
 						  "\"38\", \"39\", \"40\", "

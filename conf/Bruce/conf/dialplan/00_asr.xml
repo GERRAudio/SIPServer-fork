@@ -14,7 +14,7 @@
 	<extension name="vosk_asr_processing">
 		<condition field="destination_number" expression="^5602$">
 			<action application="answer"/>
-			<action application="log" data="INFO ASR 5602: grace=${asr_grace_ms} listen=${asr_listen_ms}"/>
+			<!--action application="log" data="INFO ASR 5602: grace=${asr_grace_ms} listen=${asr_listen_ms}"/-->
 
 			<!-- Prevent line pops from aborting the listen window -->
 			<action application="set" data="disable_break=true"/>
