@@ -1,8 +1,13 @@
 ﻿<Project Sdk="WixToolset.Sdk/5.0.0">
   <PropertyGroup>
+	<SIPServerVersion>1.10.15</SIPServerVersion>
+	<MSIVersion>1.9</MSIVersion>
+	<DefineConstants>SIPServerVersion=$(SIPServerVersion);MSIVersion=$(MSIVersion)</DefineConstants>
+
+  
     <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
-    <OutputName>SIPServer_Installer</OutputName>
+    <OutputName>SIPServer_Installer_v$(MSIVersion)</OutputName>
     <SuppressIces>ICE60</SuppressIces>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x64' ">

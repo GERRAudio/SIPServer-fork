@@ -3123,15 +3123,36 @@ BOOL periodic_mem_check(BOOL force)
 	}
 
 	switch_time_t idle_time = now - aes67_globals.last_call_activity;
-	if (force || (idle_time > (IDLE_THRESHOLD_SEC * 1000000LL))) {
+	gboolean is_idle = idle_time > (IDLE_THRESHOLD_SEC * 1000000LL);
+	if (force || is_idle) {
 		switch_mutex_lock(aes67_globals.pvt_lock);
-		TrimCurrentProcessWorkingSet();
-		aes67_globals.trim_cnt++;
+		// TrimCurrentProcessWorkingSet() calls EmptyWorkingSet() under the hood,
+		// which evicts essentially ALL resident pages - not just cold/unused
+		// ones - forcing hard page faults on the next touch of anything,
+		// including live GStreamer buffers and appsrc/appsink queues. That's
+		// fine during genuine idle, but running it just because force=TRUE
+		// asked for cleanup anyway means it can land mid-call, and the page
+		// fault stalls on the RTP thread are audible as clicking on the audio
+		// streams. Only ever do this when we're actually idle - force alone
+		// is not enough justification for it.
+		if (is_idle) {
+			TrimCurrentProcessWorkingSet();
+			aes67_globals.trim_cnt++;
+		}
+		// CompactHeaps() only coalesces already-free blocks within existing
+		// heaps - it doesn't evict resident pages or touch memory the process
+		// is actively using (see the header comment above: "rarely shrinks the
+		// committed virtual address space"), so it's safe to run under force
+		// even while calls/streams are active. This is what still guarantees
+		// periodic cleanup fires on a server that's never truly idle, without
+		// needing the more disruptive working-set trim to run too.
 		CompactHeaps();
 		aes67_globals.compact_heap_cnt++;
 		aes67_globals.last_call_activity = now;
 		switch_mutex_unlock(aes67_globals.pvt_lock);
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Periodic mem clear firing\n");
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+						  is_idle ? "Periodic mem clear firing (idle - full trim)\n"
+								  : "Periodic mem clear firing (active - heap compact only)\n");
 		return TRUE;
 	}
 	return FALSE;
