@@ -17,7 +17,7 @@
      
      The IconsEtcHarvestDir contains the GERRAudio graphics and the
      liability limitation statements.
-     Change the SIPServerVersion define for every release.
+     Change the var.SIPServerVersion define for every release.
      Version downgrades are permitted.
          
      The cert directory is NOT installed for security
@@ -38,14 +38,14 @@
 	<?define CustomConfHarvestDir = "..\..\SIPServer\conf\Bruce\conf" ?>
 
 
-	<?define SIPServerVersion=1.10.15?>
-	<?define MSIVersion=1.9?>
+	<!--?define SIPServerVersion=1.10.16?-->
+	<!--?define MSIVersion=1.9?-->
 
 
-	<Package Name="IP Telephony &#13;&#10;SIPServer v$(SIPServerVersion)-msi v$(MSIVersion)"
+	<Package Name="IP Telephony &#13;&#10;SIPServer v$(var.SIPServerVersion)-msi v$(var.MSIVersion)"
 		 Language="1033"
 
-		 Version='$(SIPServerVersion)'
+		 Version='$(var.SIPServerVersion)'
 		 Manufacturer="GERRAudio Distribution"
 		 UpgradeCode="905A0200-CF4C-4FBD-8D36-2A8EA564C8C4"
 
