@@ -37,6 +37,8 @@
  */
 
 //#define LICENSING_ENABLED
+//#define AGGRESSIVE_CLEAN
+
 #include "aes67_alloc.h"
 #include "aes67_api.h"
 #include "aes67_counters.h"
@@ -3135,10 +3137,12 @@ BOOL periodic_mem_check(BOOL force)
 		// fault stalls on the RTP thread are audible as clicking on the audio
 		// streams. Only ever do this when we're actually idle - force alone
 		// is not enough justification for it.
+#ifdef AGGRESSIVE_CLEAN
 		if (is_idle) {
 			TrimCurrentProcessWorkingSet();
 			aes67_globals.trim_cnt++;
 		}
+#endif
 		// CompactHeaps() only coalesces already-free blocks within existing
 		// heaps - it doesn't evict resident pages or touch memory the process
 		// is actively using (see the header comment above: "rarely shrinks the
