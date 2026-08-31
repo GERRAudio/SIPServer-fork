@@ -96,7 +96,7 @@ void TrimCurrentProcessWorkingSet(void)
 {
 	HANDLE hProcess = GetCurrentProcess();
 
-	// Optional: ensure the call succeeds; you might log or collect stats.
+	// optional: log or collect stats.
 	if (!SetProcessWorkingSetSize(hProcess, (SIZE_T)-1, (SIZE_T)-1)) {
 		// handle error if desired: GetLastError();
 	}
