@@ -1,7 +1,7 @@
 ﻿<Project Sdk="WixToolset.Sdk/5.0.0">
   <PropertyGroup>
 	<SIPServerVersion>1.10.15</SIPServerVersion>
-	<MSIVersion>1.9</MSIVersion>
+	<MSIVersion>1.10</MSIVersion>
 	<DefineConstants>SIPServerVersion=$(SIPServerVersion);MSIVersion=$(MSIVersion)</DefineConstants>
 
   
