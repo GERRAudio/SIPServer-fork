@@ -4,7 +4,7 @@
    xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
    >
   <!-- GERRAudio Distribution 2024-2026 -->
-
+  <?define ManagedModSourceDir = "..\..\SIPServer\src\mod\managed" ?>
   <?define InstallPathDefault = "C:\inetpub\" ?>
   <?define ReleaseBuildDirectoryPath = "..\..\SIPServer\x64\Release" ?>
   <?define GSTMediaHarvestDir = "..\..\Media" ?>
@@ -33,7 +33,11 @@
       <ComponentGroupRef Id="GSTHarvestedComponents"/>
       <ComponentGroupRef Id="LicensingComponents"/>
       <ComponentGroupRef Id="QueueFolders"/>
-
+      
+      <!-- Managed C# Script Deployment -->
+      <ComponentRef Id="CommunicatorConnectorScript"/>
+      <ComponentRef Id="SAPAnnouncerScript"/>
+      
       <!-- Sounds Features -->
       <ComponentGroupRef Id="CustomSoundsComponents"/>
       <ComponentGroupRef Id="enSoundsComponents"/>
@@ -140,7 +144,23 @@
     <Directory Name="." ComponentGuidGenerationSeed="5950CB39-0D52-4158-A4B1-4BC5AAE9A2C4">
       <Directory Id="AppRoot">
         <Directory Id="MyAppFolder" Name="SIPServer">
+          
 
+          <Directory Id="ModDir" Name="mod">
+            <Directory Id="ManagedModDir" Name="managed">
+              <Component Id="CommunicatorConnectorScript" Guid="A28E7680-43C1-46CC-8CC5-AA63CC829E82">
+                <File Id="CommunicatorConnector_csx"
+                      Source="$(var.ManagedModSourceDir)\CommunicatorConnector.csx"
+                      KeyPath="yes" />
+              </Component>
+              <Component Id="SAPAnnouncerScript" Guid="D9AFB658-471E-4145-898A-43448C5CB940">
+                <File Id="SAPAnnouncer_csx"
+                      Source="$(var.ManagedModSourceDir)\SAPAnnouncer.csx"
+                      KeyPath="yes" />
+              </Component>
+            </Directory>
+          </Directory>
+          
           <Directory Id="CONF" Name="conf">
             <Component Id="CreateConfFolder" Guid="A1B2C3D4-E5F6-47A8-9B0C-1D2E3F4A5B6D">
               <CreateFolder />
@@ -300,6 +320,8 @@
       </Component>
 
       <Files Include="$(var.ReleaseBuildDirectoryPath)\**">
+        <Exclude Files="$(var.ReleaseBuildDirectoryPath)\**\CommunicatorConnector.csx"/>
+        <Exclude Files="$(var.ReleaseBuildDirectoryPath)\**\SAPAnnouncer.csx"/>
         <Exclude Files ="$(var.ReleaseBuildDirectoryPath)\conf\**" />
         <Exclude Files="$(var.ReleaseBuildDirectoryPath)\sounds\**" />
         <Exclude Files="$(var.CustomSoundsHarvestDir)\**"/>
