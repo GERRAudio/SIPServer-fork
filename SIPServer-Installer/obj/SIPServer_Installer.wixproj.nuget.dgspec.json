@@ -52,10 +52,6 @@
               "target": "Package",
               "version": "[5.0.1, )"
             },
-            "WixToolset.Heat": {
-              "target": "Package",
-              "version": "[5.0.1, )"
-            },
             "WixToolset.Iis.wixext": {
               "target": "Package",
               "version": "[5.0.1, )"

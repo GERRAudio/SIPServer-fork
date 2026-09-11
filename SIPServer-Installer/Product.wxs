@@ -28,20 +28,23 @@
     <Property Id="OVERWRITE_CONFIGS" Secure="yes" />
     <Property Id="ROOTDRIVE" Value="C:\"/>
 
+    <!-- Sets the custom icon in Windows Add/Remove Programs -->
+    <Property Id="ARPPRODUCTICON" Value="GerrIcon.ico" />
+
     <Feature Id="SIPSERVER" Title="SIP Server" Level="1">
       <ComponentGroupRef Id="HarvestedComponents"/>
       <ComponentGroupRef Id="GSTHarvestedComponents"/>
       <ComponentGroupRef Id="LicensingComponents"/>
       <ComponentGroupRef Id="QueueFolders"/>
-      
-      <!-- Managed C# Script Deployment -->
+
+      <!-- Managed C# Script Deployment via Staging -->
+      <ComponentRef Id="CreateManagedModFolder"/>
       <ComponentRef Id="CommunicatorConnectorScript"/>
       <ComponentRef Id="SAPAnnouncerScript"/>
-      
+
       <!-- Sounds Features -->
       <ComponentGroupRef Id="CustomSoundsComponents"/>
       <ComponentGroupRef Id="enSoundsComponents"/>
-      <ComponentGroupRef Id="musicSoundsComponents"/>
       <ComponentRef Id="CreateCustomSoundsFolder"/>
       <ComponentRef Id="CreateEnSoundsFolder"/>
       <ComponentRef Id="CreateMusicSoundsFolder"/>
@@ -126,6 +129,10 @@
       <Custom Action="Backup" After="DeleteVoskSvc" Condition ='UPGRADINGPRODUCTCODE AND REMOVE~="ALL" AND NOT REINSTALL="ALL"'/>
       <Custom Action="Rename" After="Backup"/>
       <Custom Action="DeployMissingConfigs" Before="SetIP" Condition='NOT REMOVE="ALL"' />
+
+      <!-- Script Deployment inserted after configs -->
+      <Custom Action="DeployManagedScripts" After="DeployMissingConfigs" Condition='NOT REMOVE="ALL"' />
+
       <Custom Action="SetIP" Before="InstallService" Condition='NOT REMOVE="ALL"' />
       <Custom Action="InstallService" Before="InstallFinalize"   />
       <Custom Action="ConfigSvcSetup" After="InstallService"/>
@@ -144,23 +151,16 @@
     <Directory Name="." ComponentGuidGenerationSeed="5950CB39-0D52-4158-A4B1-4BC5AAE9A2C4">
       <Directory Id="AppRoot">
         <Directory Id="MyAppFolder" Name="SIPServer">
-          
 
+          <!-- Live Mod Directory (Created empty if missing) -->
           <Directory Id="ModDir" Name="mod">
             <Directory Id="ManagedModDir" Name="managed">
-              <Component Id="CommunicatorConnectorScript" Guid="A28E7680-43C1-46CC-8CC5-AA63CC829E82">
-                <File Id="CommunicatorConnector_csx"
-                      Source="$(var.ManagedModSourceDir)\CommunicatorConnector.csx"
-                      KeyPath="yes" />
-              </Component>
-              <Component Id="SAPAnnouncerScript" Guid="D9AFB658-471E-4145-898A-43448C5CB940">
-                <File Id="SAPAnnouncer_csx"
-                      Source="$(var.ManagedModSourceDir)\SAPAnnouncer.csx"
-                      KeyPath="yes" />
+              <Component Id="CreateManagedModFolder" Guid="D3A7B6B0-1A2B-4C3D-8E9F-012345678123">
+                <CreateFolder />
               </Component>
             </Directory>
           </Directory>
-          
+
           <Directory Id="CONF" Name="conf">
             <Component Id="CreateConfFolder" Guid="A1B2C3D4-E5F6-47A8-9B0C-1D2E3F4A5B6D">
               <CreateFolder />
@@ -175,6 +175,19 @@
           </Directory>
 
           <Directory Id="CONF_DEFAULTS" Name="conf_defaults" />
+
+          <!-- Hidden Staging Directory for CSX scripts -->
+          <Directory Id="MOD_DEFAULTS" Name="mod_defaults">
+            <Directory Id="ManagedModDefaultsDir" Name="managed">
+              <Component Id="CommunicatorConnectorScript" Guid="A28E7680-43C1-46CC-8CC5-AA63CC829E82">
+                <File Id="CommunicatorConnector_csx" Source="$(var.ManagedModSourceDir)\CommunicatorConnector.csx" KeyPath="yes" />
+              </Component>
+              <Component Id="SAPAnnouncerScript" Guid="D9AFB658-471E-4145-898A-43448C5CB940">
+                <File Id="SAPAnnouncer_csx" Source="$(var.ManagedModSourceDir)\SAPAnnouncer.csx" KeyPath="yes" />
+              </Component>
+            </Directory>
+          </Directory>
+
           <Directory Id="AutoLoadConf" Name="autoload_configs"/>
           <Directory Id="LOG" Name="log">
             <Component Id="CreateLogFolder" Guid="3DE37BDE-621C-4CCD-A653-C31A5B3B37D8">
@@ -228,10 +241,6 @@
 
     <ComponentGroup Id="enSoundsComponents" Directory="en_Sounds_Dir">
       <Files Include="$(var.ReleaseBuildDirectoryPath)\sounds\en\**\*" />
-    </ComponentGroup>
-
-    <ComponentGroup Id="musicSoundsComponents" Directory="Music_Sounds_Dir">
-      <Files Include="$(var.ReleaseBuildDirectoryPath)\sounds\music\**\*" />
     </ComponentGroup>
 
     <ComponentGroup Id="VoskASREngine" Directory="VoskDir">
@@ -414,5 +423,6 @@
     <CustomAction Id="ConfigVoskSvcSetup" ExeCommand='cmd.exe /c echo Configuring service... please do not close window &amp;&amp; sc failure VoskASR reset=259100 actions=restart/10000 2>NUL >NUL' Directory="MyAppFolder" Execute="deferred" Return="ignore" Impersonate="no" />
     <CustomAction Id="StartVoskSvc" ExeCommand='cmd.exe /c echo Starting ASR service... please do not close window &amp;&amp; sc start VoskASR 2>NUL >NUL' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
     <CustomAction Id="DeployMissingConfigs" ExeCommand='cmd.exe /c robocopy "[MyAppFolder]conf_defaults" "[MyAppFolder]conf" /E /XC /XN /XO 2&gt;NUL &gt;NUL' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
+    <CustomAction Id="DeployManagedScripts" ExeCommand='cmd.exe /c xcopy "[MyAppFolder]mod_defaults\managed\*.csx" "[MyAppFolder]mod\managed\" /Y /Q 2&gt;NUL &gt;NUL' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
   </Fragment>
 </Wix>
