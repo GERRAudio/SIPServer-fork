@@ -1,13 +1,12 @@
-﻿<Project Sdk="WixToolset.Sdk/5.0.0">
+<Project Sdk="WixToolset.Sdk/5.0.0">
+  <Import Project="..\SharedVersions.props" />
   <PropertyGroup>
-	<SIPServerVersion>1.10.15</SIPServerVersion>
-	<MSIVersion>1.12</MSIVersion>
-	<DefineConstants>SIPServerVersion=$(SIPServerVersion);MSIVersion=$(MSIVersion)</DefineConstants>
+	<DefineConstants>SIPServerVersion=$(SIPServerAppVersion);MSIVersion=$(SIPServerInstallerVersion)</DefineConstants>
 
   
     <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
-    <OutputName>SIPServer_Installer_v$(MSIVersion)</OutputName>
+    <OutputName>SIPServer_Installer_v$(SIPServerInstallerVersion)</OutputName>
     <SuppressIces>ICE60</SuppressIces>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x64' ">
@@ -28,7 +27,7 @@
   <ItemGroup>
     <PackageReference Include="WixToolset.Dependency.wixext" Version="5.0.1" />
     <PackageReference Include="WixToolset.Firewall.wixext" Version="5.0.1" />
-    <PackageReference Include="WixToolset.Heat" Version="5.0.1" />
+
     <PackageReference Include="WixToolset.Iis.wixext" Version="5.0.1" />
     <PackageReference Include="WixToolset.UI.wixext" Version="5.0.1" />
     <PackageReference Include="WixToolset.Util.wixext" Version="5.0.1" />

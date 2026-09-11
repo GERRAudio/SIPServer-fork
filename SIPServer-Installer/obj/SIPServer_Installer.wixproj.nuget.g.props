@@ -13,7 +13,4 @@
     <SourceRoot Include="C:\Users\Administrator\.nuget\packages\" />
     <SourceRoot Include="C:\Program Files (x86)\Microsoft Visual Studio\Shared\NuGetPackages\" />
   </ItemGroup>
-  <PropertyGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
-    <PkgWixToolset_Heat Condition=" '$(PkgWixToolset_Heat)' == '' ">C:\Users\Administrator\.nuget\packages\wixtoolset.heat\5.0.1</PkgWixToolset_Heat>
-  </PropertyGroup>
 </Project>
