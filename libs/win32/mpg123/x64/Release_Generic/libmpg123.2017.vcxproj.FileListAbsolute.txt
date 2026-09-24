@@ -7,3 +7,5 @@ C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\x64\Release_Generic\
 C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\x64\Release_Generic\libvosk.dll
 C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\x64\Release_Generic\libwinpthread-1.dll
 C:\Development\GitHub\GERRAudio\SIPServer\libs\win32\mpg123\x64\Release_Generic\libmpg123.lib
+C:\Development\github\SIPServer\SIPServer-fork\libs\win32\mpg123\x64\Release_Generic\libmpg123.lib
+C:\Development\github\SIPServer\SIPServer\libs\win32\mpg123\x64\Release_Generic\libmpg123.lib

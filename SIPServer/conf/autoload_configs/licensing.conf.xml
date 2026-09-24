@@ -1,0 +1,17 @@
+<configuration name="licensing.conf" description="Licensing Configuration">
+  <settings>
+    <!-- Optional: Keygen.sh account ID for online validation -->
+    <param name="keygen-account-id" value=""/>
+    <!-- Optional: Keygen.sh public key for offline validation -->
+    <param name="keygen-public-key" value=""/>
+  </settings>
+
+  <key-sources>
+    <!-- Scan the Product Keys directory relative to FreeSWITCH base directory -->
+    <source type="relative" value="Product Keys"/>
+
+    <!-- You can add more sources as needed -->
+    <!-- <source type="absolute" value="C:\LicenseServer\Keys"/> -->
+    <!-- <source type="url" value="https://yourserver.com/keys"/> -->
+  </key-sources>
+</configuration>

@@ -1,0 +1,102 @@
+== notes, extract
+
+/*
+
+//alloc   
+	
+		GstBus*			gst_pipeline_get_bus		(GST_PIPELINE (pipeline));
+		GstPad*			gst_element_get_static_pad 	(queue, "sink")))
+		GstPad*			gst_pad_get_peer 			(queue_sink_pad)))
+		
+		GstElement* 	gst_bin_get_by_name 		(GST_BIN (stream->pipeline), name);
+		GstElement*  	gst_element_factory_make 	("appsink", name);
+		
+		GstClock *		gst_element_get_clock 		(fakesink);
+		
+		GstPipeline*	gst_pipeline_new 			(pipeline_name);          //allocates memory!
+		void			g_object_get				(G_OBJECT(rtpjitbuf), "stats", &stats, NULL);
+		
+		char* 			g_malloc0 					(guint len);
+		char* 			g_strdup					(char*)
+		char*			gst_structure_to_string 	(stats);
+		
+		GstStructure*	gst_structure_copy(s)
+		GstStructure*	gst_structure_from_string()
+		GstStructure*	gst_structure_new()
+		GstStructure*	gst_structure_new_empty()
+
+//de-ref de-alloc
+		g_free				(char*);
+		g_error_free 		(GError*)					//need to check all err-returning  calls
+		gst_caps_unref		(GST_CAPS(data))
+		gst_object_unref	(GST_OBJECT(pipeline));
+		gst_structure_free	(GstStructure *);
+		gst_sample_unref	(GstSample*);		
+
+
+
+
+
+
+
+
+static void
+destroy_caps(void *data, GClosure G_GNUC_UNUSED *closure)
+{
+  if (data !=NULL) gst_caps_unref(GST_CAPS(data));
+}
+
+gst_object_unref(GST_OBJECT(pipeline));
+
+ if (stats!=NULL)      gst_structure_free(GstStructure *);
+ if (rtpdepay!=NULL)   gst_object_unref (GST_OBJECT(GstElement *));
+   GstElement* appsink = gst_element_factory_make ("appsink", name);
+   
+   	if (NULL != appsink) gst_object_unref(GST_OBJECT(appsink));
+	if (NULL != queue) gst_object_unref(GST_OBJECT(queue));
+	if (NULL != tee) gst_object_unref(GST_OBJECT(tee));
+		if (NULL != tee_src_pad) gst_object_unref(tee_src_pad);
+	if (NULL != queue_sink_pad) gst_object_unref(queue_sink_pad);
+	queue_sink_pad = gst_element_get_static_pad (queue, "sink")))
+	tee_src_pad = gst_pad_get_peer (queue_sink_pad)))
+	  gst_object_unref(tee_src_pad);
+  tee_src_pad = NULL;
+  
+    appsink = gst_bin_get_by_name (GST_BIN (stream->pipeline), name);
+	  if (NULL != tee_src_pad)	gst_object_unref(GST_OBJECT(tee_src_pad));
+  if (NULL != queue_sink_pad)	gst_object_unref(GST_OBJECT(queue_sink_pad));
+  if (NULL != appsink)	gst_object_unref(GST_OBJECT(appsink));
+  if (NULL != queue)	gst_object_unref(GST_OBJECT(queue));
+  if (NULL != tee)	gst_object_unref(GST_OBJECT(tee));
+  
+   GstElement* fakesink =  gst_bin_get_by_name 
+   clock = gst_element_get_clock (fakesink);
+         gst_sample_unref(last_sample);
+	  last_sample = NULL;
+      gst_object_unref(clock);
+	  clock = NULL;
+	  	if (last_sample!=NULL) gst_sample_unref(last_sample);
+	if (clock!=NULL) gst_object_unref(GST_OBJECT(clock));
+	if (fakesink != NULL) gst_object_unref(GST_OBJECT(fakesink));
+    if (host != NULL) g_free(host);
+	
+	  pipeline = gst_pipeline_new (pipeline_name);          //allocates memory!
+	   rx_caps = gst_caps_new_simple ("audio/x-raw",
+	  gst_caps_unref( GstCaps* rx_caps);
+	     GstBus *bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
+  gst_object_unref(bus);
+    g_main_loop_unref (mainloop);
+	 appsrc = gst_bin_get_by_name (GST_BIN (pipeline), name);
+	 gst_element_get_state (GST_ELEMENT (pipeline), &cur_state, &pending_state, 0);
+	  gst_buffer_unref(buf);
+	    if (appsink !=NULL) gst_object_unref(GST_OBJECT(appsink));
+		  rtpjitbuf = gst_bin_get_by_name(GST_BIN(stream->pipeline), "rx-jitbuf");
+
+  if (rtpjitbuf) {
+    GstStructure * stats;
+    g_object_get(G_OBJECT(rtpjitbuf), "stats", &stats, NULL);
+    stats_str = gst_structure_to_string (stats);
+	gst_structure_free(stats);	 // Fix: Added missing free
+	gst_object_unref(rtpjitbuf); // Fix: Added missing unref
+	  
+*/
