@@ -1,0 +1,216 @@
+/*
+ * FreeSWITCH Modular Media Switching Software Library / Soft-Switch Application
+ * Copyright (C) 2005-2014, Anthony Minessale II <anthm@freeswitch.org>
+ *
+ * Version: MPL 1.1
+ *
+ * mod_licensing_offline.c -- Offline license validation
+ *
+ */
+#include "mod_licensing_offline.h"
+
+/* ============================================================
+ * Keygen Signed License Validation (JWT-style)
+ * Format: {base64_payload}.{base64_signature}
+ * Decodes JSON payload and extracts license metadata
+ * ============================================================ */
+
+switch_status_t validate_keygen_signed_license(const char *key_content, const char *file_path, license_key_t *key_info)
+{
+	char *payload_copy = NULL;
+	char *payload_b64 = NULL;
+	char *signature_b64 = NULL;
+	char *decoded_payload = NULL;
+	size_t decoded_len = 0;
+	cJSON *json_payload = NULL;
+	cJSON *license_obj = NULL;
+	cJSON *policy_obj = NULL;
+	cJSON *metadata_obj = NULL;
+	switch_status_t status = SWITCH_STATUS_FALSE;
+
+	licensing_log(SWITCH_LOG_INFO, "mod_licensing: Parsing Keygen signed license: %s\n", file_path);
+
+	/* Split payload and signature at the dot */
+	payload_copy = strdup(key_content);
+	if (!payload_copy) {
+		if (key_info) {
+			key_info->validation_msg = strdup("INVALID - memory allocation failed");
+		}
+		return SWITCH_STATUS_FALSE;
+	}
+
+	char *dot = strchr(payload_copy, '.');
+	if (!dot) {
+		licensing_log(SWITCH_LOG_ERROR, "mod_licensing: Invalid Keygen license format (missing signature separator)\n");
+		if (key_info) {
+			key_info->validation_msg = strdup("INVALID - missing signature separator");
+		}
+		free(payload_copy);
+		return SWITCH_STATUS_FALSE;
+	}
+
+	*dot = '\0';
+	payload_b64 = payload_copy;
+	signature_b64 = dot + 1;
+
+	licensing_log(SWITCH_LOG_DEBUG, "mod_licensing: Payload: %s\n", payload_b64);
+	licensing_log(SWITCH_LOG_DEBUG, "mod_licensing: Signature: %s\n", signature_b64);
+
+	/* Decode the payload (base64) */
+	decoded_payload = base64_decode(payload_b64, &decoded_len);
+	if (!decoded_payload) {
+		licensing_log(SWITCH_LOG_ERROR, "mod_licensing: Failed to decode Keygen license payload\n");
+		free(payload_copy);
+		return SWITCH_STATUS_FALSE;
+	}
+
+	licensing_log(SWITCH_LOG_INFO, "mod_licensing: Decoded payload (%d bytes): %s\n", (int)decoded_len, decoded_payload);
+
+	/* Parse JSON payload */
+	json_payload = cJSON_Parse(decoded_payload);
+	if (!json_payload) {
+		licensing_log(SWITCH_LOG_ERROR, "mod_licensing: Failed to parse Keygen license JSON\n");
+		free(decoded_payload);
+		free(payload_copy);
+		return SWITCH_STATUS_FALSE;
+	}
+
+	/* Extract license metadata */
+	license_obj = cJSON_GetObjectItem(json_payload, "license");
+	if (license_obj) {
+		cJSON *expiry = cJSON_GetObjectItem(license_obj, "expiry");
+		if (expiry && cJSON_IsString(expiry) && expiry->valuestring) {
+			licensing_log(SWITCH_LOG_INFO, "mod_licensing: License expiry: %s\n", expiry->valuestring);
+			if (key_info) {
+				key_info->expires = strdup(expiry->valuestring);
+			}
+		} else if (expiry && cJSON_IsNull(expiry)) {
+			licensing_log(SWITCH_LOG_INFO, "mod_licensing: License expiry: never\n");
+		}
+
+		cJSON *created = cJSON_GetObjectItem(license_obj, "created");
+		if (created && cJSON_IsString(created) && created->valuestring) {
+			licensing_log(SWITCH_LOG_DEBUG, "mod_licensing: License created: %s\n", created->valuestring);
+		}
+
+		cJSON *id = cJSON_GetObjectItem(license_obj, "id");
+		if (id && cJSON_IsString(id) && id->valuestring) {
+			licensing_log(SWITCH_LOG_DEBUG, "mod_licensing: License ID: %s\n", id->valuestring);
+		}
+	}
+
+	/* Extract policy metadata */
+	policy_obj = cJSON_GetObjectItem(json_payload, "policy");
+	if (policy_obj) {
+		cJSON *policy_id = cJSON_GetObjectItem(policy_obj, "id");
+		if (policy_id && cJSON_IsString(policy_id) && policy_id->valuestring) {
+			licensing_log(SWITCH_LOG_DEBUG, "mod_licensing: Policy ID: %s\n", policy_id->valuestring);
+		}
+	}
+
+	/* Extract metadata (custom fields like modules, domain, etc.) */
+	metadata_obj = cJSON_GetObjectItem(json_payload, "metadata");
+	if (metadata_obj && cJSON_IsObject(metadata_obj)) {
+		licensing_log(SWITCH_LOG_INFO, "mod_licensing: Processing license metadata from Keygen signed license...\n");
+
+		/* Extract domain */
+		cJSON *domain = cJSON_GetObjectItem(metadata_obj, "domain");
+		if (domain && cJSON_IsString(domain) && domain->valuestring) {
+			licensing_log(SWITCH_LOG_INFO, "mod_licensing: License domain: %s\n", domain->valuestring);
+			if (key_info) {
+				key_info->domain = strdup(domain->valuestring);
+			}
+
+			/* Validate domain */
+			if (domain_matches(domain->valuestring)) {
+				licensing_log(SWITCH_LOG_INFO, "mod_licensing: Domain validation PASSED (machine domain '%s' matches license domain '%s')\n",
+					globals.domain, domain->valuestring);
+				status = SWITCH_STATUS_SUCCESS;
+			} else {
+				licensing_log(SWITCH_LOG_WARNING, "mod_licensing: Domain validation FAILED (machine domain '%s' does not match license domain '%s')\n",
+					globals.domain, domain->valuestring);
+				if (key_info) {
+					key_info->validation_msg = strdup("INVALID - domain mismatch");
+				}
+				goto cleanup;
+			}
+		}
+
+		/* Extract modules */
+		cJSON *modules = cJSON_GetObjectItem(metadata_obj, "modules");
+		if (modules) {
+			if (cJSON_IsString(modules) && modules->valuestring) {
+				licensing_log(SWITCH_LOG_INFO, "mod_licensing: Licensed modules: %s\n", modules->valuestring);
+				if (key_info) {
+					key_info->modules = strdup(modules->valuestring);
+				}
+				parse_modules_list(modules->valuestring);
+			} else if (cJSON_IsArray(modules)) {
+				int module_count = cJSON_GetArraySize(modules);
+				licensing_log(SWITCH_LOG_INFO, "mod_licensing: Licensed modules: %d modules\n", module_count);
+				for (int i = 0; i < module_count; i++) {
+					cJSON *module_item = cJSON_GetArrayItem(modules, i);
+					if (module_item && cJSON_IsString(module_item) && module_item->valuestring) {
+						licensing_log(SWITCH_LOG_INFO, "mod_licensing:   - %s\n", module_item->valuestring);
+						add_licensed_module(module_item->valuestring);
+					}
+				}
+			}
+		}
+
+		/* Log all other metadata fields */
+		cJSON *meta_item = NULL;
+		cJSON_ArrayForEach(meta_item, metadata_obj) {
+			const char *key = meta_item->string;
+			if (key && strcasecmp(key, "modules") != 0 && strcasecmp(key, "domain") != 0) {
+				if (cJSON_IsString(meta_item) && meta_item->valuestring) {
+					licensing_log(SWITCH_LOG_DEBUG, "mod_licensing: Metadata[%s]: %s\n", key, meta_item->valuestring);
+				}
+			}
+		}
+	} else {
+		/* No metadata - default to allowing all (no domain restriction) */
+		licensing_log(SWITCH_LOG_INFO, "mod_licensing: No metadata found - allowing all modules, no domain restriction\n");
+		status = SWITCH_STATUS_SUCCESS;
+	}
+
+	if (status == SWITCH_STATUS_SUCCESS && key_info) {
+		key_info->validated = SWITCH_TRUE;
+		if (!key_info->validation_msg) {
+			key_info->validation_msg = strdup("VALID - Keygen signed license");
+		}
+	}
+
+cleanup:
+	if (json_payload) {
+		cJSON_Delete(json_payload);
+	}
+	free(decoded_payload);
+	free(payload_copy);
+
+	return status;
+}
+
+/* ============================================================
+ * Offline Key Validation
+ * Only supports Keygen signed license format: {payload}.{signature}
+ * Old key:value format is no longer supported.
+ * ============================================================ */
+
+switch_status_t validate_key_offline(const char *key_content, const char *file_path, license_key_t *key_info)
+{
+	licensing_log(SWITCH_LOG_INFO, "mod_licensing: Validating offline license: %s\n", file_path);
+
+	/* Only support Keygen signed license format: {payload}.{signature} */
+	if (strchr(key_content, '.') == NULL) {
+		licensing_log(SWITCH_LOG_ERROR, "mod_licensing: Invalid license format - expected Keygen signed license (payload.signature)\n");
+		licensing_log(SWITCH_LOG_ERROR, "mod_licensing: Old key:value format is no longer supported. Please use Keygen signed licenses.\n");
+		if (key_info) {
+			key_info->validation_msg = strdup("INVALID - not a Keygen signed license");
+		}
+		return SWITCH_STATUS_FALSE;
+	}
+
+	/* Parse as Keygen signed license */
+	return validate_keygen_signed_license(key_content, file_path, key_info);
+}

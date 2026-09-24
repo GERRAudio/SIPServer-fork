@@ -1,0 +1,21 @@
+<configuration name="licensing.conf" description="Licensing Configuration">
+  <settings>
+    <!-- Keygen.sh Account ID -->
+    <param name="keygen-account-id" value="YOUR_ACCOUNT_ID_HERE"/>
+
+    <!-- Keygen.sh Public Key (Ed25519, used for offline license verification) -->
+    <param name="keygen-public-key" value="YOUR_PUBLIC_KEY_HERE"/>
+  </settings>
+
+  <key-sources>
+    <!-- Relative paths are resolved relative to the SIP Server base directory -->
+    <source type="relative" value="Product Keys"/>
+
+    <!-- Absolute paths are used as-is -->
+    <!-- <source type="absolute" value="C:\ProgramData\SIP Server\keys"/> -->
+    <!-- <source type="absolute" value="/etc/sipserver/keys"/> -->
+
+    <!-- URL sources will be fetched via HTTP/HTTPS -->
+    <!-- <source type="url" value="https://license.example.com/keys"/> -->
+  </key-sources>
+</configuration>

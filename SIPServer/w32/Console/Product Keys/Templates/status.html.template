@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Licensing Status Report</title>
+<style>
+body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+h1 { color: #333; border-bottom: 2px solid #0078d4; padding-bottom: 10px; }
+h2 { color: #555; margin-top: 30px; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+th, td { padding: 10px 15px; text-align: left; border-bottom: 1px solid #ddd; }
+th { background: #0078d4; color: white; }
+.valid { color: #107c10; font-weight: bold; }
+.invalid { color: #d83b01; font-weight: bold; }
+.info { background: #e7f3fe; padding: 15px; border-left: 4px solid #0078d4; margin: 10px 0; }
+.fingerprint-container { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
+.fingerprint-value { font-family: 'Consolas', 'Courier New', monospace; font-weight: bold; color: #0078d4; }
+.copy-btn { background: #0078d4; color: white; border: none; padding: 5px 15px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: background 0.2s; }
+.copy-btn:hover { background: #005a9e; }
+.copy-btn:active { background: #004578; }
+.copy-btn.copied { background: #107c10; }
+</style>
+<script>
+function copyFingerprint() {
+  const text = document.getElementById('fingerprint').textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(function() {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+    }, 2000);
+  }).catch(function(err) {
+    alert('Failed to copy: ' + err);
+  });
+}
+
+
+</script>
+</head>
+<body>
+
+<h1>Licensing Status Report</h1>
+
+<!-- Section 0: Configuration Sources -->
+<h2>Configuration</h2>
+<div class="info">
+<strong>Key Sources Configured:</strong> {{SOURCE_COUNT}}<br>
+{{KEY_SOURCES_LIST}}
+</div>
+
+<!-- Section 1: Keys Found -->
+<h2>1. Keys Found</h2>
+<table>
+<tr><th>#</th><th>File</th><th>Type</th><th>Length</th></tr>
+{{KEYS_FOUND_ROWS}}
+</table>
+{{NO_KEYS_MESSAGE}}
+
+<!-- Section 2: Validation Results -->
+<h2>2. Validation Results</h2>
+<table>
+<tr><th>#</th><th>File</th><th>Result</th></tr>
+{{VALIDATION_ROWS}}
+</table>
+
+<!-- Section 3: Licensed Modules -->
+<h2>3. Licensed Modules</h2>
+{{LICENSED_MODULES_CONTENT}}
+
+<!-- Section 4: Time Limits -->
+<h2>4. Time Limits</h2>
+<table>
+<tr><th>Key File</th><th>Expires</th></tr>
+{{TIME_LIMITS_ROWS}}
+</table>
+{{NO_TIME_LIMITS_MESSAGE}}
+
+<!-- Section 5: Domain Licensing -->
+<h2>5. Domain Licensing</h2>
+<table>
+<tr><th>Key File</th><th>Licensed Domain</th></tr>
+{{DOMAIN_LICENSING_ROWS}}
+</table>
+{{NO_DOMAIN_MESSAGE}}
+
+<!-- Section 6: Machine Fingerprint -->
+<h2>6. Machine Fingerprint</h2>
+<div class="info">
+<div class="fingerprint-container">
+<strong>Primary Fingerprint:</strong> <span id="fingerprint" class="fingerprint-value">{{PRIMARY_FINGERPRINT}}</span>
+<button id="copyBtn" class="copy-btn" onclick="copyFingerprint()">Copy</button>
+</div>
+<strong>Machine Domain:</strong> {{MACHINE_DOMAIN}}<br>
+<strong>MAC Addresses:</strong> {{MAC_COUNT}} found<br>
+{{MAC_ADDRESSES_LIST}}
+</div>
+
+<!-- Section 7: Fingerprint Validation -->
+<h2>7. Fingerprint Validation</h2>
+<table>
+<tr><th>Key File</th><th>Key Fingerprint</th><th>Match</th></tr>
+{{FINGERPRINT_VALIDATION_ROWS}}
+</table>
+{{NO_FINGERPRINT_KEYS_MESSAGE}}
+
+<hr>
+<p><em>Report generated at module load time.</em></p>
+
+</body>
+</html>

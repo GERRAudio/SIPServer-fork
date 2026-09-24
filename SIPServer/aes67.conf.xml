@@ -1,0 +1,87 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<configuration name="aes67.conf" description="AES67 module">
+	<settings>
+		<!--file to play when calls are on hold-->
+		<param name="hold-file" value="$${hold_music}"/>
+		<!--Default dialplan and caller-id info -->
+		<param name="dialplan" value="XML"/>
+		<param name="cid-name" value="$${outbound_caller_name}"/>
+		<param name="cid-num" value="$${outbound_caller_id}"/>
+		<!--audio sample rate and interval -->
+		<param name="sample-rate" value="48000"/>
+		<param name="codec-ms" value="20"/>
+		<param name="channels" value="1"/>
+		<param name="rx-codec" value="L16"/>
+		<param name="tx-codec" value="L16"/>
+		<!-- Tx params for the gstreamer pipeline -->
+		<param name="tx-address" value="239.69.0.119"/>
+		<param name="tx-port" value="5004" />
+		<!-- Rx params for the in gstreamer pipeline -->
+		<param name="rx-address" value="239.69.161.58"/>
+		<param name="rx-port" value="5004" />
+		<param name="ptp-domain" value="0" iface="ens19"/>
+		<!-- <param name="synthetic-ptp" value="1" /> -->
+		<param name="rtp-iface" value="ens19" />
+		<param name="rtp-payload-type" value="98"/>
+		<param name="rtp-jitbuf-latency" value="20"/>
+	</settings>
+	<streams>
+		<stream name="udp1">
+			<!-- Tx params for the gstreamer pipeline -->
+			<param name="tx-address" value="239.69.1.1"/>
+			<param name="tx-port" value="5004" />
+			<!-- Rx params for the in gstreamer pipeline -->
+			<param name="rx-address" value="239.69.0.1"/>
+			<param name="rx-port" value="5004" />
+			<param name="sample-rate" value="48000"/>
+			<param name="codec-ms" value="20"/>
+			<param name="ptime-ms" value="1"/>
+			<param name="channels" value="4" />
+			<param name="rx-codec" value="L24"/>
+			<param name="tx-codec" value="L24"/>
+			<param name="rtp-ts-offset" value="11.0"/>
+		</stream>
+	</streams>
+	<endpoints>
+		<endpoint name="udp1-tx1">
+			<param name="outstream" value="udp1:0" />
+		</endpoint>
+		<endpoint name="udp1-tx2">
+			<param name="outstream" value="udp1:1" />
+		</endpoint>
+		<endpoint name="udp1-tx3">
+			<param name="outstream" value="udp1:2" />
+		</endpoint>
+		<endpoint name="udp1-tx4">
+			<param name="outstream" value="udp1:3" />
+		</endpoint>
+		<endpoint name="udp1-rx1">
+			<param name="instream" value="udp1:0" />
+		</endpoint>
+		<endpoint name="udp1-rx2">
+			<param name="instream" value="udp1:1" />
+		</endpoint>
+		<endpoint name="udp1-rx3">
+			<param name="instream" value="udp1:2" />
+		</endpoint>
+		<endpoint name="udp1-rx4">
+			<param name="instream" value="udp1:3" />
+		</endpoint>
+		<endpoint name="udp1-txrx1">
+			<param name="outstream" value="udp1:0" />
+			<param name="instream" value="udp1:0" />
+		</endpoint>
+		<endpoint name="udp1-txrx2">
+			<param name="outstream" value="udp1:1" />
+			<param name="instream" value="udp1:1" />
+		</endpoint>
+		<endpoint name="udp1-txrx3">
+			<param name="outstream" value="udp1:2" />
+			<param name="instream" value="udp1:2" />
+		</endpoint>
+		<endpoint name="udp1-txrx4">
+			<param name="outstream" value="udp1:3" />
+			<param name="instream" value="udp1:3" />
+		</endpoint>
+	</endpoints>
+</configuration>

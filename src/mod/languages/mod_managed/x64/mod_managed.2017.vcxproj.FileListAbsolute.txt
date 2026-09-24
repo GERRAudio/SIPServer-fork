@@ -9,3 +9,5 @@ C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\libstdc++-6.dll
 C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\libvosk.dll
 C:\Development\GitHub\GERRAudio\SIPServer\x64\Release\mod\libwinpthread-1.dll
 C:\Development\GitHub\GERRAudio\SIPServer\src\mod\languages\mod_managed\x64\mod_managed.2017.vcxproj.AssemblyReference.cache
+C:\Development\github\SIPServer\SIPServer-fork\src\mod\languages\mod_managed\x64\mod_managed.2017.vcxproj.AssemblyReference.cache
+C:\Development\github\SIPServer\SIPServer\src\mod\languages\mod_managed\x64\mod_managed.2017.vcxproj.AssemblyReference.cache
