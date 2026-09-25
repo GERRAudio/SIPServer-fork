@@ -1,4 +1,9 @@
 /x64/Release/conf/*
+# Intermediate MSBuild Artifacts
+obj/
+*.recipe
+*.iobj
+*.FileListAbsolute.txt
 /Product Keys
 !*.xml
 !/x64/Release/mod/managed/*.csx
