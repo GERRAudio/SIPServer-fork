@@ -28,7 +28,7 @@
        extractto: Folder to extract an archive to
    -->
 
-  <Target Name="sqliteDownloadTarget" BeforeTargets="CustomBuild;PreBuildEvent;" DependsOnTargets="7za">
+  <Target Name="sqliteDownloadTarget" BeforeTargets="CustomBuild;PreBuildEvent;" DependsOnTargets="7za" Condition="!Exists('$(BaseDir)libs\sqlite\sqlite3.c')">
       <DownloadPackageTask
            package="http://files.freeswitch.org/downloads/libs/sqlite-amalgamation-$(sqliteVersion).zip"
            expectfileordirectory="$(BaseDir)libs\sqlite\sqlite3.c"

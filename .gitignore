@@ -34,17 +34,13 @@ Release/
 *.user
 *.suo
 *.ncb
-*.pdb
 *.map
 *.lib
 *.obj
 *.idb
 *.res
-*.exp
-*.exe
 *.manifest
 *.dep
-*.dll
 *.sbr
 *.ilk
 *.bsc
@@ -75,6 +71,18 @@ TAGS
 *.cache
 *.lastbuildstate
 *.sdf
+
+# Standard build outputs
+*.exe
+*.dll
+*.msi
+
+# EXCEPTIONS: Allow required build tools and property scripts
+!Directory.Build.props
+!w32/*.props
+!w32/**/*.props
+!libs/win32/**/*.exe
+!libs/win32/**/*.dll
 
 /w32/Library/lastversion
 /w32/Library/tmpVersion.Bat
@@ -107,9 +115,7 @@ TAGS
 /tone2wav
 
 /All/
-Debug/
 /bin/
-Release/
 /ipch/
 /*.log
 
@@ -195,13 +201,7 @@ BuildLog.htm
 !/libs/win32/
 !/libs/speex/win32/
 !/src/mod/endpoints/mod_gsmopen/gsmlib/gsmlib-1.10-patched-13ubuntu/win32/
-*.suo
-*.sdf
-/x64/
 ipch/
-
-
-
 
 /libs/xmlrpc-c/tools/xml-rpc-api2txt
 
@@ -244,25 +244,25 @@ libs/libsndfile/src/version-metadata.rc
 libs/libsndfile/tests/pedantic-header-test.sh
 yum/RPMS
 yum/temp
-.vs/
 
 Freeswitch.2015.VC.db
 Freeswitch.2015.VC.VC.opendb
+
+# Keep dependency directories tracked for MSBuild extraction scripts
+!libs/sqlite/
+!libs/sqlite-*/
+!libs/sofia-sip*/
+!libs/libsndfile/
+
 libs/freetype/
 libs/libpng/
 libs/zlib/
-
 libs/libav/
 libs/libx264/
 
-Win32/*.msi
-x64/*.msi
-
 libs/tiff-4.0.7/
 libs/PaxHeaders.1693/
-
 libs/lua-*/
-
 libs/g722_1-*/
 libs/ilbc-*/
 libs/broadvoice-*/
@@ -271,8 +271,6 @@ libs/libsilk-*/
 libs/rabbitmq-c-*/
 libs/rabbitmq-c-*.zip
 libs/ffmpeg-*/
-libs/sofia-sip*/
-libs/sofia-sip*
 
 src/mod/applications/mod_test/test/test_asr
 src/mod/applications/mod_test/test/test_tts
@@ -305,4 +303,3 @@ src/mod/endpoints/mod_sofia/test/sipp-based-tests
 /src/mod/endpoints/mod_aes67/aes67_api.c.bak
 /src/mod/endpoints/mod_aes67/aes67_api.c.bak.bak
 /src/mod/endpoints/mod_aes67/mod_aes67.c.bak
-!libs/**/*.lib

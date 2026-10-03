@@ -28,15 +28,15 @@
        extractto: Folder to extract an archive to
    -->
 
-  <Target Name="sqliteDownloadTarget" BeforeTargets="CustomBuild;PreBuildEvent;" DependsOnTargets="7za">
-      <DownloadPackageTask
-           package="http://files.freeswitch.org/downloads/libs/sqlite-amalgamation-$(sqliteVersion).zip"
-           expectfileordirectory="$(BaseDir)libs\sqlite\sqlite3.c"
-           outputfolder=""
-           outputfilename=""
-           extractto="$(BaseDir)libs\"
-           moveafter="sqlite-amalgamation-$(sqliteVersion)|sqlite"
-      />
-  </Target>
+<Target Name="sqliteDownloadTarget" BeforeTargets="CustomBuild;PreBuildEvent;" DependsOnTargets="7za" Condition="!Exists('$(BaseDir)libs\sqlite')">
+    <DownloadPackageTask
+         package="http://files.freeswitch.org/downloads/libs/sqlite-amalgamation-$(sqliteVersion).zip"
+         expectfileordirectory="$(BaseDir)libs\sqlite"
+         outputfolder=""
+         outputfilename=""
+         extractto="$(BaseDir)libs\"
+         moveafter="sqlite-amalgamation-$(sqliteVersion)|sqlite"
+    />
+</Target>
 
 </Project>
