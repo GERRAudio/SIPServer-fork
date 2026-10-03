@@ -1,0 +1,143 @@
+{
+  "format": 1,
+  "restore": {
+    "c:\\Development\\GitHub\\GERRAudio\\SIPServer\\SIPServer\\SIPServerEmbedded.csproj": {}
+  },
+  "projects": {
+    "c:\\Development\\GitHub\\GERRAudio\\SIPServer\\SIPServer\\SIPServerEmbedded.csproj": {
+      "version": "1.10.15",
+      "restore": {
+        "projectUniqueName": "c:\\Development\\GitHub\\GERRAudio\\SIPServer\\SIPServer\\SIPServerEmbedded.csproj",
+        "projectName": "SIPServerEmbedded",
+        "projectPath": "c:\\Development\\GitHub\\GERRAudio\\SIPServer\\SIPServer\\SIPServerEmbedded.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "c:\\Development\\GitHub\\GERRAudio\\SIPServer\\SIPServer\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0-windows"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0-windows7.0": {
+            "targetAlias": "net8.0-windows",
+            "projectReferences": {
+              "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj": {
+                "projectPath": "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj"
+              },
+              "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj": {
+                "projectPath": "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0-windows7.0": {
+          "targetAlias": "net8.0-windows",
+          "dependencies": {
+            "Microsoft.DotNet.ILCompiler": {
+              "suppressParent": "All",
+              "target": "Package",
+              "version": "[8.0.30, )",
+              "autoReferenced": true
+            },
+            "Microsoft.NET.ILLink.Tasks": {
+              "suppressParent": "All",
+              "target": "Package",
+              "version": "[8.0.30, )",
+              "autoReferenced": true
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "runtime.win-x64.Microsoft.DotNet.ILCompiler",
+              "version": "[8.0.30, 8.0.30]"
+            }
+          ],
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.424/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "c:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj": {
+      "restore": {
+        "projectUniqueName": "c:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj",
+        "projectName": "FreeSWITCH.Managed.2017",
+        "projectPath": "c:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "projectStyle": "PackagesConfig",
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net48": {
+            "projectReferences": {}
+          }
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low"
+        },
+    "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj": {
+      "restore": {
+        "projectUniqueName": "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj",
+        "projectName": "mod_managed",
+        "projectPath": "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\mod_managed.2017.vcxproj",
+        "frameworks": {
+          "native": {
+            "projectReferences": {
+              "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj": {
+                "projectPath": "C:\\Development\\GitHub\\GERRAudio\\SIPServer\\src\\mod\\languages\\mod_managed\\managed\\FreeSWITCH.Managed.2017.csproj"
+              }
+            }
+          }
+        }
+      },
+      "frameworks": {
+        "net48": {}
+      }
+    }
+  }
+}
