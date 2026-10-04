@@ -1,3 +1,14 @@
+# ==========================================
+# Suggested Large File & Package Ignores
+# ==========================================
+*.nupkg
+packages/
+*.zip
+*.mp4
+
+# ==========================================
+# Original .gitignore Rules
+# ==========================================
 /x64/Release/conf/*
 # Intermediate MSBuild Artifacts
 obj/
