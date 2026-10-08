@@ -1,70 +1,85 @@
 ﻿<Project Sdk="WixToolset.Sdk/5.0.0">
-	<Import Project="..\SharedVersions.props" />
-
-	<PropertyGroup>
-		<Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
-		<Platform Condition=" '$(Platform)' == '' ">x64</Platform>
-		<OutputName>SIPServer_Installer_v$(SIPServerInstallerVersion)</OutputName>
-		<SuppressIces>ICE60</SuppressIces>
-	</PropertyGroup>
-
-	<!-- Dynamic VC++ Redistributable Merge Modules Resolution -->
-	<PropertyGroup Condition="'$(VSRedistDir)' == ''">
-		<VSRedistDir Condition="'$(VCToolsRedistDir)' != ''">$(VCToolsRedistDir)MergeModules\</VSRedistDir>
-	</PropertyGroup>
-
-	<!-- Fallback: Search Visual Studio installation folders if VCToolsRedistDir is undefined in WiX SDK -->
-	<PropertyGroup Condition="'$(VSRedistDir)' == ''">
-		<_VS2022BaseDir Condition="Exists('C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\')">C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\</_VS2022BaseDir>
-		<_VS2022BaseDir Condition="'$(_VS2022BaseDir)' == '' and Exists('C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Redist\MSVC\')">C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Redist\MSVC\</_VS2022BaseDir>
-		<_VS2022BaseDir Condition="'$(_VS2022BaseDir)' == '' and Exists('C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC\')">C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC\</_VS2022BaseDir>
-		<_VS2022BaseDir Condition="'$(_VS2022BaseDir)' == '' and Exists('C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Redist\MSVC\')">C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Redist\MSVC\</_VS2022BaseDir>
-
-		<_FoundMSMFiles Condition="'$(_VS2022BaseDir)' != ''">$([System.IO.Directory]::GetFiles("$(_VS2022BaseDir)", "Microsoft_VC143_CRT_x64.msm", System.IO.SearchOption.AllDirectories))</_FoundMSMFiles>
-		<_SingleMSMFile Condition="'$(_FoundMSMFiles)' != ''">$(_FoundMSMFiles.Split('%3B')[0])</_SingleMSMFile>
-		<VSRedistDir Condition="'$(_SingleMSMFile)' != ''">$([System.IO.Path]::GetDirectoryName('$(_SingleMSMFile)'))\</VSRedistDir>
-	</PropertyGroup>
-
-	<!-- Pass Variables to WiX Compiler -->
-	<PropertyGroup>
-		<DefineConstants>SIPServerVersion=$(SIPServerAppVersion);MSIVersion=$(SIPServerInstallerVersion);VSRedistDir=$(VSRedistDir)</DefineConstants>
-	</PropertyGroup>
-
-	<PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x64' ">
-		<OutputPath>bin\$(Platform)\$(Configuration)\</OutputPath>
-		<IntermediateOutputPath>obj\$(Platform)\$(Configuration)\</IntermediateOutputPath>
-	</PropertyGroup>
-	<PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x64' ">
-		<OutputPath>bin\$(Platform)\$(Configuration)\</OutputPath>
-		<IntermediateOutputPath>obj\$(Platform)\$(Configuration)\</IntermediateOutputPath>
-	</PropertyGroup>
-
-	<ItemGroup>
-		<None Include="switch_version.rc2" />
-	</ItemGroup>
-	<ItemGroup>
-		<PackageReference Include="WixToolset.Dependency.wixext" Version="5.0.1" />
-		<PackageReference Include="WixToolset.Firewall.wixext" Version="5.0.1" />
-		<PackageReference Include="WixToolset.Iis.wixext" Version="5.0.1" />
-		<PackageReference Include="WixToolset.UI.wixext" Version="5.0.1" />
-		<PackageReference Include="WixToolset.Util.wixext" Version="5.0.1" />
-		<PackageReference Include="WixToolset.VisualStudio.wixext" Version="5.0.1" />
-	</ItemGroup>
-	<ItemGroup>
-		<ProjectReference Include="..\SIPServer\SIPServerEmbedded.csproj">
-			<Name>SIPServerEmbedded</Name>
-			<Project>{2e5326fb-a5f1-404b-9e95-47fe7d9ae348}</Project>
-			<Private>True</Private>
-			<DoNotHarvest>True</DoNotHarvest>
-			<RefProjectOutputGroups>Binaries;Content;Satellites</RefProjectOutputGroups>
-			<RefTargetDir>INSTALLFOLDER</RefTargetDir>
-		</ProjectReference>
-		<ProjectReference Include="..\src\mod\languages\mod_managed\managed\FreeSWITCH.Managed.2017.csproj" />
-		<ProjectReference Include="..\w32\Console\FreeSwitchConsole.2017.vcxproj" />
-	</ItemGroup>
-	<Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
-		<PropertyGroup>
-			<ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
-		</PropertyGroup>
-	</Target>
+  <Import Project="..\SharedVersions.props" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
+    <OutputName>SIPServer_Installer_v$(SIPServerInstallerVersion)</OutputName>
+    <SuppressIces>ICE60</SuppressIces>
+  </PropertyGroup>
+  <!-- Dynamic VC++ Redistributable Merge Modules Resolution -->
+  <PropertyGroup Condition="'$(VSRedistDir)' == ''">
+    <VSRedistDir Condition="'$(VCToolsRedistDir)' != ''">$(VCToolsRedistDir)MergeModules\</VSRedistDir>
+  </PropertyGroup>
+  <!-- Fallback: Search Visual Studio installation folders if VCToolsRedistDir is undefined in WiX SDK -->
+  <PropertyGroup Condition="'$(VSRedistDir)' == ''">
+    <_VS2022BaseDir Condition="Exists('C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\')">C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\</_VS2022BaseDir>
+    <_VS2022BaseDir Condition="'$(_VS2022BaseDir)' == '' and Exists('C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Redist\MSVC\')">C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Redist\MSVC\</_VS2022BaseDir>
+    <_VS2022BaseDir Condition="'$(_VS2022BaseDir)' == '' and Exists('C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC\')">C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC\</_VS2022BaseDir>
+    <_VS2022BaseDir Condition="'$(_VS2022BaseDir)' == '' and Exists('C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Redist\MSVC\')">C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Redist\MSVC\</_VS2022BaseDir>
+    <_FoundMSMFiles Condition="'$(_VS2022BaseDir)' != ''">$([System.IO.Directory]::GetFiles("$(_VS2022BaseDir)", "Microsoft_VC143_CRT_x64.msm", System.IO.SearchOption.AllDirectories))</_FoundMSMFiles>
+    <_SingleMSMFile Condition="'$(_FoundMSMFiles)' != ''">$(_FoundMSMFiles.Split('%3B')[0])</_SingleMSMFile>
+    <VSRedistDir Condition="'$(_SingleMSMFile)' != ''">$([System.IO.Path]::GetDirectoryName('$(_SingleMSMFile)'))\</VSRedistDir>
+  </PropertyGroup>
+  <!-- Pass Variables to WiX Compiler -->
+  <PropertyGroup>
+    <DefineConstants>SIPServerVersion=$(SIPServerAppVersion);MSIVersion=$(SIPServerInstallerVersion);VSRedistDir=$(VSRedistDir)</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x64' ">
+    <OutputPath>bin\$(Platform)\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath>obj\$(Platform)\$(Configuration)\</IntermediateOutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x64' ">
+    <OutputPath>bin\$(Platform)\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath>obj\$(Platform)\$(Configuration)\</IntermediateOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="dismFeatures.txt" />
+    <Content Include="GerrAudio.ico" />
+    <Content Include="GerrAudioBanner.png" />
+    <Content Include="GerrAudioDash.ico" />
+    <Content Include="GerrAudioDialog.png" />
+    <Content Include="GerrAudioW.ico" />
+    <Content Include="readme.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include=".gitignore" />
+    <None Include="copy-conf.bat" />
+    <None Include="GerrAudiobpl.rtf" />
+    <None Include="grep.exe" />
+    <None Include="nssm.exe" />
+    <None Include="RenBackup.bat" />
+    <None Include="SetAdmin.cpp" />
+    <None Include="SetIP.bat" />
+    <None Include="SvcQuery.bat" />
+    <None Include="SvcStart.bat" />
+    <None Include="SvcStop.bat" />
+    <None Include="switch_version.rc2" />
+    <None Include="vcruntime140.dll" />
+    <None Include="vcruntime140_1.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Dependency.wixext" Version="5.0.1" />
+    <PackageReference Include="WixToolset.Firewall.wixext" Version="5.0.1" />
+    <PackageReference Include="WixToolset.Iis.wixext" Version="5.0.1" />
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.1" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.1" />
+    <PackageReference Include="WixToolset.VisualStudio.wixext" Version="5.0.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SIPServer\SIPServerEmbedded.csproj">
+      <Name>SIPServerEmbedded</Name>
+      <Project>{2e5326fb-a5f1-404b-9e95-47fe7d9ae348}</Project>
+      <Private>True</Private>
+      <DoNotHarvest>True</DoNotHarvest>
+      <RefProjectOutputGroups>Binaries;Content;Satellites</RefProjectOutputGroups>
+      <RefTargetDir>INSTALLFOLDER</RefTargetDir>
+    </ProjectReference>
+    <ProjectReference Include="..\src\mod\languages\mod_managed\managed\FreeSWITCH.Managed.2017.csproj" />
+    <ProjectReference Include="..\w32\Console\FreeSwitchConsole.2017.vcxproj" />
+  </ItemGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+  </Target>
 </Project>

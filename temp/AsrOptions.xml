@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AsrOptions>
+
+	<DisableASR>false</DisableASR>
+	<!--Disable ASR feature entirely-->
+	<AsrQueueFolder>C:/ProgramData/GERRAudio/Communicator/asr-queue</AsrQueueFolder>
+	<!-- Folder for debug logo-->
+	<EnableLogging>true</EnableLogging>
+	<!-- Turn Asr-specific debug logging on or off. -->
+	<ResetVolume>false</ResetVolume>
+	<!--One shot volume reset - clear volume cache-->
+	<PostPromptGraceMs>200</PostPromptGraceMs>
+	<!--wait after ready prompt before arming detect_speech-->
+	<!-- NOTE: PostPromptGraceMs and ListenWindowMs reach FreeSWITCH only as the originate variables asr_grace_ms / asr_listen_ms.
+	     00_asr.xml reads neither: its listen window is fixed at 10000 ms (silence_stream://10000), so the values here have no
+	     effect on the real window unless the dialplan is changed to use ${asr_listen_ms}. -->
+	<ListenWindowMs>12000</ListenWindowMs>
+	<!-- per-attempt listen window-->
+	<QueueTimeoutMs>240000</QueueTimeoutMs>
+	<!-- 4 min - governs how long an entry can sit in queue-->
+	<MatrixResponseLatencyMs>500</MatrixResponseLatencyMs>
+
+	<QueueTimeoutToneSleepMs>800</QueueTimeoutToneSleepMs>
+	<!--placeholder pause for the native tone stub-->
+
+	<!-- Channel and queue limits -->
+	<TimeoutSeconds>20</TimeoutSeconds>
+	<MaxQueueDepth>50</MaxQueueDepth>
+
+	<!-- ASR virtual operator channel names prefix must match names in inetpub/SIPServer/conf/autoload_configs/aes67.conf.xml -->
+	<AsrActChannelName>ASR_Act</AsrActChannelName>
+	<!-- Hold channel must match name in inetpub/SIPServer/conf/autoload_configs/aes67.conf.xml -->
+	<AsrHoldChannelName>ASR_Hold</AsrHoldChannelName>
+
+	<!-- Prune idle resources timer (milliseconds) -->
+	<PruneSweepIntervalMs>45000</PruneSweepIntervalMs>
+
+	<!-- Button timing (milliseconds) -->
+	<!-- Short press: minimum duration to trigger ASR  -->
+	<AsrShortPressMs>200</AsrShortPressMs>
+	<!-- Long press: minimum duration to trigger operator alert -->
+	<AlertLongPressMs>2500</AlertLongPressMs>
+
+	<!-- Audio tail padding added after each prompt sleep (milliseconds) -->
+	<!-- Prevents uuid_kill from firing before the wav finishes -->
+	<!-- Also used to give SIPServer time to set up a join before audio prompts or confs are sent-->
+	<AudioTailMs>150</AudioTailMs>
+
+	<!-- Prompt durations (milliseconds) — set to match actual wav file lengths -->
+	<!-- NOTE: 00_asr.xml has a fixed 6000 ms failsafe after it posts the result. If IIS has not killed the call by then, the
+	     caller hears error beeps. IIS needs about max(NotUnderstood, InvalidConference, NoConference) + AudioTailMs on the skip
+	     path, or JoinedConference + AudioTailMs on the success path, plus roughly 1 s for the POST, the channel-ready wait and
+	     the conference switch. Keep that total under 6000 ms, or raise the failsafe in 00_asr.xml when these grow. -->
+	<PromptDurations>
+		<Ready>1100</Ready>
+		<PleaseWait>1750</PleaseWait>
+		<NotUnderstood>3000</NotUnderstood>
+		<InvalidConference>3550</InvalidConference>
+		<JoinedConference>3500</JoinedConference>
+		<NoConference>2750</NoConference>
+		<OperatorCalled>5250</OperatorCalled>
+	</PromptDurations>
+
+	<!-- Prompt audio -->
+	<SoundsPath>C:/inetpub/SIPServer/sounds/custom/</SoundsPath>
+	<PromptWavFiles>
+		<OperatorCalled>theoperatorhasbeencalledbeep48k.wav</OperatorCalled>
+		<PleaseWait>asr_please_wait.wav</PleaseWait>
+		<InvalidConference>asr_invalid_conference.wav</InvalidConference>
+		<NotUnderstood>asr_not_understood_retry.wav</NotUnderstood>
+		<NoConference>asr_disconnected.wav</NoConference>
+
+		<VolumeUp>asr_volume_up.wav</VolumeUp>
+		<VolumeDn>asr_volume_dn.wav</VolumeDn>
+
+		<MicUp>asr_mic_up.wav</MicUp>
+		<MicDn>asr_mic_dn.wav</MicDn>
+
+		<JoinedConference>asr_joining_conf.wav</JoinedConference>
+	</PromptWavFiles>
+
+	<!-- Volume control -->
+	<dbIncrement>3.0</dbIncrement>
+	<dbMax>6.0</dbMax>
+	<dbMin>-20.0</dbMin>
+
+	<!--Following should be coordinated with ASR Vosk Engine-side words in inetpub/SIPServer/conf/autoload_configs/vosk.conf.xml-->
+	<MinConfidenceLevel>0.75</MinConfidenceLevel>
+	<!-- true = also reject results that carry no per-word confidence data (forced finals / partials) when MinConfidenceLevel > 0 -->
+	<RequireConfidenceData>true</RequireConfidenceData>
+  <!--JoinRegex>^(?:join|connect|enter|go to|switch to|select|go|to)?\s*(?:conference|conf|channel|room|matrix)?\s*([a-zA-Z0-9\- ]+)$</JoinRegex-->
+  <!--JoinRegex>^(?:join|connect|enter|go to|select|switch to|go)?\s*(?:conference|conf|channel|room|matrix)?\s*([a-zA-Z0-9\- ]+)$</JoinRegex-->
+  <JoinRegex>^(?:join|connect\s+to|connect|enter|go\s+to|go|switch\s+to|switch|select)?\s*(?:conference|conf|channel|room|matrix)?\s*(.+)$</JoinRegex>
+	<DisconnectRegex>\b(no\s+conf(?:erence)?s?|none|remove|exit|disconnect|clear|cancel|leave)\b</DisconnectRegex>
+
+	<VolUpRegex>\b(?:(?:headset|headphones?|earpiece)s*\s+)?(raise|up|louder|volume\s*up|more\s*volume|turn\s*up|go\s*up)\b</VolUpRegex>
+	<VolDnRegex>\b(?:(?:headset|headphones?|earpiece)s*\s+)?(down|quieter|softer|volume\s*down|less\s*volume|turn\s*down|go\s*down)\b</VolDnRegex>
+
+	<MicUpRegex>\b(mic|mike|microphone)\s+(?:volume\s+)?(?:up|higher|louder)\b</MicUpRegex>
+	<MicDnRegex>\b(mic|mike|microphone)\s+(?:volume\s+)?(?:down|lower|quieter|softer)\b</MicDnRegex>
+
+	<PreVaultRegex>\b(prevault|pre\s+vault|pre-vault)\b</PreVaultRegex>
+	<PreVaultConfNum>26</PreVaultConfNum>
+
+	<ConfirmationBeep>tone_stream://%(200,100,800,1000);%(200,100,1000,1200)</ConfirmationBeep>
+	<AlertReconfirmCooldownMs>5000</AlertReconfirmCooldownMs>
+	<!-- minimum gap between repeat "operator called" replays -->
+
+</AsrOptions>

@@ -1,0 +1,67 @@
+<include>
+
+	<extension name="asr_hold_queue">
+		<condition field="destination_number" expression="^5601$">
+			<action application="answer"/>
+			<!-- Last-resort backstop only: AsrAudioRouter ends this call when the queue empties. It must outlast
+			     QueueTimeoutMs (4 min) so queued beltpacks keep hearing it, but stay finite so a hold call orphaned
+			     by a Communicator restart still clears by itself. -->
+			<action application="sched_hangup" data="+600 alloc_failure"/>
+			<action application="loop_playback" data="C:/inetpub/SIPServer/sounds/custom/asr_please_wait.wav"/>
+		</condition>
+	</extension>
+
+	<extension name="vosk_asr_processing">
+		<condition field="destination_number" expression="^5602$">
+			<action application="answer"/>
+			<!-- Backstop: a normal session is over in about 20 s and AsrAudioRouter ends it with uuid_kill.
+			     This only matters if IIS never does, so the endpoint cannot be held busy forever. -->
+			<action application="sched_hangup" data="+60 normal_clearing"/>
+			<action application="log" data="INFO [ASR 5602] start beltpack=${beltpack_name} uuid=${uuid}"/>
+			<action application="sleep" data="150"/>
+			<action application="set" data="disable_break=true"/>
+			<action application="playback" data="tone_stream://%(150,0,1000)"/>
+			<action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_ready.wav"/>
+			
+			<!-- brief sleep for noise absorption on switching -->
+			<!--action application="sleep" data="150"/-->
+ 			<!-- Attenuate the incoming audio slightly  to bury the room noise -->
+			<!--action application="set" data="rx_gain=-10"/-->
+
+			<!-- The listen window is fixed here and does NOT follow ListenWindowMs in AsrOptions.xml (the router passes it
+			     as asr_listen_ms, which nothing reads). To make it follow, use silence_stream://${asr_listen_ms}. -->
+			<action application="log" data="INFO [ASR 5602] listening beltpack=${beltpack_name}"/>
+			<action application="play_and_detect_speech" data="silence_stream://10000 detect:vosk default"/>
+			<action application="set" data="my_post_body=${detect_speech_result}"/>
+			<action application="set" data="disable_break=false"/>
+			<action application="set" data="res=${bgapi(curl http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}')}"/>
+			<action application="log" data="INFO [ASR 5602] POST dispatched beltpack=${beltpack_name} job=${res} result=${my_post_body}"/>
+			<action application="detect_speech" data="stop"/>
+
+			<!--action application="park"/--> <!--Communicator can kill-->
+
+			<!-- Failsafe window: time IIS has after the POST to play its prompt, do the switch and uuid_kill. It must stay
+			     longer than the slowest of JoinedConference / NotUnderstood / InvalidConference / NoConference in AsrOptions.xml
+			     plus AudioTailMs and the channel-ready wait. Raise it (for example silence_stream://12000) if those durations
+			     grow: a longer window costs nothing when IIS responds, because the kill ends the call. -->
+			<action application="playback" data="silence_stream://6000"/>
+			<action application="log" data="WARNING [ASR 5602] failsafe reached: IIS did not end the call in time beltpack=${beltpack_name} uuid=${uuid}"/>
+			<!--failsafe action -->
+			<!--play an error tone so the user knows it failed --> 
+			<action application="playback" data="tone_stream://%(200,200,400,450);loops=3"/>
+            
+			<!-- infinite hold--> 
+			<action application="conference" data="asr_holding_room@default+flags{mute|waste|nomoh}"/>
+
+		</condition>
+	</extension>
+
+	<extension name="asr_announce_only">
+		<condition field="destination_number" expression="^5603$">
+			<action application="answer"/>
+			<action application="sleep" data="50"/>
+			<action application="playback" data="silence_stream://20000"/>
+		</condition>
+	</extension>
+
+</include>
