@@ -27,7 +27,7 @@
 			<action application="set" data="RECORD_STEREO=false"/>
 
 			<action application="sched_hangup" data="+60 normal_clearing"/>
-			<action application="log" data="INFO [ASR 5602] start beltpack=${beltpack_name} uuid=${uuid}"/>
+			<!--action application="log" data="INFO [ASR 5602] start beltpack=${beltpack_name} uuid=${uuid}"/-->
 			<action application="sleep" data="150"/>
 			<action application="set" data="disable_break=true"/>
 
@@ -47,7 +47,7 @@
 
 			<action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_silence_48k.wav"/>
 
-			<action application="log" data="WARNING [ASR 5602] failsafe reached: IIS did not end the call in time beltpack=${beltpack_name} uuid=${uuid}"/>
+			<action application="log" data="WARNING [ASR 5602] failsafe reached: Communicator did not end the call in time beltpack=${beltpack_name} uuid=${uuid}"/>
 			<action application="playback" data="tone_stream://%(200,200,400,450);loops=3"/>
 			<action application="conference" data="asr_holding_room@default+flags{mute|waste|nomoh}"/>
 		</condition>
