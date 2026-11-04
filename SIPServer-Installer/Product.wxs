@@ -7,8 +7,8 @@
 	<?define ManagedModSourceDir = "..\src\mod\managed" ?>
 	<?define InstallPathDefault = "C:\inetpub\" ?>
 	<?define ReleaseBuildDirectoryPath = "..\x64\Release" ?>
-	<?define GSTMediaHarvestDir = "..\Media" ?>
-	<?define VoskASRHarvestDir = "..\Vosk" ?>
+	<?define GSTMediaHarvestDir = "..\..\Media" ?>
+	<?define VoskASRHarvestDir = "..\..\Vosk" ?>
 	<?define IconsEtcHarvestDir= ".\InstallUtils" ?>
 	<?define LicenseHarvestDir= "..\conf\Bruce\conf\autoload_configs" ?>
 	<?define CustomSoundsHarvestDir = "..\conf\Bruce\custom" ?>
@@ -134,15 +134,22 @@
 			<Custom Action="DeployManagedScripts" After="DeployMissingConfigs" Condition='NOT REMOVE="ALL"' />
 
 			<Custom Action="SetIP" Before="InstallService" Condition='NOT REMOVE="ALL"' />
-			<Custom Action="InstallService" Before="InstallFinalize"   />
-			<Custom Action="ConfigSvcSetup" After="InstallService"/>
+			
+			<!-- SIPServer Service Sequence -->
+			<Custom Action="InstallService" Before="InstallFinalize" />
+			<Custom Action="ConfigSvcStartup" After="InstallService" Condition='NOT REMOVE="ALL"' />
+			<Custom Action="ConfigSvcSetup" After="ConfigSvcStartup" Condition='NOT REMOVE="ALL"' />
+
+			<!-- VoskASR Service Sequence -->
 			<Custom Action="InstallVoskService" Before="InstallFinalize" Condition='NOT REMOVE="ALL"' />
 			<Custom Action="SetDirVoskService" After="InstallVoskService" Condition='NOT REMOVE="ALL"' />
 			<Custom Action="SetArgsVoskService" After="SetDirVoskService" Condition='NOT REMOVE="ALL"' />
 			<Custom Action="SetThrottleVoskService" After="SetArgsVoskService" Condition='NOT REMOVE="ALL"' />
 			<Custom Action="SetLogVoskService" After="SetThrottleVoskService" Condition='NOT REMOVE="ALL"' />
-			<Custom Action="ConfigVoskSvcSetup" After="SetLogVoskService" Condition='NOT REMOVE="ALL"' />
+			<Custom Action="SetDelayVoskService" After="SetLogVoskService" Condition='NOT REMOVE="ALL"' />
+			<Custom Action="ConfigVoskSvcSetup" After="SetDelayVoskService" Condition='NOT REMOVE="ALL"' />
 			<Custom Action="StartVoskSvc" After="ConfigVoskSvcSetup" Condition='NOT REMOVE="ALL"' />
+			
 			<Custom Action="LaunchReadme" After ="InstallFinalize" Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT Installed'/>
 		</InstallExecuteSequence>
 	</Package>
@@ -414,6 +421,7 @@
 
 		<CustomAction Id="InstallService" ExeCommand='[MyAppFolder]\nssm install SIPServer "[MyAppFolder]\SIPServer.exe"' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
 		<CustomAction Id="ConfigSvcSetup" ExeCommand='cmd.exe /c echo Configuring service... please do not close window &amp;&amp; sc failure SIPServer reset=259100 actions=restart/10000 2>NUL >NUL' Directory="MyAppFolder" Execute="deferred" Return="ignore" Impersonate="no" />
+		<CustomAction Id="ConfigSvcStartup" ExeCommand='[MyAppFolder]\nssm set SIPServer Start SERVICE_DELAYED_AUTO_START' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
 
 		<CustomAction Id="InstallVoskService" ExeCommand='[MyAppFolder]nssm.exe install VoskASR "[MyAppFolder]Vosk\Vosk_server.exe"' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
 		<CustomAction Id="SetDirVoskService" ExeCommand='[MyAppFolder]nssm.exe set VoskASR AppDirectory "[MyAppFolder]Vosk"' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
@@ -422,6 +430,8 @@
 		<CustomAction Id="SetLogVoskService" ExeCommand='cmd.exe /c "[MyAppFolder]nssm.exe" set VoskASR AppStdout "[MyAppFolder]Vosk\vosk_server.log" &amp;&amp; "[MyAppFolder]nssm.exe" set VoskASR AppStderr "[MyAppFolder]Vosk\vosk_server.log" &amp;&amp; "[MyAppFolder]nssm.exe" set VoskASR AppRotateFiles 1 &amp;&amp; "[MyAppFolder]nssm.exe" set VoskASR AppRotateBytes 5242880' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
 		<CustomAction Id="ConfigVoskSvcSetup" ExeCommand='cmd.exe /c echo Configuring service... please do not close window &amp;&amp; sc failure VoskASR reset=259100 actions=restart/10000 2>NUL >NUL' Directory="MyAppFolder" Execute="deferred" Return="ignore" Impersonate="no" />
 		<CustomAction Id="StartVoskSvc" ExeCommand='cmd.exe /c echo Starting ASR service... please do not close window &amp;&amp; sc start VoskASR 2>NUL >NUL' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
+		<CustomAction Id="SetDelayVoskService" ExeCommand='[MyAppFolder]nssm.exe set VoskASR Start SERVICE_DELAYED_AUTO_START' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
+		
 		<CustomAction Id="DeployMissingConfigs" ExeCommand='cmd.exe /c robocopy "[MyAppFolder]conf_defaults" "[MyAppFolder]conf" /E /XC /XN /XO 2&gt;NUL &gt;NUL' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
 		<CustomAction Id="DeployManagedScripts" ExeCommand='cmd.exe /c xcopy "[MyAppFolder]mod_defaults\managed\*.csx" "[MyAppFolder]mod\managed\" /Y /Q 2&gt;NUL &gt;NUL' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
 	</Fragment>

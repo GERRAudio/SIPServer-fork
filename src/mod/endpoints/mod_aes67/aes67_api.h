@@ -3,7 +3,7 @@
 
 #include <gst/gst.h>
 #include <switch.h>
-#define MOD_AES_VERSION_DATE "2026-08-31"
+#define MOD_AES_VERSION_DATE "2026-11-04"
 #define DIRECTION_TX 1 << 0
 #define DIRECTION_RX 1 << 1
 

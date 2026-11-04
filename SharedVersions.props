@@ -1,9 +1,9 @@
 <Project>
   <PropertyGroup>
     <!-- SIPServer Application Version -->
-    <SIPServerAppVersion>1.10.15</SIPServerAppVersion>
+    <SIPServerAppVersion>1.10.16</SIPServerAppVersion>
     
     <!-- SIPServer Installer Version -->
-    <SIPServerInstallerVersion>1.12</SIPServerInstallerVersion>
+    <SIPServerInstallerVersion>1.13</SIPServerInstallerVersion>
   </PropertyGroup>
 </Project>

@@ -436,7 +436,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 {
 	gboolean ret = FALSE;
 	GstElement *queue = NULL;
-	GstElement *appsink = NULL;
+	GstElement *appsink_element = NULL;
 	GstElement *tee = NULL;
 	GstPad *tee_src_pad = NULL;
 	GstPad *queue_sink_pad = NULL;
@@ -508,15 +508,15 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GstClockTime timeout = 100 * GST_MSECOND; // 100ms total drain window
 
 	g_rec_mutex_lock(ch_mutex);
-	NAME_SESSION_ELEMENT(name, appsink, ch_idx, session);
-	appsink = gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
+	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
+	appsink_element = gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
 
 
-	if (appsink) {
-		gst_element_send_event(appsink, gst_event_new_flush_start());
-		gst_element_send_event(appsink, gst_event_new_flush_stop(TRUE));
-		while (!gst_app_sink_is_eos(GST_APP_SINK(appsink))) {
-			sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink), timeout);
+	if (appsink_element) {
+		gst_element_send_event(appsink_element, gst_event_new_flush_start());
+		gst_element_send_event(appsink_element, gst_event_new_flush_stop(TRUE));
+		while (!gst_app_sink_is_eos(GST_APP_SINK(appsink_element))) {
+			sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink_element), timeout);
 			if (sample) {
 				DA_gst_sample_unref(sample);
 				sample = NULL;
@@ -525,24 +525,24 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 			}
 		}
 		// Force appsink to NULL state safely
-		gst_element_set_state(appsink, GST_STATE_NULL);
-		DA_gst_object_unref(appsink);
-		appsink = NULL;
+		gst_element_set_state(appsink_element, GST_STATE_NULL);
+		DA_gst_object_unref(appsink_element);
+		appsink_element = NULL;
 	}
 
 
 	gst_element_release_request_pad(tee, tee_src_pad);
 
 	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
-	appsink = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
+	appsink_element = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
 	g_rec_mutex_unlock(ch_mutex);
 
-	if (!appsink ) {
+	if (!appsink_element ) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to find %s in the pipeline\n", name);
 		goto exit;
 	}
 
-	gst_element_unlink(queue, appsink);
+	gst_element_unlink(queue, appsink_element);
 	g_rec_mutex_lock(ch_mutex);
 	if (!gst_bin_remove(GST_BIN(stream->pipeline), queue)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -552,12 +552,12 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 	if (queue) 
 		gst_element_set_state(queue, GST_STATE_NULL);
-	if (appsink) 
-		gst_element_set_state(appsink, GST_STATE_NULL);
+	if (appsink_element) 
+		gst_element_set_state(appsink_element, GST_STATE_NULL);
 
 
 	g_rec_mutex_lock(ch_mutex);
-	if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink)) { // non fatal //check mutex
+	if (!gst_bin_remove(GST_BIN(stream->pipeline), appsink_element)) { // non fatal //check mutex
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to remove appsink from the pipeline ch: %d, session: %s", ch_idx, session);
 	}
@@ -575,7 +575,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 exit:
 	DA_gst_object_unref(tee_src_pad);
 	DA_gst_object_unref(queue_sink_pad);
-	DA_gst_object_unref(GST_OBJECT(appsink));
+	DA_gst_object_unref(GST_OBJECT(appsink_element));
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
 done_no_unlock:
