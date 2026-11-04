@@ -867,7 +867,18 @@ done:
 static void do_load(void)
 {
 	switch_mutex_lock(MUTEX);
-	globals.debug_pcm = 0; // default
+
+	/* Reset variables to prevent caching old config states on reload */
+	globals.debug_pcm = 0;
+	globals.min_confidence = 0.0;
+	globals.endpoint_silence_ms = 0;
+	globals.vad_mode = 0;
+
+	switch_safe_free(globals.recognition_words);
+	globals.recognition_words = NULL;
+	switch_safe_free(globals.server_url);
+	globals.server_url = NULL;
+
 	load_config();
 	switch_mutex_unlock(MUTEX);
 }
