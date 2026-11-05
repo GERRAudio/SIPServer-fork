@@ -3,9 +3,10 @@
  * Copyright (C) 2005-2013, Anthony Minessale II <anthm@freeswitch.org>
  *
  * mod_vosk - Speech recognition using Vosk server (Windows x64 port)
+ Threaded version - 2026-11-05 - eliminates clicks - but uses a bigger buffer  not deployed
  */
 
-static char *version_date = "2026-11-04";
+static char *version_date = "2026-11-05";
 
 #define __PRETTY_FUNCTION__ __func__
 #include <switch.h>
@@ -17,8 +18,6 @@ static char *version_date = "2026-11-04";
 // #pragma comment(lib, "C:/Development/GitHub/GERRAudio/SIPServer/x64/Release/FreeSwitchCore.lib")
 #endif
 
-/* Set to 1 to write debug_in and debug_out PCM files. Set to 0 for production. */
-#define VOSK_DEBUG_PCM 1
 
 #define WS_OP_CONTINUATION 0x00
 #define WS_OP_TEXT 0x01
@@ -28,7 +27,7 @@ static char *version_date = "2026-11-04";
 #define WS_OP_PONG 0x0A
 
 #define WS_MAX_PAYLOAD (1024 * 1024)
-#define WS_IO_TIMEOUT_US 4000			//critical
+#define WS_IO_TIMEOUT_US 4000
 
 #define VOSK_IS_EAGAIN(s) ((s) == 11 || (s) == 35 || (s) == 120007 || (s) == 730035)
 
@@ -80,6 +79,9 @@ typedef struct {
 	switch_size_t frag_len;
 	switch_size_t frag_cap;
 	int frag_active;
+
+	switch_thread_t *read_thread;
+	volatile int running;
 } vosk_t;
 
 /* -------------------------------------------------------------------------
@@ -265,6 +267,126 @@ static void vosk_handle_text(vosk_t *vosk, const char *text)
 }
 
 /* -------------------------------------------------------------------------
+ * Background Read Thread
+ * ---------------------------------------------------------------------- */
+static void *SWITCH_THREAD_FUNC vosk_read_thread(switch_thread_t *thread, void *obj)
+{
+	vosk_t *vosk = (vosk_t *)obj;
+	switch_pollfd_t pollfd = {0};
+	int32_t num_fds = 0;
+	unsigned char hdr[2];
+	unsigned char fin, opcode, masked_flag;
+	unsigned char mask_key[4] = {0, 0, 0, 0};
+	uint64_t payload_len;
+	switch_size_t n;
+
+	pollfd.desc_type = SWITCH_POLL_SOCKET;
+	pollfd.desc.s = vosk->ws;
+	pollfd.reqevents = SWITCH_POLLIN | SWITCH_POLLERR;
+	pollfd.client_data = vosk;
+
+	while (vosk->running && vosk->ws) {
+		/* Poll with a 50ms timeout. If nothing arrives, loop and check running flag again. */
+		if (switch_poll(&pollfd, 1, &num_fds, 50000) != SWITCH_STATUS_SUCCESS || num_fds <= 0) { continue; }
+		if (!(pollfd.rtnevents & SWITCH_POLLIN)) { continue; }
+
+		if (ws_recv_exact(vosk->ws, (char *)hdr, 2) != SWITCH_STATUS_SUCCESS) break;
+
+		fin = (hdr[0] >> 7) & 0x01;
+		opcode = hdr[0] & 0x0F;
+		masked_flag = (hdr[1] >> 7) & 0x01;
+		payload_len = hdr[1] & 0x7F;
+
+		if (payload_len == 126) {
+			unsigned char ext[2];
+			if (ws_recv_exact(vosk->ws, (char *)ext, 2) != SWITCH_STATUS_SUCCESS) break;
+			payload_len = ((uint64_t)ext[0] << 8) | ext[1];
+		} else if (payload_len == 127) {
+			unsigned char ext[8];
+			if (ws_recv_exact(vosk->ws, (char *)ext, 8) != SWITCH_STATUS_SUCCESS) break;
+			payload_len = 0;
+			for (int b = 0; b < 8; b++) payload_len = (payload_len << 8) | ext[b];
+		}
+
+		if (payload_len > WS_MAX_PAYLOAD || (opcode >= 0x08 && payload_len > 125)) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+							  "mod_vosk: implausible WS frame, ending recognition\n");
+			break;
+		}
+
+		if (masked_flag && ws_recv_exact(vosk->ws, (char *)mask_key, 4) != SWITCH_STATUS_SUCCESS) break;
+
+		n = (switch_size_t)payload_len;
+		if (vosk_buf_reserve(&vosk->rx_buf, &vosk->rx_cap, n + 1) != SWITCH_STATUS_SUCCESS) break;
+
+		if (n > 0) {
+			if (ws_recv_exact(vosk->ws, vosk->rx_buf, n) != SWITCH_STATUS_SUCCESS) break;
+			if (masked_flag) {
+				for (switch_size_t i = 0; i < n; i++) vosk->rx_buf[i] ^= mask_key[i % 4];
+			}
+		}
+		vosk->rx_buf[n] = '\0';
+
+		switch (opcode) {
+		case WS_OP_TEXT:
+		case WS_OP_CONTINUATION:
+			if (opcode == WS_OP_TEXT) {
+				vosk->frag_len = 0;
+				vosk->frag_active = 0;
+				if (fin) {
+					if (n > 0) {
+						/* Lock mutex ONLY when updating shared strings */
+						switch_mutex_lock(vosk->mutex);
+						vosk_handle_text(vosk, vosk->rx_buf);
+						switch_mutex_unlock(vosk->mutex);
+					}
+					break;
+				}
+				vosk->frag_active = 1;
+			} else if (!vosk->frag_active) {
+				break;
+			}
+
+			if (vosk->frag_len + n > WS_MAX_PAYLOAD ||
+				vosk_buf_reserve(&vosk->frag_buf, &vosk->frag_cap, vosk->frag_len + n + 1) != SWITCH_STATUS_SUCCESS) {
+				vosk->frag_len = 0;
+				vosk->frag_active = 0;
+				break;
+			}
+			memcpy(vosk->frag_buf + vosk->frag_len, vosk->rx_buf, n);
+			vosk->frag_len += n;
+
+			if (fin) {
+				vosk->frag_buf[vosk->frag_len] = '\0';
+				if (vosk->frag_len > 0) {
+					switch_mutex_lock(vosk->mutex);
+					vosk_handle_text(vosk, vosk->frag_buf);
+					switch_mutex_unlock(vosk->mutex);
+				}
+				vosk->frag_len = 0;
+				vosk->frag_active = 0;
+			}
+			break;
+
+		case WS_OP_PING:
+			/* Sending PONG is fast enough to do without locking, ws_send_pong is self-contained */
+			ws_send_pong(vosk->ws, vosk->rx_buf, n);
+			break;
+
+		case WS_OP_CLOSE:
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "mod_vosk: server sent WS CLOSE\n");
+			vosk->running = 0;
+			break;
+
+		default:
+			break;
+		}
+	}
+
+	return NULL;
+}
+
+/* -------------------------------------------------------------------------
  * vosk_asr_open
  * ---------------------------------------------------------------------- */
 static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec, int rate, const char *dest,
@@ -273,6 +395,7 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 	vosk_t *vosk = NULL;
 	switch_socket_t *socket = NULL;
 	switch_sockaddr_t *sa = NULL;
+	switch_threadattr_t *thd_attr = NULL;
 
 	if (!(vosk = (vosk_t *)switch_core_alloc(ah->memory_pool, sizeof(*vosk)))) { return SWITCH_STATUS_MEMERR; }
 	ah->private_info = vosk;
@@ -280,6 +403,8 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 	switch_mutex_init(&vosk->mutex, SWITCH_MUTEX_NESTED, ah->memory_pool);
 	vosk->handshake_done = 0;
 	vosk->result = NULL;
+	vosk->read_thread = NULL;
+	vosk->running = 0;
 
 	vosk->last_partial = NULL;
 	vosk->last_partial_time = 0;
@@ -397,6 +522,13 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 
 	vosk->ws = socket;
 	vosk->handshake_done = 1;
+
+	/* IGNITE THE BACKGROUND READ THREAD */
+	vosk->running = 1;
+	switch_threadattr_create(&thd_attr, ah->memory_pool);
+	switch_threadattr_detach_set(thd_attr, 0);
+	switch_thread_create(&vosk->read_thread, thd_attr, vosk_read_thread, vosk, ah->memory_pool);
+
 	return SWITCH_STATUS_SUCCESS;
 }
 
@@ -406,6 +538,14 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 static switch_status_t vosk_asr_close(switch_asr_handle_t *ah, switch_asr_flag_t *flags)
 {
 	vosk_t *vosk = (vosk_t *)ah->private_info;
+
+	/* SIGNAL BACKGROUND THREAD TO STOP AND WAIT FOR IT */
+	vosk->running = 0;
+	if (vosk->read_thread) {
+		switch_status_t st;
+		switch_thread_join(&st, vosk->read_thread);
+		vosk->read_thread = NULL;
+	}
 
 	switch_mutex_lock(vosk->mutex);
 	if (vosk->ws) {
@@ -435,21 +575,15 @@ static switch_status_t vosk_asr_close(switch_asr_handle_t *ah, switch_asr_flag_t
 }
 
 /* -------------------------------------------------------------------------
- * vosk_asr_feed
+ * vosk_asr_feed (NOW STRICTLY NON-BLOCKING)
  * ---------------------------------------------------------------------- */
 static switch_status_t vosk_asr_feed(switch_asr_handle_t *ah, void *data, unsigned int len, switch_asr_flag_t *flags)
 {
 	vosk_t *vosk = (vosk_t *)ah->private_info;
-	switch_pollfd_t pollfd = {0};
-	int32_t num_fds = 0;
-	unsigned char hdr[2];
-	unsigned char fin, opcode, masked_flag;
-	unsigned char mask_key[4] = {0, 0, 0, 0};
-	uint64_t payload_len;
-	switch_size_t n;
 
 	if (switch_test_flag(ah, SWITCH_ASR_FLAG_CLOSED)) return SWITCH_STATUS_BREAK;
 	if (!vosk->handshake_done) return SWITCH_STATUS_BREAK;
+	if (!vosk->running) return SWITCH_STATUS_BREAK; /* Thread failed or closed */
 
 	switch_mutex_lock(vosk->mutex);
 
@@ -467,28 +601,21 @@ static switch_status_t vosk_asr_feed(switch_asr_handle_t *ah, void *data, unsign
 
 		int in_sample_count = (int)(len / sizeof(int16_t));
 		int16_t *in_samples = (int16_t *)data;
-
-#if VOSK_DEBUG_PCM
-		/* 1. DUMP RAW INPUT AUDIO FROM FREESWITCH (48kHz) BEFORE ANY PROCESSING */
-		/* Placed explicitly at the top so it captures the unmodified network stream */
-		char fname_in[256];
-		sprintf(fname_in, "C:/inetpub/SIPServer/sounds/debug_in_%p.pcm", (void *)ah);
-		FILE *f_in = fopen(fname_in, "ab");
-		if (f_in) {
-			fwrite(data, 1, len, f_in);
-			fclose(f_in);
+		if (globals.debug_pcm) {
+			char fname_in[256];
+			sprintf(fname_in, "C:/inetpub/SIPServer/sounds/debug_in_%p.pcm", (void *)ah);
+			FILE *f_in = fopen(fname_in, "ab");
+			if (f_in) {
+				fwrite(data, 1, len, f_in);
+				fclose(f_in);
+			}
 		}
-#endif
 
-		/* SOFTWARE DESPIKER: Limit extreme sample-to-sample voltage jumps (slew rate) */
 		for (int i = 0; i < in_sample_count; i++) {
 			int prev = (i == 0) ? vosk->last_in_sample : in_samples[i - 1];
 			int delta = in_samples[i] - prev;
 
-			if (delta > 8000 || delta < -8000) {
-				/* Slew rate exceeded. Hold the previous sample's voltage */
-				in_samples[i] = prev;
-			}
+			if (delta > 8000 || delta < -8000) { in_samples[i] = prev; }
 		}
 
 		if (in_sample_count > 0) { vosk->last_in_sample = in_samples[in_sample_count - 1]; }
@@ -550,16 +677,15 @@ static switch_status_t vosk_asr_feed(switch_asr_handle_t *ah, void *data, unsign
 
 #undef GET_IN_SAMPLE
 
-#if VOSK_DEBUG_PCM
-		/* 2. DUMP OUTPUT AUDIO GOING TO VOSK (16kHz) AFTER DESPIKING */
-		char fname_out[256];
-		sprintf(fname_out, "C:/inetpub/SIPServer/sounds/debug_out_%p.pcm", (void *)ah);
-		FILE *f_out = fopen(fname_out, "ab");
-		if (f_out) {
-			fwrite(out_samples, 1, out_bytes, f_out);
-			fclose(f_out);
+		if (globals.debug_pcm) {
+			char fname_out[256];
+			sprintf(fname_out, "C:/inetpub/SIPServer/sounds/debug_out_%p.pcm", (void *)ah);
+			FILE *f_out = fopen(fname_out, "ab");
+			if (f_out) {
+				fwrite(out_samples, 1, out_bytes, f_out);
+				fclose(f_out);
+			}
 		}
-#endif
 
 		switch_status_t sr = ws_send_binary(vosk->ws, (const char *)out_samples, out_bytes);
 
@@ -569,114 +695,8 @@ static switch_status_t vosk_asr_feed(switch_asr_handle_t *ah, void *data, unsign
 		}
 	}
 
-	/* ---- Non-blocking poll for a response frame ------------------------ */
-	pollfd.desc_type = SWITCH_POLL_SOCKET;
-	pollfd.desc.s = vosk->ws;
-	pollfd.reqevents = SWITCH_POLLIN | SWITCH_POLLERR;
-	pollfd.client_data = vosk;
-
-	if (switch_poll(&pollfd, 1, &num_fds, 0) != SWITCH_STATUS_SUCCESS || num_fds <= 0) {
-		switch_mutex_unlock(vosk->mutex);
-		return SWITCH_STATUS_SUCCESS;
-	}
-	if (!(pollfd.rtnevents & SWITCH_POLLIN)) {
-		switch_mutex_unlock(vosk->mutex);
-		return SWITCH_STATUS_SUCCESS;
-	}
-
-	/* ---- Read WS frame header (2 bytes) -------------------------------- */
-	if (ws_recv_exact(vosk->ws, (char *)hdr, 2) != SWITCH_STATUS_SUCCESS) goto ws_fail;
-
-	fin = (hdr[0] >> 7) & 0x01;
-	opcode = hdr[0] & 0x0F;
-	masked_flag = (hdr[1] >> 7) & 0x01;
-	payload_len = hdr[1] & 0x7F;
-
-	if (payload_len == 126) {
-		unsigned char ext[2];
-		if (ws_recv_exact(vosk->ws, (char *)ext, 2) != SWITCH_STATUS_SUCCESS) goto ws_fail;
-		payload_len = ((uint64_t)ext[0] << 8) | ext[1];
-	} else if (payload_len == 127) {
-		unsigned char ext[8];
-		if (ws_recv_exact(vosk->ws, (char *)ext, 8) != SWITCH_STATUS_SUCCESS) goto ws_fail;
-		payload_len = 0;
-		for (int b = 0; b < 8; b++) payload_len = (payload_len << 8) | ext[b];
-	}
-
-	if (payload_len > WS_MAX_PAYLOAD || (opcode >= 0x08 && payload_len > 125)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-						  "mod_vosk: implausible WS frame (opcode 0x%02x, length %llu)\n", opcode,
-						  (unsigned long long)payload_len);
-		goto ws_fail;
-	}
-
-	if (masked_flag && ws_recv_exact(vosk->ws, (char *)mask_key, 4) != SWITCH_STATUS_SUCCESS) goto ws_fail;
-
-	n = (switch_size_t)payload_len;
-	if (vosk_buf_reserve(&vosk->rx_buf, &vosk->rx_cap, n + 1) != SWITCH_STATUS_SUCCESS) goto ws_fail;
-
-	if (n > 0) {
-		if (ws_recv_exact(vosk->ws, vosk->rx_buf, n) != SWITCH_STATUS_SUCCESS) goto ws_fail;
-		if (masked_flag) {
-			for (switch_size_t i = 0; i < n; i++) vosk->rx_buf[i] ^= mask_key[i % 4];
-		}
-	}
-	vosk->rx_buf[n] = '\0';
-
-	switch (opcode) {
-
-	case WS_OP_TEXT:
-	case WS_OP_CONTINUATION:
-		if (opcode == WS_OP_TEXT) {
-			vosk->frag_len = 0;
-			vosk->frag_active = 0;
-			if (fin) {
-				if (n > 0) vosk_handle_text(vosk, vosk->rx_buf);
-				break;
-			}
-			vosk->frag_active = 1;
-		} else if (!vosk->frag_active) {
-			break;
-		}
-
-		if (vosk->frag_len + n > WS_MAX_PAYLOAD ||
-			vosk_buf_reserve(&vosk->frag_buf, &vosk->frag_cap, vosk->frag_len + n + 1) != SWITCH_STATUS_SUCCESS) {
-			vosk->frag_len = 0;
-			vosk->frag_active = 0;
-			break;
-		}
-		memcpy(vosk->frag_buf + vosk->frag_len, vosk->rx_buf, n);
-		vosk->frag_len += n;
-
-		if (fin) {
-			vosk->frag_buf[vosk->frag_len] = '\0';
-			if (vosk->frag_len > 0) vosk_handle_text(vosk, vosk->frag_buf);
-			vosk->frag_len = 0;
-			vosk->frag_active = 0;
-		}
-		break;
-
-	case WS_OP_PING:
-		ws_send_pong(vosk->ws, vosk->rx_buf, n);
-		break;
-
-	case WS_OP_CLOSE:
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "mod_vosk: server sent WS CLOSE\n");
-		switch_mutex_unlock(vosk->mutex);
-		return SWITCH_STATUS_BREAK;
-
-	default:
-		break;
-	}
-
 	switch_mutex_unlock(vosk->mutex);
 	return SWITCH_STATUS_SUCCESS;
-
-ws_fail:
-	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-					  "mod_vosk: WebSocket read failed or lost sync, ending recognition\n");
-	switch_mutex_unlock(vosk->mutex);
-	return SWITCH_STATUS_BREAK;
 }
 
 static switch_status_t vosk_asr_pause(switch_asr_handle_t *ah) { return SWITCH_STATUS_SUCCESS; }
@@ -785,7 +805,7 @@ static switch_status_t vosk_asr_get_results(switch_asr_handle_t *ah, char **xmls
 
 	switch_safe_free(vosk->last_partial);
 	vosk->last_partial = NULL;
-	vosk->last_partial_time = 0; /* CRASH FIX APPLIED HERE */
+	vosk->last_partial_time = 0;
 
 	switch_mutex_unlock(vosk->mutex);
 	return ret;
@@ -837,7 +857,6 @@ done:
 						  "mod_vosk: 'recognition-words' missing from XML. Using hardcoded production defaults.\n");
 
 		set_global_str(&globals.recognition_words,
-					   "\"set\", \"time\", \"set mic\", \"set mike\", \"set volume\", \"operator\", \"call operator\", \"what time is it\", "
 					   "\"up\", \"down\", \"louder\", \"softer\", \"volume\", \"go\", \"to\", \"go to\", "
 					   "\"conference\", \"switch\", \"switch to\", "
 					   "\"connect\", \"connect to\", \"connect with\", \"join\", \"in\", \"with\", \"join in\", "
@@ -867,18 +886,7 @@ done:
 static void do_load(void)
 {
 	switch_mutex_lock(MUTEX);
-
-	/* Reset variables to prevent caching old config states on reload */
-	globals.debug_pcm = 0;
-	globals.min_confidence = 0.0;
-	globals.endpoint_silence_ms = 0;
-	globals.vad_mode = 0;
-
-	switch_safe_free(globals.recognition_words);
-	globals.recognition_words = NULL;
-	switch_safe_free(globals.server_url);
-	globals.server_url = NULL;
-
+	globals.debug_pcm = 0; // default
 	load_config();
 	switch_mutex_unlock(MUTEX);
 }
