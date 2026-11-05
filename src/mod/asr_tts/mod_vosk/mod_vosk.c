@@ -28,7 +28,7 @@ static char *version_date = "2026-11-04";
 #define WS_OP_PONG 0x0A
 
 #define WS_MAX_PAYLOAD (1024 * 1024)
-#define WS_IO_TIMEOUT_US 250000
+#define WS_IO_TIMEOUT_US 4000			//critical
 
 #define VOSK_IS_EAGAIN(s) ((s) == 11 || (s) == 35 || (s) == 120007 || (s) == 730035)
 
