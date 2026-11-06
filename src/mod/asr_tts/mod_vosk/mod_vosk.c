@@ -6,7 +6,7 @@
  Threaded version - 2026-11-05 - eliminates clicks - but uses a bigger buffer  not deployed
  */
 
-static char *version_date = "2026-11-05";
+static char *version_date = "2026-11-06";
 
 #define __PRETTY_FUNCTION__ __func__
 #include <switch.h>
@@ -17,7 +17,6 @@ static char *version_date = "2026-11-05";
 #ifdef _MSC_VER
 // #pragma comment(lib, "C:/Development/GitHub/GERRAudio/SIPServer/x64/Release/FreeSwitchCore.lib")
 #endif
-
 
 #define WS_OP_CONTINUATION 0x00
 #define WS_OP_TEXT 0x01
@@ -71,7 +70,10 @@ typedef struct {
 	int16_t remainder[2];
 	int remainder_len;
 
-	int16_t last_in_sample;
+	/* Despike (5-point Hampel-style) state: last 4 RAW input samples, plus counters */
+	int16_t desp_hist[4];
+	unsigned long long desp_replaced;
+	unsigned long long desp_total;
 
 	char *rx_buf;
 	switch_size_t rx_cap;
@@ -418,7 +420,9 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 	memset(vosk->fir_hist, 0, sizeof(vosk->fir_hist));
 
 	vosk->remainder_len = 0;
-	vosk->last_in_sample = 0;
+	memset(vosk->desp_hist, 0, sizeof(vosk->desp_hist));
+	vosk->desp_replaced = 0;
+	vosk->desp_total = 0;
 
 	ah->rate = 48000;
 	vosk->sample_rate = 48000;
@@ -539,6 +543,12 @@ static switch_status_t vosk_asr_close(switch_asr_handle_t *ah, switch_asr_flag_t
 {
 	vosk_t *vosk = (vosk_t *)ah->private_info;
 
+	if (vosk->desp_total > 0) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+						  "mod_vosk: despike replaced %llu of %llu input samples (%.4f%%)\n", vosk->desp_replaced,
+						  vosk->desp_total, 100.0 * (double)vosk->desp_replaced / (double)vosk->desp_total);
+	}
+
 	/* SIGNAL BACKGROUND THREAD TO STOP AND WAIT FOR IT */
 	vosk->running = 0;
 	if (vosk->read_thread) {
@@ -572,6 +582,43 @@ static switch_status_t vosk_asr_close(switch_asr_handle_t *ah, switch_asr_flag_t
 
 	switch_mutex_unlock(vosk->mutex);
 	return SWITCH_STATUS_SUCCESS;
+}
+
+/* -------------------------------------------------------------------------
+ * Despike helpers
+ *
+ * The 48 kHz AES67 input contains isolated full-scale single-sample impulses.
+ * They are removed BEFORE the 3:1 FIR decimation (otherwise the FIR would smear
+ * each one over several 16 kHz samples).
+ *
+ * Filter: 5-point median, applied conditionally (Hampel style). The centre
+ * sample is only replaced when it differs from the median of its 5-sample
+ * window by more than DESPIKE_THRESH, so normal audio passes bit-exact.
+ *   - removes isolated impulses and bursts of up to 2 consecutive bad samples
+ *   - stateless w.r.t. the signal level, so it can never latch on a real step
+ *     (the old "hold previous sample if delta > 8000" loop could)
+ *   - costs a fixed 2-sample (~42 us at 48 kHz) delay
+ * ---------------------------------------------------------------------- */
+#ifndef DESPIKE_THRESH
+#define DESPIKE_THRESH 6000
+#endif
+
+static int16_t median5_s16(int16_t a, int16_t b, int16_t c, int16_t d, int16_t e)
+{
+	int16_t v[5];
+	int i, j;
+
+	v[0] = a;
+	v[1] = b;
+	v[2] = c;
+	v[3] = d;
+	v[4] = e;
+	for (i = 1; i < 5; i++) {
+		int16_t key = v[i];
+		for (j = i - 1; j >= 0 && v[j] > key; j--) { v[j + 1] = v[j]; }
+		v[j + 1] = key;
+	}
+	return v[2];
 }
 
 /* -------------------------------------------------------------------------
@@ -611,14 +658,35 @@ static switch_status_t vosk_asr_feed(switch_asr_handle_t *ah, void *data, unsign
 			}
 		}
 
-		for (int i = 0; i < in_sample_count; i++) {
-			int prev = (i == 0) ? vosk->last_in_sample : in_samples[i - 1];
-			int delta = in_samples[i] - prev;
+		/* Robust despike: conditional 5-point median, in place, state carried across frames.
+		 * Window = h0,h1,h2,h3,x ; centre = h2 ; output is delayed by 2 samples. */
+		{
+			int16_t h0 = vosk->desp_hist[0], h1 = vosk->desp_hist[1];
+			int16_t h2 = vosk->desp_hist[2], h3 = vosk->desp_hist[3];
 
-			if (delta > 8000 || delta < -8000) { in_samples[i] = prev; }
+			for (int i = 0; i < in_sample_count; i++) {
+				int16_t x = in_samples[i];
+				int16_t c = h2;
+				int16_t m = median5_s16(h0, h1, h2, h3, x);
+				int d = (int)c - (int)m;
+
+				if (d > DESPIKE_THRESH || d < -DESPIKE_THRESH) {
+					c = m;
+					vosk->desp_replaced++;
+				}
+				in_samples[i] = c;
+				h0 = h1;
+				h1 = h2;
+				h2 = h3;
+				h3 = x;
+			}
+
+			vosk->desp_hist[0] = h0;
+			vosk->desp_hist[1] = h1;
+			vosk->desp_hist[2] = h2;
+			vosk->desp_hist[3] = h3;
+			vosk->desp_total += (unsigned long long)in_sample_count;
 		}
-
-		if (in_sample_count > 0) { vosk->last_in_sample = in_samples[in_sample_count - 1]; }
 
 		int total_in_samples = vosk->remainder_len + in_sample_count;
 
