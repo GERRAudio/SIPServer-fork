@@ -6,7 +6,7 @@
  Threaded version - 2026-11-05 - eliminates clicks - but uses a bigger buffer  not deployed
  */
 
-static char *version_date = "2026-11-06";
+static char *version_date = "2026-11-11";
 
 #define __PRETTY_FUNCTION__ __func__
 #include <switch.h>
@@ -510,6 +510,9 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 			return SWITCH_STATUS_MEMERR;
 		}
 
+		// Log the final JSON string to verify CDATA parsed correctly
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "mod_vosk: final JSON config payload:\n%s\n", cfg_json);
+
 		if (ws_send_text(socket, cfg_json) != SWITCH_STATUS_SUCCESS) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "mod_vosk: failed to send config JSON\n");
 			switch_safe_free(cfg_json);
@@ -517,7 +520,6 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 			return SWITCH_STATUS_GENERR;
 		}
 
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "mod_vosk: config JSON sent: %s\n", cfg_json);
 		switch_safe_free(cfg_json);
 	}
 
@@ -586,18 +588,6 @@ static switch_status_t vosk_asr_close(switch_asr_handle_t *ah, switch_asr_flag_t
 
 /* -------------------------------------------------------------------------
  * Despike helpers
- *
- * The 48 kHz AES67 input contains isolated full-scale single-sample impulses.
- * They are removed BEFORE the 3:1 FIR decimation (otherwise the FIR would smear
- * each one over several 16 kHz samples).
- *
- * Filter: 5-point median, applied conditionally (Hampel style). The centre
- * sample is only replaced when it differs from the median of its 5-sample
- * window by more than DESPIKE_THRESH, so normal audio passes bit-exact.
- *   - removes isolated impulses and bursts of up to 2 consecutive bad samples
- *   - stateless w.r.t. the signal level, so it can never latch on a real step
- *     (the old "hold previous sample if delta > 8000" loop could)
- *   - costs a fixed 2-sample (~42 us at 48 kHz) delay
  * ---------------------------------------------------------------------- */
 #ifndef DESPIKE_THRESH
 #define DESPIKE_THRESH 6000
@@ -658,8 +648,7 @@ static switch_status_t vosk_asr_feed(switch_asr_handle_t *ah, void *data, unsign
 			}
 		}
 
-		/* Robust despike: conditional 5-point median, in place, state carried across frames.
-		 * Window = h0,h1,h2,h3,x ; centre = h2 ; output is delayed by 2 samples. */
+		/* Robust despike: conditional 5-point median, in place, state carried across frames. */
 		{
 			int16_t h0 = vosk->desp_hist[0], h1 = vosk->desp_hist[1];
 			int16_t h2 = vosk->desp_hist[2], h3 = vosk->desp_hist[3];
@@ -910,19 +899,23 @@ static switch_status_t load_config(void)
 			if (!strcasecmp(var, "server-url")) set_global_str(&globals.server_url, val);
 			if (!strcasecmp(var, "return-json")) globals.return_json = atoi(val);
 			if (!strcasecmp(var, "auto-reload")) globals.auto_reload = atoi(val);
-			if (!strcasecmp(var, "recognition-words")) set_global_str(&globals.recognition_words, val);
 			if (!strcasecmp(var, "endpoint-silence-ms")) globals.endpoint_silence_ms = atoi(val);
 			if (!strcasecmp(var, "speech-complete-timeout")) globals.speech_complete_timeout = atoi(val);
 			if (!strcasecmp(var, "min-confidence")) globals.min_confidence = (float)atof(val);
 			if (!strcasecmp(var, "vad-mode")) globals.vad_mode = atoi(val);
 		}
 	}
+
+	// Read the raw CDATA block directly
+	switch_xml_t grammar_node = switch_xml_child(cfg, "grammar");
+	if (grammar_node) { set_global_str(&globals.recognition_words, switch_xml_txt(grammar_node)); }
+
 done:
 	if (!globals.server_url) set_global_str(&globals.server_url, "ws://127.0.0.1:2700");
 	if (globals.endpoint_silence_ms <= 0) { globals.endpoint_silence_ms = 400; }
 	if (!globals.recognition_words) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-						  "mod_vosk: 'recognition-words' missing from XML. Using hardcoded production defaults.\n");
+						  "mod_vosk: 'grammar' missing from XML. Using hardcoded production defaults.\n");
 
 		set_global_str(&globals.recognition_words,
 					   "\"up\", \"down\", \"louder\", \"softer\", \"volume\", \"go\", \"to\", \"go to\", "

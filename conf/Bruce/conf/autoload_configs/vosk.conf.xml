@@ -17,23 +17,38 @@
 -->
 <configuration name="vosk.conf" description="Vosk ASR Configuration">
   <settings>
-    <!-- Minimum confidence required (0.0 to 1.0). Speech under this threshold is ignored. -->
     <param name="min-confidence" value="0.75"/> 
-    <!-- Voice Activity Detection: controls how strictly silence vs voice is separated. 
-         Higher values require clearer, louder speech to trigger an utterance start. -->
-    <param name="vad-mode" value="3"/> <!-- Mode 0 (least strict) to 3 (most strict filtering) -->
-     <!-- Silence detection timeout in milliseconds -->
+    <param name="vad-mode" value="3"/> 
     <param name="speech-complete-timeout" value="1000"/>
-	
     <param name="server-url" value="ws://127.0.0.1:2700"/>
     <param name="return-json" value="1"/>
     <param name="auto-reload" value="1"/>
-	  <!-- set flag to 1 to record pcm in and out before downsampling and after, do not leave on since it will fill up disk - goes to inetpub\SIPServer\sounds -->
-	<param name="debug-pcm" value="0"/>
+    <param name="debug-pcm" value="0"/>
     <param name="endpoint-silence-ms" value="1000"/>
-<!-- Word filter List -->
-<param name="recognition-words" value="&quot;27&quot;, &quot;28&quot;, &quot;29&quot;, &quot;30&quot;, &quot;31&quot;, &quot;32&quot;, &quot;33&quot;, &quot;34&quot;, &quot;35&quot;, &quot;36&quot;, &quot;37&quot;, &quot;38&quot;, &quot;39&quot;, &quot;40&quot;, &quot;41&quot;, &quot;42&quot;, &quot;43&quot;, &quot;44&quot;, &quot;45&quot;, &quot;46&quot;, &quot;47&quot;, &quot;48&quot;, &quot;49&quot;, &quot;50&quot;, &quot;51&quot;, &quot;52&quot;, &quot;53&quot;, &quot;54&quot;, &quot;55&quot;, &quot;56&quot;, &quot;57&quot;, &quot;58&quot;, &quot;59&quot;, &quot;60&quot;, &quot;61&quot;, &quot;62&quot;, &quot;63&quot;, &quot;64&quot;, &quot;65&quot;, &quot;66&quot;, &quot;67&quot;, &quot;68&quot;, &quot;69&quot;, &quot;70&quot;, &quot;71&quot;, &quot;72&quot;, &quot;73&quot;, &quot;74&quot;, &quot;75&quot;, &quot;76&quot;, &quot;77&quot;, &quot;78&quot;, &quot;79&quot;, &quot;80&quot;, &quot;81&quot;, &quot;82&quot;, &quot;83&quot;, &quot;84&quot;, &quot;85&quot;, &quot;86&quot;, &quot;87&quot;, &quot;88&quot;, &quot;89&quot;, &quot;90&quot;, &quot;91&quot;, &quot;92&quot;, &quot;93&quot;, &quot;94&quot;, &quot;95&quot;, &quot;96&quot;, &quot;97&quot;, &quot;98&quot;, &quot;99&quot;, &quot;boost&quot;, &quot;cancel&quot;, &quot;clear&quot;, &quot;conference&quot;, &quot;channel&quot;, &quot;connect&quot;, &quot;connect to&quot;, &quot;connect with&quot;, &quot;decrease&quot;, &quot;disconnect&quot;, &quot;down&quot;, &quot;eight&quot;, &quot;eighty&quot;, &quot;exit&quot;, &quot;fifty&quot;, &quot;five&quot;, &quot;forty&quot;, &quot;four&quot;, &quot;go&quot;, &quot;go to&quot;, &quot;higher&quot;, &quot;in&quot;, &quot;increase&quot;, &quot;join&quot;, &quot;join in&quot;, &quot;join with&quot;, &quot;leave&quot;, &quot;less&quot;, &quot;louder&quot;, &quot;lower&quot;, &quot;mic&quot;, &quot;microphone&quot;, &quot;mike&quot;, &quot;more&quot;, &quot;nine&quot;, &quot;ninety&quot;, &quot;no&quot;, &quot;no conference&quot;, &quot;none&quot;, &quot;one&quot;, &quot;pre&quot;, &quot;prevault&quot;, &quot;pre-vault&quot;, &quot;pre vault&quot;, &quot;quieter&quot;, &quot;raise&quot;, &quot;remove&quot;, &quot;seven&quot;, &quot;seventy&quot;, &quot;six&quot;, &quot;sixty&quot;, &quot;softer&quot;, &quot;switch&quot;, &quot;switch to&quot;, &quot;thirty&quot;, &quot;three&quot;, &quot;to&quot;, &quot;turn&quot;, &quot;twenty&quot;, &quot;two&quot;, &quot;up&quot;, &quot;vault&quot;, &quot;volume&quot;, &quot;with&quot;, &quot;set volume&quot;, &quot;set ear volume&quot;, &quot;set mike volume&quot;, &quot;set mic volume&quot;, &quot;current time&quot;, &quot;what time is it&quot;, &quot;time&quot;, &quot;operator&quot;, &quot;[unk]&quot;"/>
   </settings>
+
+  <!-- CDATA lets us use real double quotes, spaces, and newlines safely -->
+  <grammar><![CDATA[
+    "27", "28", "29", "30", "31", "32", "33", "34", "35", "36",
+    "37", "38", "39", "40", "41", "42", "43", "44", "45", "46",
+    "47", "48", "49", "50", "51", "52", "53", "54", "55", "56",
+    "57", "58", "59", "60", "61", "62", "63", "64", "65", "66",
+    "67", "68", "69", "70", "71", "72", "73", "74", "75", "76",
+    "77", "78", "79", "80", "81", "82", "83", "84", "85", "86",
+    "87", "88", "89", "90", "91", "92", "93", "94", "95", "96",
+    "97", "98", "99", 
+    "boost", "cancel", "clear", "conference", "channel", 
+    "connect", "connect to", "connect with", "decrease", "disconnect", 
+    "down", "eight", "eighty", "exit", "fifty", "five", "forty", 
+    "four", "go", "go to", "higher", "in", "increase", "join", 
+    "join in", "join with", "leave", "less", "louder", "lower", 
+    "mic", "microphone", "mike", "more", "nine", "ninety", "no", 
+    "no conference", "none", "one", "pre", "prevault", "pre-vault", 
+    "pre vault", "quieter", "raise", "remove", "seven", "seventy", 
+    "six", "sixty", "softer", "switch", "switch to", "thirty", 
+    "three", "to", "turn", "twenty", "two", "up", "vault", "volume", 
+    "with", "set volume", "set ear volume", "set mike volume", 
+    "set mic volume", "current time", "what time is it", "time", 
+    "operator", "[unk]"
+  ]]></grammar>
 </configuration>
-
-
