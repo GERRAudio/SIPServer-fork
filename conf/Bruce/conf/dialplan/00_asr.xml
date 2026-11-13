@@ -1,5 +1,5 @@
 <include>
-
+  <!--2026-11-13-->
 	<extension name="asr_hold_queue">
 		<condition field="destination_number" expression="^5601$">
 			<action application="answer"/>
@@ -28,7 +28,7 @@
 
 			<action application="sched_hangup" data="+60 normal_clearing"/>
 			<!--action application="log" data="INFO [ASR 5602] start beltpack=${beltpack_name} uuid=${uuid}"/-->
-			<action application="sleep" data="150"/>
+			<!--action application="sleep" data="150"/-->
 			<action application="set" data="disable_break=true"/>
 
 			<action application="playback" data="tone_stream://%(150,0,1000)"/>
@@ -36,16 +36,20 @@
 
 			<action application="log" data="INFO [ASR 5602] listening beltpack=${beltpack_name}"/>
 
-			<!--Play a native 48kHz silent WAV file to prevent the 8kHz resampler from detaching the ASR bug -->
+			<!-- 1. Play a native 48kHz silent WAV file to prevent the 8kHz resampler from detaching the ASR bug -->
 			<action application="play_and_detect_speech" data="C:/inetpub/SIPServer/sounds/custom/asr_silence_48k.wav detect:vosk default"/>
+			<action application="set" data="disable_break=false"/>
 
 			<action application="set" data="my_post_body=${detect_speech_result}"/>
-			<action application="set" data="disable_break=false"/>
 			<action application="set" data="res=${bgapi(curl http://127.0.0.1/api/asr/voicecommand?beltpack=${beltpack_name} content-type application/json post '${my_post_body}')}"/>
 			<action application="log" data="INFO [ASR 5602] POST dispatched beltpack=${beltpack_name} job=${res} result=${my_post_body}"/>
 			<action application="detect_speech" data="stop"/>
-
+			<action application="sleep" data="120"/>
+			<!--Play a native 48kHz silent WAV file once to lock the codec -->
 			<action application="playback" data="C:/inetpub/SIPServer/sounds/custom/asr_silence_48k.wav"/>
+
+			<!--Park the channel passively so C# can broadcast without interruption -->
+			<!--action application="park"/-->
 
 			<action application="log" data="WARNING [ASR 5602] failsafe reached: Communicator did not end the call in time beltpack=${beltpack_name} uuid=${uuid}"/>
 			<action application="playback" data="tone_stream://%(200,200,400,450);loops=3"/>
