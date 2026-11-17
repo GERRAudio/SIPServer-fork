@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
- 2026-11-03
- 
+ 2026-11-17
+
 - ACTIVE PARAMETERS:
     * endpoint-silence-ms : Silence duration (ms) before mod_vosk forces speech result.
     * recognition-words   : Constrained grammar array sent to Vosk server (vosk_recognizer_new_grm).
@@ -17,14 +17,14 @@
 -->
 <configuration name="vosk.conf" description="Vosk ASR Configuration">
   <settings>
-    <param name="min-confidence" value="0.75"/> 
-    <param name="vad-mode" value="3"/> 
+    <param name="min-confidence" value="0.75"/>
+    <param name="vad-mode" value="3"/>
     <param name="speech-complete-timeout" value="1500"/>
     <param name="server-url" value="ws://127.0.0.1:2700"/>
     <param name="return-json" value="1"/>
     <param name="auto-reload" value="1"/>
     <param name="debug-pcm" value="0"/>
-    <param name="endpoint-silence-ms" value="1000"/>
+    <param name="endpoint-silence-ms" value="700"/>
   </settings>
 
   <!-- CDATA lets us use real double quotes, spaces, and newlines safely -->
@@ -36,19 +36,20 @@
     "67", "68", "69", "70", "71", "72", "73", "74", "75", "76",
     "77", "78", "79", "80", "81", "82", "83", "84", "85", "86",
     "87", "88", "89", "90", "91", "92", "93", "94", "95", "96",
-    "97", "98", "99", 
-    "boost", "cancel", "clear", "conference", "channel", 
-    "connect", "connect to", "connect with", "decrease", "disconnect", 
-    "down", "eight", "eighty", "exit", "fifty", "five", "forty", 
-    "four", "go", "go to", "higher", "in", "increase", "join", 
-    "join in", "join with", "leave", "less", "louder", "lower", 
-    "mic", "microphone", "mike", "more", "nine", "ninety", "no", 
-    "no conference", "none", "one", "pre", "prevault", "pre-vault", 
-    "pre vault", "quieter", "raise", "remove", "seven", "seventy", 
-    "six", "sixty", "softer", "switch", "switch to", "thirty", 
-    "three", "to", "turn", "twenty", "two", "up", "vault", "volume", 
-    "with", "set volume", "set ear volume", "set mike volume", 
-    "set mic volume", "current time", "what time is it", "time", 
-    "operator", "[unk]"
+    "97", "98", "99",
+    "boost", "cancel", "clear", "conference", "channel",
+    "connect", "connect to", "connect with", "decrease", "disconnect",
+    "down", "eight", "eighty", "exit", "fifty", "five", "forty",
+    "four", "go", "go to", "higher", "in", "increase", "join",
+    "join in", "join with", "leave", "less", "louder", "lower",
+    "mic", "microphone", "mike", "more", "nine", "ninety", "no",
+    "no conference", "none", "one", "pre", "prevault", "pre-vault",
+    "pre vault", "quieter", "raise", "remove", "seven", "seventy",
+    "six", "sixty", "softer", "switch", "switch to", "thirty",
+    "three", "to", "turn", "twenty", "two", "up", "vault", "volume",
+    "with", "set volume", "set ear volume", "set mike volume",
+    "set mic volume", "current time", "what time is it", "time",
+    "operator", "call operator", "call the operator",
+    "get operator", "get the operator", "[unk]"
   ]]></grammar>
 </configuration>
