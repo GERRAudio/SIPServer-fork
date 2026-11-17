@@ -6,7 +6,7 @@
  Threaded version - 2026-11-05 - eliminates clicks - but uses a bigger buffer  not deployed
  */
 
-static char *version_date = "2026-11-11";
+static char *version_date = "2026-11-17";
 
 #define __PRETTY_FUNCTION__ __func__
 #include <switch.h>
@@ -84,6 +84,11 @@ typedef struct {
 
 	switch_thread_t *read_thread;
 	volatile int running;
+
+	/* Extra grammar words supplied per session through the asr_json_param_vosk_extra_words
+	 * variable ('|' separated), and whether the config JSON has been sent to the server yet */
+	char *extra_words;
+	int config_sent;
 } vosk_t;
 
 /* -------------------------------------------------------------------------
@@ -419,6 +424,9 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 	vosk->frag_active = 0;
 	memset(vosk->fir_hist, 0, sizeof(vosk->fir_hist));
 
+	vosk->extra_words = NULL;
+	vosk->config_sent = 0;
+
 	vosk->remainder_len = 0;
 	memset(vosk->desp_hist, 0, sizeof(vosk->desp_hist));
 	vosk->desp_replaced = 0;
@@ -493,35 +501,8 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "mod_vosk: WS upgrade OK\n");
 	}
 
-	{
-		char *cfg_json;
-
-		switch_mutex_lock(MUTEX);
-		cfg_json = switch_mprintf("{\"config\":{\"sample_rate\":16000,\"min_confidence\":%f,\"vad_mode\":%d,"
-								  "\"speech_complete_timeout\":%d,\"grammar\":[%s]}}",
-								  globals.min_confidence, globals.vad_mode, globals.speech_complete_timeout,
-								  globals.recognition_words ? globals.recognition_words : "");
-		switch_mutex_unlock(MUTEX);
-
-		if (!cfg_json) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-							  "mod_vosk: failed to allocate config JSON memory\n");
-			switch_socket_close(socket);
-			return SWITCH_STATUS_MEMERR;
-		}
-
-		// Log the final JSON string to verify CDATA parsed correctly
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "mod_vosk: final JSON config payload:\n%s\n", cfg_json);
-
-		if (ws_send_text(socket, cfg_json) != SWITCH_STATUS_SUCCESS) {
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "mod_vosk: failed to send config JSON\n");
-			switch_safe_free(cfg_json);
-			switch_socket_close(socket);
-			return SWITCH_STATUS_GENERR;
-		}
-
-		switch_safe_free(cfg_json);
-	}
+	/* The config JSON is no longer sent here: FreeSWITCH delivers asr_json_param_* variables
+	 * after open, so it is sent from vosk_asr_load_grammar (or the first feed) instead */
 
 	vosk->out_max_len = 16000 * sizeof(int16_t);
 	vosk->out_buffer = (int16_t *)switch_core_alloc(ah->memory_pool, vosk->out_max_len);
@@ -536,6 +517,117 @@ static switch_status_t vosk_asr_open(switch_asr_handle_t *ah, const char *codec,
 	switch_thread_create(&vosk->read_thread, thd_attr, vosk_read_thread, vosk, ah->memory_pool);
 
 	return SWITCH_STATUS_SUCCESS;
+}
+
+/* -------------------------------------------------------------------------
+ * Grammar / config JSON
+ * ---------------------------------------------------------------------- */
+
+/* Appends each '|' separated entry of extra (trimmed, lowercased, quoted) to the grammar in buf,
+ * skipping empty entries, entries containing quotes or backslashes, and entries already present. */
+static void vosk_append_extra_words(char *buf, switch_size_t cap, const char *extra)
+{
+	const char *p = extra;
+
+	while (p && *p) {
+		const char *end = strchr(p, '|');
+		switch_size_t len = end ? (switch_size_t)(end - p) : strlen(p);
+		char word[256];
+		char quoted[260];
+		switch_size_t i, w = 0;
+		int bad = 0;
+
+		while (len > 0 && (*p == ' ' || *p == '\t')) {
+			p++;
+			len--;
+		}
+		while (len > 0 && (p[len - 1] == ' ' || p[len - 1] == '\t')) len--;
+
+		if (len > 0 && len < sizeof(word)) {
+			for (i = 0; i < len; i++) {
+				char c = p[i];
+				if (c == '"' || c == '\\' || (unsigned char)c < 0x20) {
+					bad = 1;
+					break;
+				}
+				word[w++] = (char)tolower((unsigned char)c);
+			}
+			word[w] = '\0';
+
+			if (!bad && w > 0) {
+				switch_snprintf(quoted, sizeof(quoted), "\"%s\"", word);
+				if (!strstr(buf, quoted) && strlen(buf) + strlen(quoted) + 3 < cap) {
+					if (buf[0]) strcat(buf, ", ");
+					strcat(buf, quoted);
+				}
+			}
+		}
+
+		p = end ? end + 1 : NULL;
+	}
+}
+
+/* Sends the config JSON once per session: the vosk.conf grammar plus any extra words */
+static switch_status_t vosk_send_config(vosk_t *vosk)
+{
+	switch_status_t status = SWITCH_STATUS_SUCCESS;
+	char *words = NULL;
+	char *cfg_json = NULL;
+	switch_size_t cap;
+
+	switch_mutex_lock(vosk->mutex);
+
+	if (vosk->config_sent) goto done;
+
+	if (!vosk->ws || !vosk->handshake_done) {
+		status = SWITCH_STATUS_FALSE;
+		goto done;
+	}
+
+	switch_mutex_lock(MUTEX);
+	cap = (globals.recognition_words ? strlen(globals.recognition_words) : 0) +
+		  (vosk->extra_words ? strlen(vosk->extra_words) * 2 + 64 : 0) + 64;
+	words = (char *)malloc(cap);
+	if (words) {
+		switch_snprintf(words, cap, "%s", globals.recognition_words ? globals.recognition_words : "");
+		/* strip trailing whitespace from the CDATA block so appended entries follow cleanly */
+		{
+			switch_size_t wl = strlen(words);
+			while (wl > 0 &&
+				   (words[wl - 1] == ' ' || words[wl - 1] == '\n' || words[wl - 1] == '\r' || words[wl - 1] == '\t')) {
+				words[--wl] = '\0';
+			}
+		}
+		if (vosk->extra_words) vosk_append_extra_words(words, cap, vosk->extra_words);
+
+		cfg_json = switch_mprintf("{\"config\":{\"sample_rate\":16000,\"min_confidence\":%f,\"vad_mode\":%d,"
+								  "\"speech_complete_timeout\":%d,\"grammar\":[%s]}}",
+								  globals.min_confidence, globals.vad_mode, globals.speech_complete_timeout, words);
+	}
+	switch_mutex_unlock(MUTEX);
+
+	if (!cfg_json) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "mod_vosk: failed to allocate config JSON memory\n");
+		status = SWITCH_STATUS_MEMERR;
+		goto done;
+	}
+
+	// Log the final JSON string to verify CDATA parsed correctly
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "mod_vosk: final JSON config payload:\n%s\n", cfg_json);
+
+	if (ws_send_text(vosk->ws, cfg_json) != SWITCH_STATUS_SUCCESS) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "mod_vosk: failed to send config JSON\n");
+		status = SWITCH_STATUS_GENERR;
+		goto done;
+	}
+
+	vosk->config_sent = 1;
+
+done:
+	switch_safe_free(cfg_json);
+	switch_safe_free(words);
+	switch_mutex_unlock(vosk->mutex);
+	return status;
 }
 
 /* -------------------------------------------------------------------------
@@ -621,6 +713,9 @@ static switch_status_t vosk_asr_feed(switch_asr_handle_t *ah, void *data, unsign
 	if (switch_test_flag(ah, SWITCH_ASR_FLAG_CLOSED)) return SWITCH_STATUS_BREAK;
 	if (!vosk->handshake_done) return SWITCH_STATUS_BREAK;
 	if (!vosk->running) return SWITCH_STATUS_BREAK; /* Thread failed or closed */
+
+	/* Normally sent by load_grammar; this covers audio arriving before it */
+	if (!vosk->config_sent && vosk_send_config(vosk) != SWITCH_STATUS_SUCCESS) return SWITCH_STATUS_BREAK;
 
 	switch_mutex_lock(vosk->mutex);
 
@@ -762,7 +857,27 @@ static switch_status_t vosk_asr_start_input_timers(switch_asr_handle_t *ah) { re
 
 static switch_status_t vosk_asr_load_grammar(switch_asr_handle_t *ah, const char *grammar, const char *name)
 {
-	return SWITCH_STATUS_SUCCESS;
+	vosk_t *vosk = (vosk_t *)ah->private_info;
+
+	/* FreeSWITCH applies asr_json_param_* variables just before this call, so the extra words are known now */
+	if (!vosk) return SWITCH_STATUS_FALSE;
+	return vosk_send_config(vosk);
+}
+
+/* Receives asr_json_param_<name> channel or global variables, applied by FreeSWITCH after open */
+static void vosk_asr_text_param(switch_asr_handle_t *ah, char *param, const char *val)
+{
+	vosk_t *vosk = (vosk_t *)ah->private_info;
+
+	if (!vosk || zstr(param)) return;
+
+	if (!strcasecmp(param, "vosk_extra_words")) {
+		switch_mutex_lock(vosk->mutex);
+		vosk->extra_words = zstr(val) ? NULL : switch_core_strdup(ah->memory_pool, val);
+		switch_mutex_unlock(vosk->mutex);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "mod_vosk: extra grammar words: %s\n",
+						  vosk->extra_words ? vosk->extra_words : "(none)");
+	}
 }
 static switch_status_t vosk_asr_unload_grammar(switch_asr_handle_t *ah, const char *name)
 {
@@ -987,6 +1102,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_vosk_load)
 	asr_interface->asr_check_results = vosk_asr_check_results;
 	asr_interface->asr_get_results = vosk_asr_get_results;
 	asr_interface->asr_start_input_timers = vosk_asr_start_input_timers;
+	asr_interface->asr_text_param = vosk_asr_text_param;
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_vosk loaded. Server: %s\n", globals.server_url);
 
