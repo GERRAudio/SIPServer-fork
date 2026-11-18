@@ -29,6 +29,23 @@
 	  <node type="allow" cidr="10.8.90.0/24"/>
 	  </list>
 
+    <!-- BrucePower Intercom Dashboard: event socket (ESL, port 8021) access.
+         Used by event_socket.conf.xml: <param name="apply-inbound-acl" value="dashboard"/>
+         ESL gives full control of SIPServer, so allow only the hosts that need it. -->
+    <list name="dashboard" default="deny">
+      <!-- event_socket listens on "::" (IPv6 any), so IPv4 clients arrive as IPv4-mapped IPv6
+           addresses (the log shows e.g. ::ffff:10.8.91.20). Each host is listed in both forms. -->
+      <!-- This server itself (fs_cli, local tools) -->
+      <node type="allow" cidr="127.0.0.1/32"/>
+      <node type="allow" cidr="::ffff:127.0.0.1/128"/>
+      <node type="allow" cidr="::1/128"/>
+      <node type="allow" cidr="10.8.91.10/32"/>
+      <node type="allow" cidr="::ffff:10.8.91.10/128"/>
+      <!-- Dashboard server -->
+      <node type="allow" cidr="10.8.91.20/32"/>
+      <node type="allow" cidr="::ffff:10.8.91.20/128"/>
+    </list>
+
   </network-lists>
 </configuration>
 
