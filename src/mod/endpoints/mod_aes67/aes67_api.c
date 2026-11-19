@@ -54,7 +54,9 @@ channel_remap_t channel_remaps[] = {
 
 void dump_pipeline(GstPipeline *pipe, const char *name)
 {
-	char *tmp = g_strdup_printf("%s-%s", gst_element_get_name(pipe), name);
+	// GST_OBJECT_NAME borrows the name; gst_element_get_name() returns a copy that was never freed (leaked on
+	// every call: state changes, appsink add/remove, txflow, PTP switch).
+	char *tmp = g_strdup_printf("%s-%s", GST_OBJECT_NAME(pipe), name);
 	GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(pipe), GST_DEBUG_GRAPH_SHOW_ALL, tmp);
 
 	g_free(tmp);
@@ -264,6 +266,10 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	GstElement *tee = NULL;
 	GstElement *queue = NULL;
 	GstElement *appsink = NULL;
+	// ownership tracking for the error path
+	gboolean appsink_in_bin = FALSE;
+	gboolean queue_in_bin = FALSE;
+	gboolean counted_in_pipeline = FALSE;
 
 
 	if ( ch_idx >= MAX_IO_CHANNELS) goto error; //added check
@@ -338,20 +344,27 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 	if (!retval) {
 		g_rec_mutex_unlock(ch_mutex);
-		DA_gst_object_unref(appsink);
+		// A floating element that gst_bin_add() rejects is sunk and unreffed (destroyed) by GStreamer itself:
+		// unreffing it again here was a double free.
+		DA_NoNulling_dec_objs(GST_OBJECT(appsink)); // accounting only
+		appsink = NULL;
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to add appsink to the pipeline ch: %d, session: %s", ch_idx, session);
 		goto error;
 	}
+	appsink_in_bin = TRUE; // the bin owns appsink now
 
 	retval = gst_bin_add(GST_BIN(stream->pipeline), queue);
 	g_rec_mutex_unlock(ch_mutex);
 
 	if (!retval) {
+		DA_NoNulling_dec_objs(GST_OBJECT(queue)); // destroyed by gst_bin_add() (see above) - accounting only
+		queue = NULL;
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 						  "Failed to add queue to the pipeline ch: %d, session: %s", ch_idx, session);
 		goto error;
 	}
+	queue_in_bin = TRUE; // the bin owns queue now
 
 	if (!gst_element_link(queue, appsink)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to link appsink and queue ch: %d, session: %s",
@@ -361,6 +374,7 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 	// Both queue and appsink were successfully added to pipeline
 	// These were allocated via AL_ wrappers, so increment counter:
 	g_atomic_int_add(&stream->pipeline_elements_count, 2);
+	counted_in_pipeline = TRUE;
 
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
 					  "ADD_APPSINK: ch=%d session=%s, pipeline_active=%d, elem_count=%d\n", ch_idx, session,
@@ -404,18 +418,37 @@ gboolean add_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 	DA_gst_object_unref(GST_OBJECT(tee_src_pad));
 	DA_gst_object_unref(queue_sink_pad);
-	//  accounting
-
-
-	DA_NoNulling_dec_objs(GST_OBJECT(tee)); 
+	// tee came from gst_bin_get_by_name() (a full reference): release it. Only adjusting the counter here
+	// leaked one tee reference per listener join, so the tees were never freed with the pipeline.
+	DA_gst_object_unref(GST_OBJECT(tee));
+	//  accounting: queue and appsink are owned by the bin
 	DA_NoNulling_dec_objs(GST_OBJECT(queue));
 	DA_NoNulling_dec_objs(GST_OBJECT(appsink));
 	return ret;
 
-error: 
-	DA_gst_object_unref(tee_src_pad); 
+error:
+	if (tee_src_pad) {
+		// requested from the tee but the branch was not completed: give the request pad back
+		if (tee) gst_element_release_request_pad(tee, tee_src_pad);
+		DA_gst_object_unref(tee_src_pad);
+	}
 	DA_gst_object_unref(queue_sink_pad);
-	DA_gst_object_unref(GST_OBJECT(appsink));			//check
+	// Elements already handed to the bin are owned by it: take them out again (which frees them) instead of
+	// unreffing them - unreffing a bin-owned element left a dangling pointer in the pipeline.
+	if (queue_in_bin) {
+		gst_element_set_state(queue, GST_STATE_NULL);
+		gst_bin_remove(GST_BIN(stream->pipeline), queue);
+		DA_NoNulling_dec_objs(GST_OBJECT(queue)); // accounting
+		queue = NULL;
+	}
+	if (appsink_in_bin) {
+		gst_element_set_state(appsink, GST_STATE_NULL);
+		gst_bin_remove(GST_BIN(stream->pipeline), appsink);
+		DA_NoNulling_dec_objs(GST_OBJECT(appsink)); // accounting
+		appsink = NULL;
+	}
+	if (counted_in_pipeline) g_atomic_int_add(&stream->pipeline_elements_count, -2);
+	DA_gst_object_unref(GST_OBJECT(appsink)); // still floating (never added): ours to free
 	DA_gst_object_unref(GST_OBJECT(queue));
 	DA_gst_object_unref(GST_OBJECT(tee));
 done_no_unlock:
@@ -847,9 +880,12 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			"retrieve-sender-address", FALSE, 
 			NULL);
 		g_object_set(udp_source, "caps", udp_caps, NULL);
-		stream->jitterbuf_signal_id = g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map),
-															udp_caps, // Don't ref here, destroy_caps will handle it
-															destroy_caps, 0);
+		// The closure needs its OWN reference: destroy_caps() unrefs it when the handler is disconnected, and
+		// udp_caps itself is unreffed at ddirRX_exit / ddirRX_error. Without this ref the caps were released
+		// twice (double free / use-after-free at teardown, or in request_pt_map once the caps were gone).
+		if (rtpjitbuf)
+			stream->jitterbuf_signal_id = g_signal_connect_data(rtpjitbuf, "request-pt-map", G_CALLBACK(request_pt_map),
+																gst_caps_ref(udp_caps), destroy_caps, 0);
 
 
 		if (!udp_source || !rtpdepay || !rtpjitbuf || !rx_audioconv || !capsfilter || !split || !deinterleave) {
@@ -1207,8 +1243,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 	// ---
 bksnd_continue: 
 	bus = AL_gst_pipeline_get_bus(GST_PIPELINE(pipeline));
-	stream->bus_watch_id = gst_bus_add_watch(bus, bus_callback, stream);
-	gst_bus_add_watch(bus, bus_callback, stream);
+	stream->bus_watch_id = gst_bus_add_watch(bus, bus_callback, stream); // a bus has only one watch (a 2nd call failed)
 	DA_gst_object_unref(GST_OBJECT(bus));
 	bus = NULL;
 

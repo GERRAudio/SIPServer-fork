@@ -513,13 +513,10 @@ static int clear_shared_audio_stream(shared_audio_stream_t *shstream)
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Destroying shared audio stream %s\n", shstream->name);
 
 	if (shstream->stream) {
-		// Set shutdown flag FIRST - this stops all I/O immediately
-		g_atomic_int_set(&shstream->stream->pipeline_active, 0);
-
-		// Give threads 200ms to see flag and exit
-		g_usleep(200000);
-
-		// Now safe to call stop_pipeline
+		// stop_pipeline() itself clears pipeline_active (stopping all I/O) and waits for the I/O threads.
+		// Do NOT clear pipeline_active here first: stop_pipeline() treats an inactive stream as "already
+		// stopped" and returns without tearing anything down, which leaked the whole pipeline (thread,
+		// sockets, elements) on every reload / stream removal / shutdown.
 		stop_pipeline(shstream->stream);
 	}
 
@@ -574,11 +571,14 @@ static void destroy_audio_streams()
 static void free_shared_audio_stream(shared_audio_stream_t *stream)
 {
 	if (!stream) return;
+	// The caller must NOT hold the writer lock: GRWLock is not recursive (on Windows a second
+	// AcquireSRWLockExclusive from the same thread deadlocks).
 	STREAM_WRITER_LOCK(stream);
 	clear_shared_audio_stream(stream);
-	/* Deinit here since clear_shared_audio_stream() allows the stream to be reused when reloading */
-	g_rw_lock_clear(&stream->rwlock);
 	STREAM_WRITER_UNLOCK(stream);
+	/* Deinit here since clear_shared_audio_stream() allows the stream to be reused when reloading.
+	   Only after unlocking: clearing a held GRWLock (and unlocking it afterwards) is undefined. */
+	g_rw_lock_clear(&stream->rwlock);
 	switch_safe_free(stream->indev);
 	switch_safe_free(stream->outdev);
 	switch_safe_free(stream);
@@ -596,9 +596,9 @@ static void destroy_shared_audio_streams()
 	const void *key;
 	for (hi = switch_core_hash_first(aes67_globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 		switch_core_hash_this(hi, &key, NULL, (void **)&stream);
-		STREAM_WRITER_LOCK(stream);
+		// free_shared_audio_stream() takes the writer lock itself (it used to be taken here as well: a recursive
+		// writer lock that deadlocked the module shutdown) and frees 'stream', so nothing may touch it afterwards.
 		free_shared_audio_stream(stream);
-		STREAM_WRITER_UNLOCK(stream);
 		// switch_core_hash_delete(aes67_globals.sh_streams, key); // reference counted, so not needed (check)
 	}
 
@@ -619,11 +619,10 @@ static void deep_destroy_shared_audio_streams()
 	for (hi = switch_core_hash_first(aes67_globals.sh_streams); hi; hi = switch_core_hash_next(&hi)) {
 		switch_core_hash_this(hi, &key, NULL, (void **)&stream);
 
-		// CRITICAL: Set shutdown flag BEFORE trying to acquire lock
-		if (stream->stream) { 
-			g_atomic_int_set(&stream->stream->pipeline_active, 0); 
-		}
-		// Give I/O threads time to release locks (they check pipeline_active)
+		// Not clearing pipeline_active here: stop_pipeline() (via free_shared_audio_stream) does it, and skips
+		// the teardown entirely if it finds it already cleared. Readers use STREAM_READER_TRYLOCK, which fails
+		// while 'reloading' is set, so set that instead to let I/O threads back off.
+		g_atomic_int_set(&stream->reloading, 1);
 		g_usleep(100000); // 100ms
 
 		// Try to acquire lock with timeout using trylock
@@ -650,9 +649,7 @@ static void deep_destroy_shared_audio_streams()
 			g_usleep(200000);
 			// Force cleanup without lock (we're shutting down anyway)
 			if (stream->stream) {
-				g_atomic_int_set(&stream->stream->pipeline_active, 0);
-				g_usleep(100000);
-				stop_pipeline(stream->stream);
+				stop_pipeline(stream->stream); // clears pipeline_active itself (see clear_shared_audio_stream)
 				stream->stream = NULL;
 			}
 			switch_safe_free(stream->indev);
@@ -1733,9 +1730,16 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_aes67_load)
 
 // turn this on if you want gstreamer mem stats, then check gstreamer_leaks.log file
 #ifdef _DEBUG_MEM
-	g_setenv("GST_DEBUG", "GST_TRACER:7", TRUE);
-	g_setenv("GST_TRACERS", "leaks", TRUE);
-	g_setenv("GST_DEBUG_FILE", "/tmp/gstreamer_leaks.log", TRUE);
+	{
+		// Written next to freeswitch.log (e.g. C:\inetpub\SIPServer\log\gstreamer_leaks.log on Windows):
+		// /tmp does not exist on Windows. Must be set before gst_init().
+		gchar *leaks_log = g_build_filename(SWITCH_GLOBAL_dirs.log_dir, "gstreamer_leaks.log", NULL);
+		g_setenv("GST_DEBUG", "GST_TRACER:7", TRUE);
+		g_setenv("GST_TRACERS", "leaks", TRUE);
+		g_setenv("GST_DEBUG_FILE", leaks_log, TRUE);
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "GStreamer leaks tracer enabled, log: %s\n", leaks_log);
+		g_free(leaks_log);
+	}
 #endif
 
 
@@ -1898,10 +1902,12 @@ static gboolean ptp_stats_cb(guint8 d, const GstStructure *stats, gpointer user_
 	return TRUE;
 }
 
+// Re-attaches the active listen sessions of 'stream' to its (re)created pipeline.
+// The caller must NOT hold the stream's writer lock: this takes the reader lock for each add_appsink(), and a
+// reader lock taken while the same thread holds the writer lock deadlocks (GRWLock is not recursive).
 static void link_rx_stream(shared_audio_stream_t *stream)
 {
 	switch_hash_index_t *hi;
-	STREAM_WRITER_LOCK(stream);
 
 	for (hi = switch_core_hash_first(aes67_globals.call_hash); hi; hi = switch_core_hash_next(&hi)) {
 		const void *var;
@@ -1918,7 +1924,6 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 			switch_snprintf(session_id, SESSION_ID_LEN, "%llu", switch_core_session_get_id(tech_pvt->session));
 
 			switch_mutex_lock(tech_pvt->audio_endpoint->mutex);
-			// stream write lock aleady done before calling link_rx_stream
 			if (state == CCS_ACTIVE) {
 				STREAM_READER_LOCK(tech_pvt->audio_endpoint->in_stream); // added check
 				if (add_appsink(tech_pvt->audio_endpoint->in_stream->stream, tech_pvt->audio_endpoint->inchan,
@@ -1930,8 +1935,6 @@ static void link_rx_stream(shared_audio_stream_t *stream)
 			switch_mutex_unlock(tech_pvt->audio_endpoint->mutex);
 		}
 	}
-
-	STREAM_WRITER_UNLOCK(stream);
 }
 
 static switch_bool_t stream_compare(shared_audio_stream_t *current, shared_audio_stream_t *new)
@@ -2099,7 +2102,9 @@ static void *init_ptp(int domain, char *iface)
 	if (!gst_clock_wait_for_sync(GST_CLOCK(clock), timeout)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Timed out waiting for the clock to sync\n");
 		g_signal_connect(G_OBJECT(clock), "synced", G_CALLBACK(clock_synced_cb), NULL);
-		gst_object_unref(GST_OBJECT(clock));	//added to deref extras - check
+		// Keep our reference: clock_synced_cb() takes it over when PTP syncs later. Unreffing it here destroyed
+		// the clock, so a PTP grandmaster that locked after this 10 s timeout was never used (synthetic PTP
+		// until restart). If it never syncs, the one clock object lives until the module unloads.
 		return NULL;
 	}
 
@@ -2299,10 +2304,12 @@ static switch_status_t load_streams(switch_xml_t streams, switch_bool_t reload)
 				STREAM_WRITER_LOCK(curr_stream);
 				clear_shared_audio_stream(curr_stream);
 				create_shared_audio_stream(curr_stream);
-				link_rx_stream(curr_stream);
 
 				g_atomic_int_set(&curr_stream->reloading, 0);
 				STREAM_WRITER_UNLOCK(curr_stream);
+				// After releasing the writer lock: link_rx_stream() takes reader locks on this stream
+				// (it used to take the writer lock again here - a recursive lock that hung reloadconf).
+				link_rx_stream(curr_stream);
 			}
 			/* dont insert the allocated stream to the sh_streams list*/
 			switch_safe_free(stream->indev);
