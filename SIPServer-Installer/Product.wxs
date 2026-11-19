@@ -80,9 +80,14 @@
 
 			<Dialog Id="ConfigOptionsDlg" Width="370" Height="270" Title="Configuration Options">
 				<Control Id="Title" Type="Text" X="15" Y="15" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="Advanced Configuration" />
-				<Control Id="Description" Type="Text" X="25" Y="35" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Select how you want to handle existing configuration files." />
+				<Control Id="Description" Type="Text" X="25" Y="30" Width="320" Height="12" Transparent="yes" NoPrefix="yes" Text="Existing configuration files in conf are kept; missing files get this version's defaults." />
 				<Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
-				<Control Id="OverwriteConfigsCheckbox" Type="CheckBox" X="25" Y="80" Width="320" Height="17" Property="OVERWRITE_CONFIGS" CheckBoxValue="1" Text="Overwrite existing configuration files?" />
+				<!-- The former "Overwrite existing configuration files?" box (OVERWRITE_CONFIGS) was not used by any action -->
+				<Control Id="OverwriteAsrDialplanCheckbox" Type="CheckBox" X="25" Y="54" Width="320" Height="17" Property="OVERWRITE_ASRDIALPLAN" CheckBoxValue="1" Text="Overwrite dialplan\00_asr.xml with this version's default" />
+				<Control Id="OverwriteVoskCheckbox" Type="CheckBox" X="25" Y="74" Width="320" Height="17" Property="OVERWRITE_VOSKCONF" CheckBoxValue="1" Text="Overwrite autoload_configs\vosk.conf.xml with this version's default" />
+				<Control Id="OverwriteNote" Type="Text" X="25" Y="94" Width="320" Height="20" NoPrefix="yes" Text="Unticked = the site's file is kept. A replaced file is saved first in [AppRoot]SIPServerConfigBackup." />
+				<Control Id="ManualTitle" Type="Text" X="25" Y="120" Width="320" Height="12" NoPrefix="yes" Text="Check by hand after setup (shown again in the summary):" />
+				<Control Id="ManualText" Type="Text" X="25" Y="134" Width="320" Height="94" NoPrefix="yes" Text="- conf\vars.xml: setIPv4 (admin / SIP) and multicastIP (AES67) - set from the addresses on the IP page.&#13;&#10;- conf\autoload_configs\event_socket.conf.xml: apply-inbound-acl names the list in acl.conf.xml.&#13;&#10;- conf\autoload_configs\acl.conf.xml: that list must allow every server that uses the event socket (e.g. the dashboard) as plain IPv4 /32 entries. Restart SIPServer after editing." />
 				<Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
 				<Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="Next" />
 				<Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="Back" />
@@ -96,6 +101,19 @@
 			<Publish Dialog="ConfigOptionsDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" />
 			<Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="ConfigOptionsDlg" Order="3" />
 			<Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchReadme" Condition="(WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1) and NOT Installed"/>
+
+			<!-- After the installation: what was done with the configuration, the addresses and the ACL to review.
+			     Read from [AppRoot]SIPServerConfigBackup\InstallSummary.txt; the operator presses OK. -->
+			<Dialog Id="InstallSummaryDlg" Width="370" Height="270" Title="[ProductName] Setup">
+				<Control Id="Title" Type="Text" X="15" Y="15" Width="330" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Installation summary - please read" />
+				<Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+				<Control Id="SummaryText" Type="Edit" X="15" Y="52" Width="340" Height="160" Multiline="yes" Property="INSTALL_SUMMARY" Text="{16000}" />
+				<Control Id="FileNote" Type="Text" X="15" Y="216" Width="340" Height="12" NoPrefix="yes" Text="Saved in [AppRoot]SIPServerConfigBackup\InstallSummary.txt" />
+				<Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+				<Control Id="OK" Type="PushButton" X="304" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="OK">
+					<Publish Event="EndDialog" Value="Return" />
+				</Control>
+			</Dialog>
 		</UI>
 
 		<Binary Id="readme.txt" SourceFile="$(IconsEtcHarvestDir)\readme.txt" />
@@ -115,7 +133,33 @@
 
 		<InstallUISequence>
 			<Show Dialog="MsiRMFilesInUse" Condition="0" Overridable="yes" Sequence="1" />
+			<Custom Action="LoadInstallSummary" After="ExecuteAction" Condition='NOT REMOVE~="ALL"' />
+			<Show Dialog="InstallSummaryDlg" After="LoadInstallSummary" Condition='NOT REMOVE~="ALL" AND INSTALL_SUMMARY' />
 		</InstallUISequence>
+
+		<!-- ============================================================
+		     00_asr.xml / vosk.conf.xml choices and the installation summary (InstallUtils\Configure-SIPServerConfig.ps1)
+		     OVERWRITE_ASRDIALPLAN 1 = keep this version's 00_asr.xml (MSI file, replaced by every upgrade);
+		                           empty = the site's previous 00_asr.xml is put back.
+		     OVERWRITE_VOSKCONF    1 = replace vosk.conf.xml with conf_defaults; empty = keep it.
+		     Before the old version is removed, the two files are copied to [TempFolder]SIPS_ConfigBackup.
+		     ============================================================ -->
+		<Property Id="OVERWRITE_ASRDIALPLAN" Secure="yes" />
+		<Property Id="OVERWRITE_VOSKCONF" Secure="yes" />
+
+		<SetProperty Id="WixQuietExecCmdLine"
+					 Value='"[System64Folder]cmd.exe" /c (if exist "[TempFolder]SIPS_ConfigBackup" rmdir /s /q "[TempFolder]SIPS_ConfigBackup") &amp; mkdir "[TempFolder]SIPS_ConfigBackup" &amp; (if exist "[MyAppFolder]conf\dialplan\00_asr.xml" copy /y "[MyAppFolder]conf\dialplan\00_asr.xml" "[TempFolder]SIPS_ConfigBackup\") &amp; (if exist "[MyAppFolder]conf\autoload_configs\vosk.conf.xml" copy /y "[MyAppFolder]conf\autoload_configs\vosk.conf.xml" "[TempFolder]SIPS_ConfigBackup\") &amp; (if exist "[AppRoot]SIPServerConfigBackup\InstallSummary.txt" del /q "[AppRoot]SIPServerConfigBackup\InstallSummary.txt") &amp; exit /b 0'
+					 Before="BackupSIPServerConfig"
+					 Sequence="execute" />
+		<CustomAction Id="BackupSIPServerConfig" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec" Execute="immediate" Return="ignore" />
+
+		<SetProperty Id="ConfigureSIPServerConfig"
+					 Value='"[System64Folder]WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[MyAppFolder]Configure-SIPServerConfig.ps1" -AppDir "[MyAppFolder]." -Backup "[TempFolder]SIPS_ConfigBackup" -OverwriteAsrDialplan "[OVERWRITE_ASRDIALPLAN]" -OverwriteVosk "[OVERWRITE_VOSKCONF]" -TcpAdr "[TCPADR]" -UdpAdr "[UDPADR]" -Upgrading "[WIX_UPGRADE_DETECTED]" -HistoryRoot "[AppRoot]SIPServerConfigBackup" -SummaryPath "[AppRoot]SIPServerConfigBackup\InstallSummary.txt" -Version "[ProductVersion]"'
+					 Before="ConfigureSIPServerConfig"
+					 Sequence="execute" />
+		<CustomAction Id="ConfigureSIPServerConfig" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec" Execute="deferred" Impersonate="no" Return="ignore" />
+
+		<CustomAction Id="LoadInstallSummary" Script="jscript" ScriptSourceFile="$(IconsEtcHarvestDir)\LoadInstallSummary.js" Execute="immediate" Return="ignore" />
 		<AdminUISequence>
 			<Show Dialog="MsiRMFilesInUse" Condition="0" Overridable="yes" Sequence="1"  />
 		</AdminUISequence>
@@ -134,6 +178,11 @@
 			<Custom Action="DeployManagedScripts" After="DeployMissingConfigs" Condition='NOT REMOVE="ALL"' />
 
 			<Custom Action="SetIP" Before="InstallService" Condition='NOT REMOVE="ALL"' />
+
+			<!-- Save 00_asr.xml / vosk.conf.xml before the old version is removed (immediate, so before RemoveExistingProducts) -->
+			<Custom Action="BackupSIPServerConfig" Before="RemoveExistingProducts" Condition='NOT REMOVE~="ALL"' />
+			<!-- Apply the 00_asr.xml / vosk.conf.xml choices and write the summary, after configs and IPs are in place -->
+			<Custom Action="ConfigureSIPServerConfig" After="SetIP" Condition='NOT REMOVE="ALL"' />
 			
 			<!-- SIPServer Service Sequence -->
 			<Custom Action="InstallService" Before="InstallFinalize" />
@@ -330,6 +379,9 @@
 			</Component>
 			<Component Id="svcinstaller" Guid="FFE671AF-0508-41DF-9500-194F3EDDD401">
 				<File Id="nssm" Source="$(var.IconsEtcHarvestDir)\nssm.exe" KeyPath="yes" />
+			</Component>
+			<Component Id="ConfigureSIPServerConfigScript" Guid="6B1E9F42-7C3A-4D58-9E21-A4F0C83D5B17">
+				<File Id="ConfigureSIPServerConfigPs1" Source="$(var.IconsEtcHarvestDir)\Configure-SIPServerConfig.ps1" KeyPath="yes" />
 			</Component>
 			<Component Id="readme.txt" Guid="2A142FE7-4D4D-43F8-AD24-A8144543933B">
 				<File Id="readme.txt" Source="$(var.IconsEtcHarvestDir)\readme.txt" KeyPath="yes" />

@@ -44,6 +44,8 @@
   <ItemGroup>
     <None Include=".gitignore" />
     <None Include="copy-conf.bat" />
+    <None Include="InstallUtils\Configure-SIPServerConfig.ps1" />
+    <None Include="InstallUtils\LoadInstallSummary.js" />
     <None Include="GerrAudiobpl.rtf" />
     <None Include="grep.exe" />
     <None Include="nssm.exe" />
