@@ -1,7 +1,8 @@
 <Project>
   <PropertyGroup>
-    <!-- SIPServer Application Version -->
-    <SIPServerAppVersion>1.10.16</SIPServerAppVersion>
+    <!-- SIPServer Application Version (MAJOR.MINOR.MICRO). Single source: used by the installer
+         and by w32\switch_version.props to generate switch_version.h / switch_version.inc -->
+    <SIPServerAppVersion>1.10.17</SIPServerAppVersion>
     
     <!-- SIPServer Installer Version -->
     <SIPServerInstallerVersion>1.13</SIPServerInstallerVersion>

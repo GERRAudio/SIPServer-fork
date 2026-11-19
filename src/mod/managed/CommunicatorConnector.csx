@@ -109,7 +109,7 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
             if (!alive)
             {
                 _beltpackMessagesRestarting = true;
-                WriteToLog(LogLevel.Warning, "BeltpackMessages channel missing - re-originating.");
+                //WriteToLog(LogLevel.Warning, "BeltpackMessages channel missing - re-originating.");
                 MakeCall("BeltpackMessages", "&endless_playback(single_beep_silence.wav)").Wait();
             }
         }

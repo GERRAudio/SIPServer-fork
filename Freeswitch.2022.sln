@@ -49,6 +49,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "_Build System", "_Build Sys
 		build\modules.conf.in = build\modules.conf.in
 	EndProjectSection
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "_Version", "_Version", "{7C3E9A51-2B64-4F0D-9E8A-5D1F6B2C4A93}"
+	ProjectSection(SolutionItems) = preProject
+		SharedVersions.props = SharedVersions.props
+		w32\switch_version.props = w32\switch_version.props
+	EndProjectSection
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "m4", "m4", "{CDE9B06A-3C27-4987-8FAE-DF1006BC705D}"
 	ProjectSection(SolutionItems) = preProject
 		build\config\ac_cflags_gcc_option.m4 = build\config\ac_cflags_gcc_option.m4

@@ -6,6 +6,8 @@
   <ImportGroup Label="PropertySheets">
     <Import Project="basedir.props" Condition=" '$(BaseDirImported)' == ''"/>
     <Import Project="Setup\GitInfo\GitInfo.targets" />
+    <!-- Single source of the SIPServer version (also used by the installer) -->
+    <Import Project="$(BaseDir)SharedVersions.props" Condition="Exists('$(BaseDir)SharedVersions.props')" />
   </ImportGroup>
 
   <PropertyGroup>
@@ -18,6 +20,7 @@
              <ParameterGroup>
                 <commits Required="true" />
                 <revision Required="true" />
+                <appVersion />
              </ParameterGroup>
              <Task>  
                 <Reference Include="Microsoft.Build" />
@@ -35,6 +38,7 @@ using Microsoft.Build.Framework;
         [Required]
         public string revision { get; set; }
         public string commits { get; set; }
+        public string appVersion { get; set; }
 
         private string basedir;
         private string TemplatePath;
@@ -83,9 +87,25 @@ using Microsoft.Build.Framework;
                    }
                }
                v.Add(name, value);
-               Log.LogMessage(MessageImportance.High, name + " = '" + value + "'");
             }
-            
+
+            // SharedVersions.props (SIPServerAppVersion = MAJOR.MINOR.MICRO) overrides configure.ac
+            if (!string.IsNullOrWhiteSpace(appVersion)) {
+               string[] parts = appVersion.Trim().Split('.');
+               if (parts.Length != 3) {
+                   Log.LogError("SIPServerAppVersion '" + appVersion + "' must be MAJOR.MINOR.MICRO (e.g. 1.10.16)");
+                   return false;
+               }
+               v["SWITCH_VERSION_MAJOR"] = parts[0].Trim();
+               v["SWITCH_VERSION_MINOR"] = parts[1].Trim();
+               v["SWITCH_VERSION_MICRO"] = parts[2].Trim();
+               Log.LogMessage(MessageImportance.High, "Using SIPServerAppVersion " + appVersion + " from SharedVersions.props");
+            }
+
+            foreach (var version_bit in v) {
+               Log.LogMessage(MessageImportance.High, version_bit.Key + " = '" + version_bit.Value + "'");
+            }
+
             //---------------------------------------------------------            
             Log.LogMessage(MessageImportance.High,
                 "Generating switch_version.h");            
@@ -125,7 +145,7 @@ using Microsoft.Build.Framework;
   </UsingTask>  
 
   <Target Name="SwitchVersionTarget" BeforeTargets="CustomBuild;Build">  
-      <SwitchVersionTask commits="$(GitCommits)" revision="$(GitCommit)">
+      <SwitchVersionTask commits="$(GitCommits)" revision="$(GitCommit)" appVersion="$(SIPServerAppVersion)">
       </SwitchVersionTask>         
   </Target> 
 
