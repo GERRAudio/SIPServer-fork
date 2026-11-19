@@ -1,4 +1,11 @@
-// Version Date: 2026-09-12
+// Version Date: 2026-11-19
+//
+// Compiled at load by mod_managed with the .NET Framework C# compiler (CodeDom "v4.0"): C# 5 syntax only
+// (no $"" strings, ?. , => members, tuples or nameof).
+//
+// Threading: FreeSWITCH runs every API/dialplan call on its own thread and the timers on pool threads, so all
+// static collections below are only touched under StateLock. Never hold StateLock across fsApi calls, HTTP
+// requests or awaits.
 
 using System;
 using System.Net;
@@ -30,7 +37,6 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
     Timer PeriodicCheck = new Timer(10000);
 
     static internal List<string> FoundOrphanedCallsWaitingToResolve = new List<string>();
-    static internal Dictionary<string, string> ConferenceRoutes = new Dictionary<string, string>();
     static internal Dictionary<string, Guid> EavesdropIDs = new Dictionary<string, Guid>();
     static internal List<Guid> StoredAllCalls = new List<Guid>();
     
@@ -43,6 +49,17 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
 
     private static Dictionary<string, List<string>> ConferenceToPortAudio = new Dictionary<string, List<string>>();
     private static Dictionary<string, List<string>> PortAudioToConference = new Dictionary<string, List<string>>();
+
+    // Guards every static collection above (see header).
+    private static readonly object StateLock = new object();
+
+    // Phone_ ports handed out by ConferenceChecker whose channel may not be in "show channels" yet: two calls
+    // arriving together could otherwise both pick the same free port.
+    private static readonly HashSet<string> ReservedPorts = new HashSet<string>();
+    private static readonly Random PortRandom = new Random();
+
+    // 1 while a PeriodicCheck tick is running: an overlapping tick is skipped (same 10 s cadence, no overlap).
+    private int periodicCheckRunning = 0;
 
     public bool Load()
     {
@@ -66,8 +83,17 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
 
     private void PeriodicCheck_Elapsed(object sender, ElapsedEventArgs e)
     {
-        CheckChannelListSyncsWithConferenceList();
-        EnsureBeltpackMessagesAlive(); //the beep generator
+        // System.Timers.Timer fires on schedule even if the previous tick is still running; skip instead of overlapping
+        if (System.Threading.Interlocked.CompareExchange(ref periodicCheckRunning, 1, 0) != 0) return;
+        try
+        {
+            CheckChannelListSyncsWithConferenceList();
+            EnsureBeltpackMessagesAlive(); //the beep generator
+        }
+        finally
+        {
+            System.Threading.Interlocked.Exchange(ref periodicCheckRunning, 0);
+        }
     }
 
     private volatile bool _beltpackMessagesRestarting = false;
@@ -83,7 +109,7 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
             if (!alive)
             {
                 _beltpackMessagesRestarting = true;
-                WriteToLog(LogLevel.Warning, "BeltpackMessages channel missing — re-originating.");
+                WriteToLog(LogLevel.Warning, "BeltpackMessages channel missing - re-originating.");
                 MakeCall("BeltpackMessages", "&endless_playback(single_beep_silence.wav)").Wait();
             }
         }
@@ -93,6 +119,15 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
 
 
 
+    // ---- Permanent calls --------------------------------------------------------------------------------------
+    // Two calls must run all the time (essential - do not change their timing):
+    //   Announce         aes67/endpoints/Announce -> 99991: the broadcast/all-call stream. Started once 5 s after
+    //                    load (DelayExecutionUntilAfterLoad). "reloadallcall" (RefreshPortAudioAllCall) replaces it
+    //                    with a new Announce -> 99996 call, bridging the gap with a temporary call on a free Phone_.
+    //                    Nothing restarts it if it drops (the dialplan's LostBroadcastAnnounce hook has no handler).
+    //   BeltpackMessages aes67/endpoints/BeltpackMessages -> endless_playback(single_beep_silence.wav): the beep
+    //                    a beltpack hears when its button is pressed. Started 5 s after load and re-originated by
+    //                    the 10 s PeriodicCheck whenever its channel is missing (EnsureBeltpackMessagesAlive).
     public void StartScheduledTasks(object sender, ElapsedEventArgs e)
     {
         DelayExecutionUntilAfterLoad.Stop();
@@ -190,6 +225,11 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         WriteToLog(LogLevel.Info, "Putting " + conference + " on hold");
         conference = conference.Trim();
         var xmlConference = GetSingleConferenceXml(conference);
+        if (xmlConference == null)
+        {
+            WriteToLog(LogLevel.Warning, "PutEavesdropOnHold: conference " + conference + " not found.");
+            return;
+        }
 
         foreach (XmlElement node in xmlConference.ChildNodes[1].ChildNodes)
         {
@@ -206,36 +246,16 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                     
                     foreach (XmlNode childNode in membersNode.ChildNodes)
                     {
-                        var uuid = "";
-                        var port = "";
-
-                        foreach (XmlNode attribute in childNode.ChildNodes)
-                        {
-                            switch (attribute.Name)
-                            {
-                                case "uuid":
-                                    uuid = attribute.InnerText;
-                                    break;
-                                case "caller_id_number":
-                                    WriteToLog(LogLevel.Notice, "PORT  " + attribute.InnerText);
-                                    port = attribute.InnerText;
-                                    break;
-                            }
-                        }
+                        string uuid, port;
+                        ReadMember(childNode, out uuid, out port);
+                        WriteToLog(LogLevel.Debug, "PORT  " + port);
 
                         if ((port.Trim().ToLower() == "announce") || (port.Trim().ToLower() == "99997"))
                         {
                             Guid guid = Guid.Empty;
                             if (Guid.TryParse(uuid, out guid))
                             {
-                                if (EavesdropIDs.ContainsKey(conference))
-                                {
-                                    EavesdropIDs[conference] = guid;
-                                }
-                                else
-                                {
-                                    EavesdropIDs.Add(conference, guid);
-                                }
+                                lock (StateLock) { EavesdropIDs[conference] = guid; }
 
                                 var holdcall = fsApi.ExecuteString("uuid_hold " + uuid);
                                 WriteToLog(LogLevel.Info, "Eavesdrop for " + conference + " put on hold - result was " + holdcall);
@@ -249,12 +269,19 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
 
     internal void TakeEavesdropOffHold(string conference)
     {
-        WriteToLog(LogLevel.Info, "In TakeEavesdropOffHold with " + conference + " and ID count " + EavesdropIDs.Count);
         conference = conference.Trim();
-
-        if (EavesdropIDs.ContainsKey(conference.Trim()))
+        Guid uuid;
+        bool known;
+        int count;
+        lock (StateLock)
         {
-            Guid uuid = EavesdropIDs[conference];
+            count = EavesdropIDs.Count;
+            known = EavesdropIDs.TryGetValue(conference, out uuid);
+        }
+        WriteToLog(LogLevel.Info, "In TakeEavesdropOffHold with " + conference + " and ID count " + count);
+
+        if (known)
+        {
             var unholdcall = fsApi.ExecuteString("uuid_hold off " + uuid);
             WriteToLog(LogLevel.Info, "Eavesdrop for " + conference + " taken off hold - result was " + unholdcall);
         }
@@ -266,36 +293,39 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         var allEndpoints = ProcessAllEndpoints(endpoints);
         var channels = fsApi.ExecuteString("show channels as xml");
 
-        var remainingEndpoints = ProcessUsedEndpoints(channels, allEndpoints, -9, false);
-        WriteToLog(LogLevel.Warning, " In GetPortAudioUse with remainingEndpoints = " + remainingEndpoints.Count());
-        
+        var remainingEndpoints = ProcessUsedEndpoints(channels, allEndpoints, -9, false) ?? new List<string>();
+        WriteToLog(LogLevel.Info, " In GetPortAudioUse with remainingEndpoints = " + remainingEndpoints.Count());
+
         return String.Join("|", remainingEndpoints);
     }
 
     internal string FindConferencesWithPortAudio(string portAudioInterface)
     {
-        List<string> foundConferences = new List<string>();
-        WriteToLog(LogLevel.Warning, "In Find Conferences " + portAudioInterface);
-        
+        WriteToLog(LogLevel.Info, "In Find Conferences " + portAudioInterface);
+
         var endpoints = fsApi.ExecuteString(modulePrefix + " endpoints");
         var allEndpoints = ProcessAllEndpoints(endpoints);
         var channels = fsApi.ExecuteString("show channels as xml");
 
-        var remainingEndpoints = ProcessUsedEndpoints(channels, allEndpoints, -9, true);
-        WriteToLog(LogLevel.Info, "Conference to PortAudio size :" + ConferenceToPortAudio.Count);
-
-        foreach (var conf in PortAudioToConference)
+        // Rebuild and read the lookup in one locked step, so another thread's rebuild cannot change it mid-read
+        lock (StateLock)
         {
-            WriteToLog(LogLevel.Critical, "PortAudioToConference => " + conf.Key + " and we're looking for " + portAudioInterface);
-            if (conf.Key == portAudioInterface)
+            ProcessUsedEndpoints(channels, allEndpoints, -9, true);
+            WriteToLog(LogLevel.Info, "Conference to PortAudio size :" + ConferenceToPortAudio.Count);
+
+            foreach (var conf in PortAudioToConference)
             {
-                string returnString = String.Join("|", conf.Value);
-                WriteToLog(LogLevel.Critical, "FindConferencesWithPortAudio returns " + returnString);
-                return returnString;
+                WriteToLog(LogLevel.Debug, "PortAudioToConference => " + conf.Key + " and we're looking for " + portAudioInterface);
+                if (conf.Key == portAudioInterface)
+                {
+                    string returnString = String.Join("|", conf.Value);
+                    WriteToLog(LogLevel.Info, "FindConferencesWithPortAudio returns " + returnString);
+                    return returnString;
+                }
             }
         }
 
-        WriteToLog(LogLevel.Critical, "FindConferencesWithPortAudio returns nothing.");
+        WriteToLog(LogLevel.Info, "FindConferencesWithPortAudio returns nothing.");
         return "";
     }
 
@@ -306,7 +336,12 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         var channels = fsApi.ExecuteString("show channels as xml");
 
         var remainingEndpoints = ProcessUsedEndpoints(channels, allEndpoints, -9, false);
-        WriteToLog(LogLevel.Notice, "Chosing Phone - line 328");
+        WriteToLog(LogLevel.Notice, "Choosing Phone for the all call refresh");
+        if (remainingEndpoints == null || remainingEndpoints.Count == 0)
+        {
+            WriteToLog(LogLevel.Warning, "RefreshPortAudioAllCall: no free Phone_ endpoint.");
+            return "";
+        }
 
         var chosenPhone = remainingEndpoints.Last();
         if (chosenPhone.StartsWith("Phone_"))
@@ -315,11 +350,16 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
             string tempResult = fsApi.Execute("bgapi", "originate {origination_uuid=" + tempUUIDString + "}" + moduleName + "/endpoints/" + chosenPhone + " 99996");
             WriteToLog(LogLevel.Info, "Temporary call result = " + tempResult);
 
-            foreach (var uuid in StoredAllCalls)
+            List<Guid> previousAllCalls;
+            lock (StateLock)
+            {
+                previousAllCalls = new List<Guid>(StoredAllCalls);
+                StoredAllCalls.Clear();
+            }
+            foreach (var uuid in previousAllCalls)
             {
                 KillActiveCall(uuid.ToString(), "Killing previous all call to refresh it.");
             }
-            StoredAllCalls.Clear();
 
             Guid id = Guid.Empty;
             id = MakeCall("Announce", "99996").Result;
@@ -327,7 +367,7 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
             if (!id.Equals(Guid.Empty))
             {
                 WriteToLog(LogLevel.Info, "Successfully made Announce call - ID is " + id);
-                StoredAllCalls.Add(id);
+                lock (StateLock) { StoredAllCalls.Add(id); }
             }
             
             KillActiveCall(tempUUIDString, "Temporary All Call backup no longer needed");
@@ -362,7 +402,8 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
     {
         var conferenceXml = GetConferenceXml(conferenceName);
         List<string> returnIDs = new List<string>();
-        
+        if (conferenceXml == null) return returnIDs; // conference does not exist (-ERR ... not found)
+
         foreach (XmlNode conferenceNode in conferenceXml.ChildNodes[1])
         {
             if (conferenceNode.NodeType == XmlNodeType.Element)
@@ -378,22 +419,9 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                             {
                                 foreach (XmlNode memberNode in subnode.ChildNodes)
                                 {
-                                    var uuid = "";
-                                    var callerID = "";
-                                    
-                                    foreach (XmlNode memberDetail in memberNode.ChildNodes)
-                                    {
-                                        switch (memberDetail.Name)
-                                        {
-                                            case "uuid":
-                                                uuid = memberDetail.InnerText;
-                                                break;
-                                            case "caller_id_number":
-                                                callerID = memberDetail.InnerText;
-                                                break;
-                                        }
-                                    }
-                                    
+                                    string uuid, callerID;
+                                    ReadMember(memberNode, out uuid, out callerID);
+
                                     if (callerID == "Announce")
                                     {
                                         returnIDs.Add(uuid);
@@ -425,17 +453,30 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
 
                 HangUpChannel(interfaceName);
 
-                var cancellationTokenSource = new System.Threading.CancellationTokenSource();
-                var cancellationToken = cancellationTokenSource.Token;
-                Task.Delay(500).ContinueWith(async (t) =>
+                // Fire and forget (Communicator may be down): 500 ms later, send the forced hang-up twice.
+                // Uses its own WebClient: 'client' is disposed when this using block ends, before the delay is over.
+                Task.Delay(500).ContinueWith(t =>
                 {
-                    response = client.DownloadString(apiUrl + "?force=" + conferenceName);
-                    response = client.DownloadString(apiUrl + "?force=" + conferenceName);
-                    WriteToLog(LogLevel.Warning, "Second attempt: " + apiUrl + " = " + response);
-                }, cancellationToken);
+                    try
+                    {
+                        using (WebClient forceClient = new WebClient())
+                        {
+                            string forced = forceClient.DownloadString(apiUrl + "?force=" + conferenceName);
+                            forced = forceClient.DownloadString(apiUrl + "?force=" + conferenceName);
+                            WriteToLog(LogLevel.Info, "Second attempt: " + apiUrl + " = " + forced);
+                        }
+                    }
+                    catch (Exception forceEx)
+                    {
+                        WriteToLog(LogLevel.Warning, "Second attempt failed: " + apiUrl + " - " + forceEx.Message);
+                    }
+                });
             }
         }
-        catch (Exception ex) { }
+        catch (Exception ex)
+        {
+            WriteToLog(LogLevel.Warning, "RemoveFromPartyline: " + apiUrl + " failed - " + ex.Message);
+        }
         
         if (conferenceName.Trim().Length == 4)
         {
@@ -486,73 +527,75 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         return false;
     }
 
+    // "+": a conference needs audio. Wired/dialplan conferences get an Announce; conferences in the wireless range
+    //      (and intercom requests from the web GUI) get a free Phone_ (Dante/AES67) endpoint, which is originated
+    //      into the conference and reported to Communicator. Returns the chosen endpoint (the web GUI uses it).
+    // "-": a conference member hung up. If only Phone_ endpoints are left, they are hung up and their routes
+    //      are turned off in Communicator.
+    // Timing as before: the originate is a bgapi call, its channel state is polled up to 9 times every 2 s.
     internal async Task<string> ConferenceChecker(string symbol, string conferenceNumberString, string source)
     {
         WriteToLog(LogLevel.Info, string.Format("In Conference Checker - Symbol {0}, Conference Number {1}", symbol, conferenceNumberString));
 
         bool needToGetAnInterface = false;
         bool needToPlaceIntoConference = false;
-        bool wiredConferenceNeedingAllCall = false;
-        bool fromDialplan = false;
         bool fromWebGUI = false;
         string chosenInterface = "No interface";
+        string reservedPort = null; // released in finally
+        string protectedId = null;  // released in finally if an exception interrupts the flow
+        bool failed = false;
 
-        int conferenceFullNumber = -1;
-        int.TryParse(conferenceNumberString, out conferenceFullNumber);
-
-        int firstTwoDigitsOfConference = -1;
-        int.TryParse(conferenceNumberString.Substring(0, 2), out firstTwoDigitsOfConference);
+        // Conference numbers are 4 digits (first two + last two); anything shorter used to throw here
+        if (conferenceNumberString == null || conferenceNumberString.Length < 4)
+        {
+            WriteToLog(LogLevel.Warning, "ConferenceChecker: conference number '" + conferenceNumberString + "' is not 4 digits.");
+            return chosenInterface;
+        }
+        if (source == null) source = "";
 
         int lastTwoDigitsOfConference = -1;
         int.TryParse(conferenceNumberString.Substring(2, 2), out lastTwoDigitsOfConference);
         int conferenceReference = lastTwoDigitsOfConference - MaxWirelessConf;
-        
+
         string conferenceName = "CONF." + (lastTwoDigitsOfConference - (MaxWirelessConf - 1));
 
         try
         {
-            var xmlDocument = GetSingleConferenceXml(conferenceNumberString);
-            
+            var xmlDocument = GetSingleConferenceXml(conferenceNumberString); // null if the conference does not exist
+
             switch (symbol)
             {
                 case "+":
-                    WriteToLog(LogLevel.Info, "Conference Reference = " + conferenceReference);
-                    if (conferenceReference < 0)
-                    {
-                    }
-                    WriteToLog(LogLevel.Info, "MaxWirelessConf = " + MaxWirelessConf);
-                    WriteToLog(LogLevel.Info, "Last two digits = " + lastTwoDigitsOfConference);
-                    WriteToLog(LogLevel.Info, "Conference = " + conferenceName);
-                    WriteToLog(LogLevel.Info, (MaxWirelessConf == -1).ToString());
-                    WriteToLog(LogLevel.Info, (lastTwoDigitsOfConference < MaxWirelessConf).ToString());
+                    WriteToLog(LogLevel.Info, string.Format("Conference Reference = {0}, MaxWirelessConf = {1}, last two digits = {2}, conference = {3}",
+                        conferenceReference, MaxWirelessConf, lastTwoDigitsOfConference, conferenceName));
 
                     if ((MaxWirelessConf == -1) || (lastTwoDigitsOfConference < MaxWirelessConf))
                     {
                         if (source == "FROM_DIALPLAN")
                         {
                             WriteToLog(LogLevel.Info, "Not a wireless conference.");
-                            fromDialplan = true;
-                            
+
                             if (xmlDocument == null)
                             {
                                 fsApi.ExecuteString("conference " + conferenceNumberString + " dial aes67/endpoints/Announce");
-                            } 
-                            else 
+                            }
+                            else
                             {
+                                // Keep exactly one Announce in the conference
                                 bool skip = true;
                                 foreach (var uuid in AnnounceIds(conferenceNumberString))
                                 {
                                     if (skip)
                                     {
-                                         skip = false;
-                                    } 
-                                    else 
+                                        skip = false;
+                                    }
+                                    else
                                     {
                                         WriteToLog(LogLevel.Info, "Removing Announce from " + conferenceName);
                                         KillActiveCall(uuid, "Temporary All Call backup no longer needed");
                                     }
                                 }
-                                 
+
                                 if (skip)
                                 {
                                     fsApi.ExecuteString("conference " + conferenceNumberString + " dial aes67/endpoints/Announce");
@@ -575,186 +618,161 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                     }
 
                     int conferenceNumber = -1;
-                    if (needToGetAnInterface)
+                    if (needToGetAnInterface && int.TryParse(conferenceNumberString, out conferenceNumber))
                     {
-                        WriteToLog(LogLevel.Notice, "Need to add a Dante/AES67 route");
-                        if (int.TryParse(conferenceNumberString, out conferenceNumber))
+                        WriteToLog(LogLevel.Notice, "Need to add a Dante/AES67 route for SIP conference " + conferenceNumber);
+
+                        string getEndpoints = modulePrefix + " endpoints";
+                        var endpoints = fsApi.ExecuteString(getEndpoints);
+                        WriteToLog(LogLevel.Debug, "Getting Endpoints with '" + getEndpoints + "', which returned " + endpoints);
+
+                        var allEndpoints = ProcessAllEndpoints(endpoints);
+                        var channels = fsApi.ExecuteString("show channels as xml");
+
+                        var remainingEndpoints = ProcessUsedEndpoints(channels, allEndpoints, conferenceNumber, false);
+                        if (remainingEndpoints == null || remainingEndpoints.Count == 0)
                         {
-                            WriteToLog(LogLevel.Notice, "SIP Conference Number: " + conferenceNumber);
-                            
-                            string getEndpoints = modulePrefix + " endpoints";
-                            var endpoints = fsApi.ExecuteString(getEndpoints);
-                            WriteToLog(LogLevel.Notice, "Getting Endpoints with '" + getEndpoints + "', which returned " + endpoints);
-                            
-                            var allEndpoints = ProcessAllEndpoints(endpoints);
-                            var channels = fsApi.ExecuteString("show channels as xml");
+                            WriteToLog(LogLevel.Warning, "No free Phone_ endpoint for conference " + conferenceNumberString);
+                            break; // "No interface", as before
+                        }
 
-                            WriteToLog(LogLevel.Warning, "Sending to ProcessUsedEndpoints Channels " + channels.Count());
-                            WriteToLog(LogLevel.Warning, "Sending to ProcessUsedEndpoints allEndpoints " + allEndpoints.Count());
-                            WriteToLog(LogLevel.Warning, "Sending to ProcessUsedEndpoints conferenceNumber " + conferenceNumber);
-                            
-                            var remainingEndpoints = ProcessUsedEndpoints(channels, allEndpoints, conferenceNumber, false);
+                        chosenInterface = remainingEndpoints.First();
+                        WriteToLog(LogLevel.Notice, "Picking from " + remainingEndpoints.Count + ", first is " + chosenInterface);
 
-                            WriteToLog(LogLevel.Warning, "Picking Chosen Interface from " + remainingEndpoints.Count());
-                            chosenInterface = remainingEndpoints.First();
-                            WriteToLog(LogLevel.Notice, "Chosen Index is " + chosenInterface);
-
-                            bool newDantePort = true;
-                            if (chosenInterface == "ALREADY-IN-USE")
+                        // ProcessUsedEndpoints returns { "ALREADY-IN-USE", <port> } when a Phone_ port already serves this conference
+                        bool newDantePort = true;
+                        if (chosenInterface == "ALREADY-IN-USE")
+                        {
+                            WriteToLog(LogLevel.Notice, "Already in use, returning: " + remainingEndpoints[1]);
+                            newDantePort = false;
+                            if (source.ToUpper() != "FROM_DIALPLAN")
                             {
-                                WriteToLog(LogLevel.Notice, "Already in use, returning: " + remainingEndpoints[1]);
-                                newDantePort = false;
-                                if (source.ToUpper() != "FROM_DIALPLAN")
-                                {
-                                    return remainingEndpoints[1];
-                                }
-                            }
-
-                            Random random = new Random();
-                            int index = random.Next(remainingEndpoints.Count);
-                            WriteToLog(LogLevel.Notice, index + " port =" + remainingEndpoints[index]);
-
-                            chosenInterface = remainingEndpoints[index];
-                            WriteToLog(LogLevel.Notice, "Chosen Endpoint: " + chosenInterface + " and we're coming from the dialplan so we should make our port " + remainingEndpoints[1]);
-
-                            string conferenceCommand = "TalkAndListen";
-                            if (wiredConferenceNeedingAllCall)
-                            {
-                                conferenceCommand = "Listen";
-                            }
-
-                            if (!InterfaceIsAlreadyInUse(chosenInterface))
-                            {
-                                Guid callGUID = Guid.NewGuid();
-                                string originateString = "originate {interface=" + chosenInterface + ",origination_uuid=" + callGUID.ToString() + "}" + moduleName + "/endpoints/" + chosenInterface + " 99999" + conferenceNumber.ToString();
-                                WriteToLog(LogLevel.Warning, originateString);
-
-                                ProtectedGUIDs.Add(callGUID.ToString());
-                                WriteToLog(LogLevel.Notice, "Protecting " + callGUID.ToString());
-
-                                var joinConference1 = fsApi.Execute("bgapi", originateString);
-                                WriteToLog(LogLevel.Notice, "Job ID " + joinConference1);
-                                
-                                bool needToWait = true;
-                                int counter = 1;
-
-                                while ((needToWait == true) && counter < 10)
-                                {
-                                    WriteToLog(LogLevel.Info, "Waiting a second for background processing before attempt " + counter + "...");
-                                    string result = fsApi.ExecuteString("eval uuid:" + callGUID.ToString() + " ${channel-state}");
-                                    WriteToLog(LogLevel.Info, "STATE " + result);
-                                    
-                                    switch (result.ToLower().Trim())
-                                    {
-                                        case "":
-                                            break;
-                                        case "cs_exchange_media":
-                                            needToWait = false;
-                                            ProtectedGUIDs.Remove(callGUID.ToString());
-                                            WriteToLog(LogLevel.Info, "Successfully exchanging media for " + moduleName + " " + chosenInterface + " to " + conferenceNumberString);
-                                            break;
-                                        case "cs_execute":
-                                            ProtectedGUIDs.Remove(callGUID.ToString());
-                                            WriteToLog(LogLevel.Info, "Successfully executed " + moduleName + " " + chosenInterface + " to " + conferenceNumberString);
-                                            needToWait = false;
-                                            break;
-                                        case "cs_routing":
-                                            break;
-                                        default:
-                                            break;
-                                    }
-
-                                    if (needToWait)
-                                    {
-                                        counter++;
-                                        await Task.Delay(2000);
-                                    }
-                                }
-
-                                if ((!needToPlaceIntoConference) && (!wiredConferenceNeedingAllCall))
-                                {
-                                    WriteToLog(LogLevel.Notice, "No need to place this call automatically into a conference... removing protection from " + callGUID.ToString());
-                                    RemoveProtection(callGUID.ToString());
-                                }
-                                else
-                                {
-                                    if (!fromWebGUI)
-                                    {
-                                        string apiUrl = String.Format(apiServer + "conferencedata/{0}/{1}/{2}/sipserverreuse", conferenceName, chosenInterface, conferenceCommand);
-                                        if (newDantePort)
-                                        {
-                                            apiUrl = String.Format(apiServer + "conferencedata/{0}/{1}/{2}/sipservernewchannel", conferenceName, chosenInterface, conferenceCommand);
-                                        }
-
-                                        using (WebClient client = new WebClient())
-                                        {
-                                            WriteToLog(LogLevel.Warning, apiUrl);
-                                            var response = client.DownloadString(apiUrl);
-                                            WriteToLog(LogLevel.Warning, response);
-                                        }
-                                    }
-                                }
-
-                                if (!newDantePort)
-                                {
-                                    using (WebClient levelclient = new WebClient())
-                                    {
-                                        var apiUrlLevel = String.Format(apiServer + "portlevel/{0}/{1}/", conferenceNumber, chosenInterface);
-                                        WriteToLog(LogLevel.Warning, apiUrlLevel);
-                                        var levelResponse = levelclient.DownloadString(apiUrlLevel);
-                                        WriteToLog(LogLevel.Info, levelResponse);
-                                    }
-                                }
-
-                                foreach (XmlNode node in xmlDocument.ChildNodes[1].ChildNodes)
-                                {
-                                    var conferenceNameNew = node.Attributes["name"].Value;
-                                    if (conferenceNameNew == conferenceNumberString)
-                                    {
-                                        var memberCount = node.Attributes["member-count"].Value;
-                                        int members = int.Parse(memberCount.ToString());
-                                        WriteToLog(LogLevel.Notice, "Conference " + conferenceNumberString + " has " + members + " members");
-                                        
-                                        XmlNode membersNode = GetMembersNode(node);
-                                        foreach (XmlNode childNode in membersNode.ChildNodes)
-                                        {
-                                            var uuid = "";
-                                            var port = "";
-
-                                            foreach (XmlNode attribute in childNode.ChildNodes)
-                                            {
-                                                switch (attribute.Name)
-                                                {
-                                                    case "uuid":
-                                                        uuid = attribute.InnerText;
-                                                        break;
-                                                    case "caller_id_number":
-                                                        WriteToLog(LogLevel.Notice, "PORT  " + attribute.InnerText);
-                                                        port = attribute.InnerText;
-                                                        break;
-                                                }
-                                            }
-                                            WriteToLog(LogLevel.Notice, port);
-                                        }
-                                    }
-                                }
-
-                                if (fromWebGUI)
-                                {
-                                    WriteToLog(LogLevel.Warning, "Telling the web GUI that we have " + chosenInterface);
-                                }
-
-                                RemoveProtection(callGUID.ToString());
-                                return chosenInterface;
+                                return remainingEndpoints[1];
                             }
                         }
-                    } 	
+
+                        // Random choice as before, but never a port that another call has just been given and whose
+                        // channel is not in "show channels" yet (two calls arriving together picked the same port)
+                        lock (StateLock)
+                        {
+                            List<string> candidates = remainingEndpoints;
+                            if (newDantePort)
+                            {
+                                var unreserved = remainingEndpoints.Where(p => !ReservedPorts.Contains(p)).ToList();
+                                if (unreserved.Count > 0) candidates = unreserved;
+                            }
+                            chosenInterface = candidates[PortRandom.Next(candidates.Count)];
+                            if (newDantePort && ReservedPorts.Add(chosenInterface)) reservedPort = chosenInterface;
+                        }
+                        WriteToLog(LogLevel.Notice, "Chosen Endpoint: " + chosenInterface);
+
+                        string conferenceCommand = "TalkAndListen";
+
+                        if (!InterfaceIsAlreadyInUse(chosenInterface))
+                        {
+                            Guid callGUID = Guid.NewGuid();
+                            string originateString = "originate {interface=" + chosenInterface + ",origination_uuid=" + callGUID.ToString() + "}" + moduleName + "/endpoints/" + chosenInterface + " 99999" + conferenceNumber.ToString();
+                            WriteToLog(LogLevel.Notice, originateString);
+
+                            lock (StateLock) { ProtectedGUIDs.Add(callGUID.ToString()); }
+                            protectedId = callGUID.ToString();
+                            WriteToLog(LogLevel.Notice, "Protecting " + callGUID.ToString());
+
+                            var joinConference1 = fsApi.Execute("bgapi", originateString);
+                            WriteToLog(LogLevel.Notice, "Job ID " + joinConference1);
+
+                            // Wait for the background originate: up to 9 checks, 2 s apart
+                            bool needToWait = true;
+                            int counter = 1;
+
+                            while ((needToWait == true) && counter < 10)
+                            {
+                                WriteToLog(LogLevel.Info, "Waiting for background processing, attempt " + counter + "...");
+                                string result = fsApi.ExecuteString("eval uuid:" + callGUID.ToString() + " ${channel-state}");
+                                WriteToLog(LogLevel.Info, "STATE " + result);
+
+                                switch (result.ToLower().Trim())
+                                {
+                                    case "cs_exchange_media":
+                                        needToWait = false;
+                                        lock (StateLock) { ProtectedGUIDs.Remove(callGUID.ToString()); }
+                                        WriteToLog(LogLevel.Info, "Successfully exchanging media for " + moduleName + " " + chosenInterface + " to " + conferenceNumberString);
+                                        break;
+                                    case "cs_execute":
+                                        lock (StateLock) { ProtectedGUIDs.Remove(callGUID.ToString()); }
+                                        WriteToLog(LogLevel.Info, "Successfully executed " + moduleName + " " + chosenInterface + " to " + conferenceNumberString);
+                                        needToWait = false;
+                                        break;
+                                    default: // "", cs_routing, ...: keep waiting
+                                        break;
+                                }
+
+                                if (needToWait)
+                                {
+                                    counter++;
+                                    await Task.Delay(2000);
+                                }
+                            }
+
+                            if (!needToPlaceIntoConference)
+                            {
+                                WriteToLog(LogLevel.Notice, "No need to place this call automatically into a conference... removing protection from " + callGUID.ToString());
+                                RemoveProtection(callGUID.ToString()); // not awaited (1 s delay runs in the background)
+                            }
+                            else if (!fromWebGUI)
+                            {
+                                string apiUrl = String.Format(apiServer + "conferencedata/{0}/{1}/{2}/sipserverreuse", conferenceName, chosenInterface, conferenceCommand);
+                                if (newDantePort)
+                                {
+                                    apiUrl = String.Format(apiServer + "conferencedata/{0}/{1}/{2}/sipservernewchannel", conferenceName, chosenInterface, conferenceCommand);
+                                }
+                                WriteToLog(LogLevel.Notice, apiUrl);
+                                WriteToLog(LogLevel.Notice, HttpGet(apiUrl));
+                            }
+
+                            if (!newDantePort)
+                            {
+                                var apiUrlLevel = String.Format(apiServer + "portlevel/{0}/{1}/", conferenceNumber, chosenInterface);
+                                WriteToLog(LogLevel.Notice, apiUrlLevel);
+                                WriteToLog(LogLevel.Info, HttpGet(apiUrlLevel));
+                            }
+
+                            if (debugMode && xmlDocument != null)
+                            {
+                                // diagnostics only: list the members (from before the originate)
+                                foreach (XmlNode node in xmlDocument.ChildNodes[1].ChildNodes)
+                                {
+                                    if (node.Attributes["name"].Value != conferenceNumberString) continue;
+                                    WriteToLog(LogLevel.Debug, "Conference " + conferenceNumberString + " has " + node.Attributes["member-count"].Value + " members");
+                                    foreach (XmlNode childNode in GetMembersNode(node).ChildNodes)
+                                    {
+                                        string uuid, port;
+                                        ReadMember(childNode, out uuid, out port);
+                                        WriteToLog(LogLevel.Debug, "PORT  " + port);
+                                    }
+                                }
+                            }
+
+                            if (fromWebGUI)
+                            {
+                                WriteToLog(LogLevel.Notice, "Telling the web GUI that we have " + chosenInterface);
+                            }
+
+                            RemoveProtection(callGUID.ToString()); // not awaited
+                            return chosenInterface;
+                        }
+                    }
                     break;
 
                 case "-":
                     WriteToLog(LogLevel.Notice, "Checking to see if we are done with the Dante route");
-                    WriteToLog(LogLevel.Notice, xmlDocument.OuterXml);
-                    
+                    if (xmlDocument == null)
+                    {
+                        WriteToLog(LogLevel.Notice, "Conference " + conferenceNumberString + " no longer exists.");
+                        break;
+                    }
+                    WriteToLog(LogLevel.Debug, xmlDocument.OuterXml);
+
                     foreach (XmlNode node in xmlDocument.ChildNodes[1].ChildNodes)
                     {
                         List<string> DanteIDs = new List<string>();
@@ -764,31 +782,15 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
 
                         if (conferenceNameNew == conferenceNumberString)
                         {
-                            WriteToLog(LogLevel.Notice, "Focussed on the one conference now");
-                            var memberCount = node.Attributes["member-count"].Value;
-
-                            int members = int.Parse(memberCount.ToString());
+                            int members = int.Parse(node.Attributes["member-count"].Value);
                             WriteToLog(LogLevel.Notice, "Conference " + conferenceNumberString + " has " + members + " members");
-                            
+
                             XmlNode membersNode = GetMembersNode(node);
                             foreach (XmlNode childNode in membersNode.ChildNodes)
                             {
-                                var uuid = "";
-                                var port = "";
-
-                                foreach (XmlNode attribute in childNode.ChildNodes)
-                                {
-                                    switch (attribute.Name)
-                                    {
-                                        case "uuid":
-                                            uuid = attribute.InnerText;
-                                            break;
-                                        case "caller_id_number":
-                                            port = attribute.InnerText;
-                                            WriteToLog(LogLevel.Notice, "Conference " + conferenceNumberString + " has " + members + " members - one is " + port);
-                                            break;
-                                    }
-                                }
+                                string uuid, port;
+                                ReadMember(childNode, out uuid, out port);
+                                WriteToLog(LogLevel.Info, "Conference " + conferenceNumberString + " member: " + port);
 
                                 if (port.ToLower().Contains("phone_"))
                                 {
@@ -798,6 +800,7 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                                 }
                             }
 
+                            // Only Phone_ endpoints left: free them and turn their routes off
                             if (members == 0)
                             {
                                 foreach (var id in DanteIDs)
@@ -805,20 +808,15 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                                     KillActiveCall(id, "Conference call has been hung up, we are freeing up matrix ports.");
                                 }
 
-                                WriteToLog(LogLevel.Warning, "About to remove Conference " + conferenceNumberString + " has " + members + " members");
+                                WriteToLog(LogLevel.Notice, "About to remove Conference " + conferenceNumberString + " routes for " + DantePorts.Count + " port(s)");
                                 foreach (var danteInterface in DantePorts)
                                 {
-                                    string conferenceCommand = "Off";
-                                    string apiUrl = String.Format(apiServer + "conferencedata/{0}/{1}/{2}", conferenceName, danteInterface, conferenceCommand);
-
-                                    WriteToLog(LogLevel.Warning, apiUrl);
-                                    using (WebClient client = new WebClient())
-                                    {
-                                        var response = client.DownloadString(apiUrl);
-                                        WriteToLog(LogLevel.Warning, response);
-                                    }
-                                    return "Added";
+                                    string apiUrl = String.Format(apiServer + "conferencedata/{0}/{1}/{2}", conferenceName, danteInterface, "Off");
+                                    WriteToLog(LogLevel.Notice, apiUrl);
+                                    WriteToLog(LogLevel.Notice, HttpGet(apiUrl));
                                 }
+                                // (returned after the FIRST port before, so the other ports' routes stayed on)
+                                if (DantePorts.Count > 0) return "Added";
                             }
                         }
                     }
@@ -827,28 +825,41 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         }
         catch (Exception ex)
         {
-            WriteToLog(LogLevel.Warning, ex.Message);
+            failed = true;
+            WriteToLog(LogLevel.Warning, "ConferenceChecker " + symbol + " " + conferenceNumberString + ": " + ex.Message);
+        }
+        finally
+        {
+            // e.g. Communicator did not answer: before, the call stayed protected forever and could never be cleaned up
+            if (failed && protectedId != null) RemoveProtection(protectedId); // not awaited
+            if (reservedPort != null)
+            {
+                lock (StateLock) { ReservedPorts.Remove(reservedPort); }
+            }
         }
 
         return chosenInterface;
     }
 
+    // Called without await on purpose: the protection ends 1 s later in the background.
     async Task RemoveProtection(string protectedID)
     {
-        WriteToLog(LogLevel.Warning, "Removing protection from " + protectedID);
+        WriteToLog(LogLevel.Info, "Removing protection from " + protectedID);
         await Task.Delay(1000);
-        ProtectedGUIDs.Remove(protectedID);
-        WriteToLog(LogLevel.Warning, "Currently " + ProtectedGUIDs.Count + " protected GUIDs left");
+        int left;
+        lock (StateLock)
+        {
+            ProtectedGUIDs.Remove(protectedID);
+            left = ProtectedGUIDs.Count;
+        }
+        WriteToLog(LogLevel.Info, "Currently " + left + " protected GUIDs left");
     }
 
     private string GetCurrentPINs()
     {
-        var response = "FAILURE";
-        using (WebClient client = new WebClient())
-        {
-            response = client.DownloadString(apiServer + "/pin");
-        }
-        WriteToLog(LogLevel.Warning, response);
+        // (the double slash in ".../api//pin" is what has always been sent; kept as is)
+        var response = HttpGet(apiServer + "/pin");
+        WriteToLog(LogLevel.Info, response);
         return response;
     }
 
@@ -862,10 +873,15 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         
         WriteToLog(LogLevel.Info, "In HangUpConference with  " + conferenceNumber);
         var xmlDocument = GetSingleConferenceXml(conferenceNumber.Trim());
+        if (xmlDocument == null)
+        {
+            WriteToLog(LogLevel.Info, "HangUpConference: conference " + conferenceNumber + " not found.");
+            return "FAILURE";
+        }
 
+        // (returns "FAILURE" even after hanging up, as it always has: PhoneController passes it to the web page)
         foreach (XmlNode currentNode in xmlDocument.ChildNodes[1].ChildNodes)
         {
-            string uuid = currentNode.Attributes["uuid"].Value;
             string name = currentNode.Attributes["name"].Value;
 
             if (conferenceNumber.Trim() == name.Trim())
@@ -1033,6 +1049,9 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
 
 
 
+    // Command dispatcher for "managed CommunicatorConnector <command> [args]" (dialplan) and the API calls from
+    // Communicator. Arguments are split on spaces. The commands and their results are unchanged; a command that
+    // is missing arguments now returns "-ERR ..." instead of failing with an index exception.
     public string Process(string[] arguments)
     {
         string functionRequired = arguments[0].ToLower();
@@ -1052,21 +1071,32 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                 returnString = GetPortAudioUse();
                 break;
             case "portaudiouse":
+                if (!HasArgs(arguments, 1, out returnString)) break;
                 returnString = FindConferencesWithPortAudio(arguments[1]);
                 break;
             case "swapfromeavesdroptodante":
+                if (!HasArgs(arguments, 1, out returnString)) break;
                 PutEavesdropOnHold(arguments[1]);
+                returnString = "No result received.";
                 break;
             case "swapfromdantetoeavesdrop":
+                if (!HasArgs(arguments, 1, out returnString)) break;
                 TakeEavesdropOffHold(arguments[1]);
+                returnString = "No result received.";
                 break;
             case "adddantetocall":
-				AddToPartyline(arguments[1]);
-				break;
+                if (!HasArgs(arguments, 1, out returnString)) break;
+                AddToPartyline(arguments[1]);
+                returnString = "No result received.";
+                break;
             case "removedantefromcall":
+                if (!HasArgs(arguments, 2, out returnString)) break;
                 RemoveFromPartyline(arguments[1], arguments[2]);
+                returnString = "No result received.";
                 break;
             case "seteavesdropid":
+                if (!HasArgs(arguments, 1, out returnString)) break;
+                returnString = "No result received.";
                 Guid newEavesdropID = Guid.Empty;
                 if (Guid.TryParse(arguments[1], out newEavesdropID))
                 {
@@ -1075,35 +1105,44 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                 }
                 break;
             case "conferencechecker":
+                if (!HasArgs(arguments, 2, out returnString)) break;
                 returnString = ConferenceChecker(arguments[1], arguments[2], thirdParameter).Result;
                 break;
             case "getnextconference":
                 returnString = GetNextConferenceNumber();
                 break;
             case "hangupconference":
-				if(!InTestMode){
-					returnString = HangUpConference(arguments[1]);
-				}
+                if (!HasArgs(arguments, 1, out returnString)) break;
+                returnString = "No result received.";
+                if (!InTestMode)
+                {
+                    returnString = HangUpConference(arguments[1]);
+                }
                 break;
             case "checkoperator":
             case "operatorchecker":
+                if (!HasArgs(arguments, 2, out returnString)) break;
                 returnString = CheckOperator(arguments[1], arguments[2]);
                 break;
             case "operatorjoin":
+                if (!HasArgs(arguments, 2, out returnString)) break;
                 returnString = OperatorJoin(arguments[1], arguments[2]);
                 break;
             case "operatorleave":
+                if (!HasArgs(arguments, 1, out returnString)) break;
                 returnString = OperatorLeave(arguments[1]);
                 break;
             case "hangupchannel":
-                returnString = HangUpChannel(arguments[1]);
-                break;
             case "hangupportaudio":
+                if (!HasArgs(arguments, 1, out returnString)) break;
                 returnString = HangUpChannel(arguments[1]);
                 break;
             case "hangupcall":
-				if(!InTestMode){
-					returnString = KillActiveCall(arguments[1], "Web UI wanted to hang up because: " + arguments[2]);
+                if (!HasArgs(arguments, 2, out returnString)) break;
+                returnString = "No result received.";
+                if (!InTestMode)
+                {
+                    returnString = KillActiveCall(arguments[1], "Web UI wanted to hang up because: " + arguments[2]);
                 }
                 break;
             case "refresh":
@@ -1114,30 +1153,18 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                 break;
             case "conferencelist":
                 var returnXml = GetConferencesXml();
-                if (returnXml != null)
-                {
-                    returnString = returnXml.OuterXml;
-                }
-                else
-                {
-                    returnString = "Xml was null";
-                }
+                returnString = returnXml != null ? returnXml.OuterXml : "Xml was null";
                 break;
             case "conference":
+                if (!HasArgs(arguments, 1, out returnString)) break;
                 var returnIndividualXml = GetConferenceXml(arguments[1]);
-                if (returnIndividualXml != null)
-                {
-                    returnString = returnIndividualXml.OuterXml;
-                }
-                else
-                {
-                    returnString = "Xml was null";
-                }
+                returnString = returnIndividualXml != null ? returnIndividualXml.OuterXml : "Xml was null";
                 break;
             case "getpins":
                 return GetCurrentPINs().Replace("\"", "");
-                break;
             case "setdebug":
+                if (!HasArgs(arguments, 1, out returnString)) break;
+                returnString = "No result received.";
                 bool onOff = false;
                 if (bool.TryParse(arguments[1], out onOff))
                 {
@@ -1145,31 +1172,9 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                     returnString = "Debug mode now " + onOff;
                 }
                 break;
-			case "asrvoskhandler":
-                /*  not needed, kept for reference - diaplan/IIS does the wotk now
-                if (arguments.Length >= 3)
-                {
-                    System.Threading.ThreadPool.QueueUserWorkItem(_ => 
-                    {
-                        try 
-                        {
-                            var backgroundTaskResult = AsrVoskHandler(arguments[1], arguments[2]).Result;
-                        }
-                        catch (Exception threadEx) 
-                        {
-                            WriteToLog(LogLevel.Error, "AsrVoskHandler background thread error: " + threadEx.Message);
-                        }
-                    });
-                    returnString = "+OK Background ASR stream monitor worker spawned successfully.";
-                }
-                else
-                {
-                    WriteToLog(LogLevel.Error, "AsrVoskHandler: missing UUID or beltpack name in arguments.");
-                    returnString = "MISSING_ARGS";
-                }
-                break;
-                */
             default:
+                // (also reached by the dialplan hang-up hooks LostToneStreamForBeltpacks / LostBroadcastAnnounce,
+                // which have no handler here)
                 WriteToLog(LogLevel.Error, "Unable to work out what was meant by " + arguments[0]);
                 break;
         }
@@ -1177,183 +1182,19 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         return returnString;
     }
 
-    /* Removed - dialpaln does it all better
-    // -----------------------------------------------------------------------
-    // AsrVoskHandler
-    //
-    // Drives the full Vosk ASR interaction for a belt-pack voice command
-    // entirely from C# via the embedded FreeSWITCH API, bypassing the
-    // play_and_detect_speech dialplan app which may be fragile against AES67
-    // codec-change events.
-    //
-    // Key API choice: uuid_broadcast fires an application on an existing
-    // channel from the API thread without blocking here.  It is the 
-    // embedded-API equivalent of the ESL "uuid_execute" command, which is NOT
-    // available through fsApi.ExecuteString in the managed plugin host.
-    //
-    // Sequence:
-    //   1. Arm detect_speech on the channel via uuid_broadcast
-    //   2. Play the ready prompt via uuid_broadcast (non-blocking)
-    //   3. Poll uuid_getvar detect_speech_result until non-empty or 8s timeout
-    //   4. POST the result to /api/asr/voicecommand
-    //   5. Stop detect_speech and hang up the channel
-    // -----------------------------------------------------------------------
-
-    internal async Task<string> AsrVoskHandler(string channelUUID, string beltpackName)
+    // True when 'arguments' has at least 'count' arguments after the command name; otherwise logs and sets 'error'.
+    private static bool HasArgs(string[] arguments, int count, out string error)
     {
-        WriteToLog(LogLevel.Info, string.Format(
-            "AsrVoskHandler: starting for UUID={0} beltpack={1}", channelUUID, beltpackName));
-            
-        string channelState = fsApi.ExecuteString("eval uuid:" + channelUUID + " ${channel-state}");
-        
-        if (string.IsNullOrWhiteSpace(channelState) || channelState.Trim().ToLower() == "cs_destroy")
+        if (arguments.Length > count)
         {
-            WriteToLog(LogLevel.Error,
-                "AsrVoskHandler: channel " + channelUUID + " not found or already destroyed. Aborting.");
-            return "CHANNEL_NOT_FOUND";
+            error = null;
+            return true;
         }
-
-        try
-        {
-            // ------------------------------------------------------------------
-            // Arm the ASR engine on the channel.
-            //
-            // uuid_broadcast syntax:
-            //   uuid_broadcast <uuid> <app>::<data> [aleg|bleg|both]
-            //
-            // The "aleg" flag targets the channel itself (not a bridged peer).
-            // detect_speech syntax: <engine> <grammar_file> <grammar_name>
-            // ------------------------------------------------------------------
-
-            string armResult = fsApi.ExecuteString(
-                "uuid_broadcast " + channelUUID + " detect_speech::vosk default default aleg");
-            WriteToLog(LogLevel.Info, "AsrVoskHandler: detect_speech arm result: " + armResult);
-
-            // Allow the ASR engine to open and attach its media bug before
-            // audio from the prompt playback starts arriving.
-            await Task.Delay(300);
-
-
-            // ------------------------------------------------------------------
-            // Play the ready prompt — non-blocking fire-and-forget.
-            // uuid_broadcast returns immediately; playback runs on the channel
-            // thread while this C# thread polls for the ASR result.
-            // ------------------------------------------------------------------
-            const string promptPath = "C:/inetpub/SIPServer/sounds/custom/asr_ready.wav";
-            string playResult = fsApi.ExecuteString(
-                "uuid_broadcast " + channelUUID + " playback::" + promptPath + " aleg");
-            WriteToLog(LogLevel.Info, "AsrVoskHandler: playback result: " + playResult);
-
-
-            // ------------------------------------------------------------------
-            // Poll for the ASR result.
-            //
-            // detect_speech sets channel variable detect_speech_result when the
-            // engine returns a final result.  uuid_getvar reads it from the API
-            // thread.  FreeSWITCH returns "_undef_" for unset variables.
-            //
-            // Timing: prompt is ~0.5s, Vosk returns a final result after the
-            // speaker pauses.  8s gives ~0.5s prompt + 5s listen + 2.5s margin.
-            // ------------------------------------------------------------------
-            const int pollIntervalMs = 200;
-            const int maxWaitMs      = 8000;
-            int       elapsed        = 0;
-            string    speechResult   = "";
-
-            while (elapsed < maxWaitMs)
-            {
-                await Task.Delay(pollIntervalMs);
-                elapsed += pollIntervalMs;
-
-                string raw = fsApi.ExecuteString(
-                    "uuid_getvar " + channelUUID + " detect_speech_result");
-                    
-                if (!string.IsNullOrWhiteSpace(raw)
-                    && raw.Trim() != "_undef_"
-                    && raw.Trim() != "false"
-                    && raw.Trim() != "")
-                {
-                    speechResult = raw.Trim();
-                    WriteToLog(LogLevel.Info, string.Format(
-                        "AsrVoskHandler: got result after {0}ms: {1}", elapsed, speechResult));
-                    break;
-                }
-
-                string state = fsApi.ExecuteString(
-                    "eval uuid:" + channelUUID + " ${channel-state}");
-                    
-                if (string.IsNullOrWhiteSpace(state)
-                    || state.Trim().ToLower() == "cs_destroy"
-                    || state.Trim().ToLower() == "cs_hangup")
-                {
-                    WriteToLog(LogLevel.Warning,
-                        "AsrVoskHandler: channel hung up during poll. Stopping.");
-                    break;
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(speechResult))
-            {
-                WriteToLog(LogLevel.Warning, string.Format(
-                    "AsrVoskHandler: no result within {0}ms for beltpack {1}.",
-                    maxWaitMs, beltpackName));
-            }
-
-
-            // ------------------------------------------------------------------
-            // POST the recognised text to the Communicator API.
-            // ------------------------------------------------------------------
-            try
-            {
-                string apiUrl = apiServer + "asr/voicecommand?beltpack="
-                                + Uri.EscapeDataString(beltpackName);
-                                
-                WriteToLog(LogLevel.Info, "AsrVoskHandler: POSTing to " + apiUrl);
-                WriteToLog(LogLevel.Info, "AsrVoskHandler: POST body: " + speechResult);
-                
-                using (WebClient client = new WebClient())
-                {
-                    client.Headers[HttpRequestHeader.ContentType] = "application/json";
-                    string postResponse = client.UploadString(apiUrl, "POST", speechResult);
-                    WriteToLog(LogLevel.Info, "AsrVoskHandler: POST response: " + postResponse);
-                }
-            }
-            catch (Exception postEx)
-            {
-                WriteToLog(LogLevel.Error, "AsrVoskHandler: POST failed: " + postEx.Message);
-            }
-        }
-        catch (Exception ex)
-        {
-            WriteToLog(LogLevel.Error, "AsrVoskHandler: exception: " + ex.Message);
-        }
-        finally
-        {
-            // ------------------------------------------------------------------
-            // Clean up — stop ASR engine then kill the channel.
-            // Best-effort; harmless if channel is already gone.
-            // ------------------------------------------------------------------
-            try
-            {
-                fsApi.ExecuteString(
-                    "uuid_broadcast " + channelUUID + " detect_speech::stop aleg");
-                WriteToLog(LogLevel.Info,
-                    "AsrVoskHandler: detect_speech stopped for " + channelUUID);
-            }
-            catch { }
-
-            try
-            {
-                fsApi.ExecuteString("uuid_kill " + channelUUID);
-                WriteToLog(LogLevel.Info,
-                    "AsrVoskHandler: channel killed: " + channelUUID);
-            }
-            catch { }
-        }
-
-        return "AsrVoskHandler complete.";
+        error = "-ERR " + arguments[0] + " needs " + count + " argument(s)";
+        WriteToLog(LogLevel.Error, error + ", got: " + String.Join(" ", arguments));
+        return false;
     }
-    */
+
     public static void Main()
     {
         switch (FreeSWITCH.Script.ContextType)
@@ -1392,9 +1233,55 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         }
     }
 
-    private string ConferenceNeedsAnnounce(string conferenceNumberString)
+    // ---- Shared helpers --------------------------------------------------------------------------------------
+
+    // Reads one <member> of "conference ... xml_list": its uuid and caller_id_number ("" when absent).
+    internal static void ReadMember(XmlNode memberNode, out string uuid, out string callerIdNumber)
     {
-        return "Not being used";
+        uuid = "";
+        callerIdNumber = "";
+        foreach (XmlNode detail in memberNode.ChildNodes)
+        {
+            switch (detail.Name)
+            {
+                case "uuid":
+                    uuid = detail.InnerText;
+                    break;
+                case "caller_id_number":
+                    callerIdNumber = detail.InnerText;
+                    break;
+            }
+        }
+    }
+
+    // Synchronous GET to Communicator, exactly as before (WebClient, default timeout). Exceptions propagate to the
+    // caller, which decides - as before - whether a failure stops its processing.
+    internal static string HttpGet(string url)
+    {
+        using (WebClient client = new WebClient())
+        {
+            return client.DownloadString(url);
+        }
+    }
+
+    // Parses an fsApi XML result; null when it is not XML (e.g. "-ERR Conference 1234 not found").
+    internal static XmlDocument ParseApiXml(string apiResponse, string what)
+    {
+        try
+        {
+            XmlDocument xmlDocument = new XmlDocument();
+            using (MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(apiResponse)))
+            {
+                XmlTextReader reader = new XmlTextReader(stream);
+                xmlDocument.Load(reader);
+            }
+            return xmlDocument;
+        }
+        catch (Exception)
+        {
+            WriteToLog(LogLevel.Info, what + " - not XML: " + apiResponse);
+            return null;
+        }
     }
 
     private string GetIDFromCaller(string callerID)
@@ -1493,8 +1380,9 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         List<string> allConferences = new List<string>();
         WriteToLog(LogLevel.Debug, "Getting all conferences as a list");
         var xmlDocument = GetConferencesXml();
-        
-        foreach (XmlNode currentNode in xmlDocument.ChildNodes[1].ChildNodes) 
+        if (xmlDocument == null) return allConferences;
+
+        foreach (XmlNode currentNode in xmlDocument.ChildNodes[1].ChildNodes)
         {
             allConferences.Add(currentNode.Attributes["name"].Value);
         }
@@ -1507,18 +1395,19 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         List<string> conferences = GetAllConferences();
         WriteToLog(LogLevel.Debug, "In GetConference with " + conferences.Count + " conferences.");
 
-        bool haveFound = false;
-        while (!haveFound)
+        // Dial-in conferences are 9000-9999 (4 digits, as the rest of the code assumes). The search still continues
+        // from the last number handed out, but now wraps back to 9000 instead of growing past 9999.
+        for (int tries = 0; tries < 1000; tries++)
         {
+            if (dialInConferenceNumberStart > 9999) dialInConferenceNumberStart = 9000;
             if (!conferences.Contains(dialInConferenceNumberStart.ToString()))
             {
-                haveFound = true;
                 return dialInConferenceNumberStart.ToString();
             }
             dialInConferenceNumberStart++;
         }
 
-        return "9876";
+        return "9876"; // all 1000 in use
     }
 
     private void CheckChannelListSyncsWithConferenceList()
@@ -1533,9 +1422,12 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
             var conference = GetConferencesXml();
             var channelList = CheckChannels(channels);
 
-            var newOrphans = CheckConferences(conference, channelList);
+            var newOrphans = conference != null ? CheckConferences(conference, channelList) : new List<string>();
 
-            foreach (var oldOrphan in FoundOrphanedCallsWaitingToResolve)
+            // A Phone_ channel is hung up only when it is orphaned on two consecutive checks (10 s apart)
+            List<string> previousOrphans;
+            lock (StateLock) { previousOrphans = new List<string>(FoundOrphanedCallsWaitingToResolve); }
+            foreach (var oldOrphan in previousOrphans)
             {
                 foreach (var newOrphan in newOrphans)
                 {
@@ -1547,7 +1439,7 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                 }
             }
 
-            FoundOrphanedCallsWaitingToResolve = newOrphans;
+            lock (StateLock) { FoundOrphanedCallsWaitingToResolve = newOrphans; }
         }
         catch (Exception ex)
         {
@@ -1617,82 +1509,36 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         List<string> orphans = new List<string>();
         try
         {
+            // Remove every Phone_ that a conference lists from the channel list; what is left is a Phone_ channel
+            // in a conference that does not list it (an orphan)
             foreach (XmlNode conferenceNode in conference.ChildNodes[1].ChildNodes)
             {
-                string conferenceName = "";
-                var stopProcessing = false;
-                bool hasallcall = false;
-                
-                if (conferenceNode.NodeType == XmlNodeType.Element)
-                {
-                    foreach (XmlAttribute currentAttribute in conferenceNode.Attributes)
-                    {
-                        if (currentAttribute.Name == "name")
-                        {
-                            conferenceName = currentAttribute.Value;
-                            if (!channelList.ContainsKey(conferenceName))
-                            {
-                                XmlNode membersNode = GetMembersNode(conferenceNode);
-                                foreach (XmlNode conferenceMember in membersNode.ChildNodes)
-                                {
-                                    foreach (XmlNode conferenceDetail in conferenceMember.ChildNodes)
-                                    {
-                                        if (conferenceDetail.NodeType == XmlNodeType.Element)
-                                        {
-                                            switch (conferenceDetail.Name)
-                                            {
-                                                case "caller_id_number":
-                                                    break;
-                                            }
-                                        }
-                                    }
-                                 }
+                if (conferenceNode.NodeType != XmlNodeType.Element) continue;
+                XmlAttribute nameAttribute = conferenceNode.Attributes["name"];
+                if (nameAttribute == null) continue;
+                string conferenceName = nameAttribute.Value;
+                if (!channelList.ContainsKey(conferenceName)) continue; // no Phone_ channel in this conference
 
-                                if (!hasallcall)
-                                {
-                                }
-                                stopProcessing = true;
+                foreach (XmlNode conferenceMember in GetMembersNode(conferenceNode).ChildNodes)
+                {
+                    foreach (XmlNode conferenceDetail in conferenceMember.ChildNodes)
+                    {
+                        if (conferenceDetail.NodeType == XmlNodeType.Element && conferenceDetail.Name == "caller_id_number"
+                            && conferenceDetail.InnerText.StartsWith("Phone_"))
+                        {
+                            string phone = conferenceDetail.InnerText.Trim();
+                            if (!channelList[conferenceName].Contains(phone))
+                            {
+                                WriteToLog(LogLevel.Warning, "MISMATCH Conference has phone that channel list doesn't -  Conference " + conferenceName + " and Phone " + phone);
                             }
                             else
                             {
-                                XmlNode childNode = GetMembersNode(conferenceNode);
-                                foreach (XmlNode conferenceMember in childNode.ChildNodes)
-                                {
-                                    foreach (XmlNode conferenceDetail in conferenceMember.ChildNodes)
-                                    {
-                                        if (conferenceDetail.NodeType == XmlNodeType.Element)
-                                        {
-                                            switch (conferenceDetail.Name)
-                                            {
-                                                case "caller_id_number":
-                                                    if (conferenceDetail.InnerText.StartsWith("Phone_"))
-                                                    {
-                                                        string phone = conferenceDetail.InnerText.Trim();
-                                                        if (!channelList[conferenceName].Contains(phone))
-                                                        {
-                                                             WriteToLog(LogLevel.Alert, "MISMATCH Conference has phone that channel list doesn't -  Conference " + conferenceName + " and Phone " + phone);
-                                                        }
-                                                        else
-                                                        {
-                                                            channelList[conferenceName].Remove(phone);
-                                                        }
-                                                    }
-                                                    break;
-                                            }
-                                        }
-                                    }
-                                 }
+                                channelList[conferenceName].Remove(phone);
                             }
                         }
                     }
-
-                    if (stopProcessing)
-                    {
-                        continue;
-                    }
                 }
             }
-
             foreach (var channel in channelList.Keys)
             {
                 if (channelList[channel].Count > 0)
@@ -1785,157 +1631,101 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         return ActiveConferences;
     }
 
+    // One conference ("conference <name> xml_list"); null if it does not exist.
     internal XmlDocument GetSingleConferenceXml(string conferenceName)
     {
-        WriteToLog(LogLevel.Critical, "In Get Single Conference looking for " + conferenceName);
-        string apiResponse = "No response getting Single Conference.";
-        try
-        {
-            apiResponse = fsApi.ExecuteString("conference " + conferenceName + " xml_list");
-            WriteToLog(LogLevel.Warning, "conference " + conferenceName + " xml_list");
-            WriteToLog(LogLevel.Warning, apiResponse);
-            
-            XmlDocument xmlDocument = new XmlDocument();
-            MemoryStream stream = new MemoryStream();
-            byte[] data = Encoding.UTF8.GetBytes(apiResponse);
-            stream.Write(data, 0, data.Length);
-            stream.Seek(0, SeekOrigin.Begin);
-            
-            XmlTextReader reader = new XmlTextReader(stream);
-            xmlDocument.Load(reader);
-
-            return xmlDocument;
-        }
-        catch (Exception ex)
-        {
-            WriteToLog(LogLevel.Error, "Failed to understand: " + apiResponse);
-        }
-        return null;
+        WriteToLog(LogLevel.Debug, "In Get Single Conference looking for " + conferenceName);
+        string apiResponse = fsApi.ExecuteString("conference " + conferenceName + " xml_list");
+        WriteToLog(LogLevel.Debug, "conference " + conferenceName + " xml_list: " + apiResponse);
+        return ParseApiXml(apiResponse, "conference " + conferenceName + " xml_list");
     }
 
+    // All conferences ("conference xml_list"). The parsed document is reused while the text is unchanged.
     internal XmlDocument GetConferencesXml()
     {
-        string apiResponse = "No response.";
-        try
+        string apiResponse = fsApi.ExecuteString("conference xml_list");
+        lock (StateLock)
         {
-            apiResponse = fsApi.ExecuteString("conference xml_list");
-
-            if (!apiResponse.Equals(lastAllConferencesString))
-            {
-                XmlDocument xmlDocument = new XmlDocument();
-                MemoryStream stream = new MemoryStream();
-                byte[] data = Encoding.UTF8.GetBytes(apiResponse);
-                stream.Write(data, 0, data.Length);
-                stream.Seek(0, SeekOrigin.Begin);
-                
-                XmlTextReader reader = new XmlTextReader(stream);
-                xmlDocument.Load(reader);
-
-                lastAllConferencesString = apiResponse;
-                lastAllConferencesXML = xmlDocument;
-
-                return xmlDocument;
-            }
-            else
+            if (apiResponse == lastAllConferencesString && lastAllConferencesXML != null)
             {
                 return lastAllConferencesXML;
             }
         }
-        catch (Exception ex)
+
+        XmlDocument xmlDocument = ParseApiXml(apiResponse, "conference xml_list");
+        if (xmlDocument != null)
         {
-            WriteToLog(LogLevel.Error, "Failed to understand: " + apiResponse);
+            lock (StateLock)
+            {
+                lastAllConferencesString = apiResponse;
+                lastAllConferencesXML = xmlDocument;
+            }
         }
-        return null;
+        return xmlDocument;
     }
 
+    // One conference, by ID; null if it does not exist. (It no longer overwrites the all-conferences cache with a
+    // single conference's XML.)
     internal XmlDocument GetConferenceXml(string conferenceID)
     {
-        string apiResponse = "No response.";
-        try
-        {
-            apiResponse = fsApi.ExecuteString(string.Format("conference {0} xml_list", conferenceID.Trim()));
-            
-            XmlDocument xmlDocument = new XmlDocument();
-            MemoryStream stream = new MemoryStream();
-            byte[] data = Encoding.UTF8.GetBytes(apiResponse);
-            stream.Write(data, 0, data.Length);
-            stream.Seek(0, SeekOrigin.Begin);
-            
-            XmlTextReader reader = new XmlTextReader(stream);
-            xmlDocument.Load(reader);
-
-            lastAllConferencesString = apiResponse;
-            lastAllConferencesXML = xmlDocument;
-
-            return xmlDocument;
-        }
-        catch (Exception ex)
-        {
-            WriteToLog(LogLevel.Error, "Failed to understand: " + apiResponse);
-        }
-        return null;
+        string command = string.Format("conference {0} xml_list", conferenceID.Trim());
+        return ParseApiXml(fsApi.ExecuteString(command), command);
     }
-
     private static List<string> ProcessAllEndpoints(string endpoints)
     {
         List<string> allEndpoints = new List<string>();
         var endpointArray = endpoints.Split('\n');
 
-        WriteToLog(LogLevel.Warning, "ProcessAllEndpoints => endpoints length " + endpointArray.Length);
-        
-        if (moduleName == "portaudio")
+        WriteToLog(LogLevel.Debug, "ProcessAllEndpoints => endpoints length " + endpointArray.Length);
+
+        // "aes67 endpoints" lines: "endpoint name: <name> \t instream: ..., outstream: ..." -> 3rd word.
+        // The summary line "Total endpoints: N" adds a harmless entry "N" (callers only use names containing
+        // "Phone"); the element after the final newline is skipped. (mod_portaudio parsing removed: moduleName is aes67.)
+        for (int x = 0; x < endpointArray.Length - 1; x++)
         {
-            for (int x = 0; x < endpointArray.Length - 1; x++)
+            string currentName = endpointArray[x].Trim();
+            while (currentName.IndexOf("  ") != -1)
             {
-                if (endpointArray[x].Contains(">"))
+                currentName = currentName.Replace("  ", " ");
+            }
+            var endpointFindName = currentName.Split(' ');
+            if (endpointFindName.Length > 2)
+            {
+                string endpointName = endpointFindName[2];
+                if (!allEndpoints.Contains(endpointName))
                 {
-                    string endpointName = endpointArray[x].Substring(0, endpointArray[x].IndexOf(">"));
-                    if (!allEndpoints.Contains(endpointName))
-                    {
-                        WriteToLog(LogLevel.Warning, "Adding PA " + endpointName);
-                        allEndpoints.Add(endpointName);
-                    }
+                    allEndpoints.Add(endpointName);
                 }
             }
         }
-        else if (moduleName == "aes67")
-        {
-            for (int x = 0; x < endpointArray.Length - 1; x++)
-            {
-                string currentName = endpointArray[x].Trim();
-                while (currentName.IndexOf("  ") != -1)
-                {
-                    currentName = currentName.Replace("  ", " ");
-                }
-                var endpointFindName = currentName.Split(' ');
-                if (endpointFindName.Length > 2)
-                {
-                    string endpointName = endpointFindName[2];
-                    if (!allEndpoints.Contains(endpointName))
-                    {
-                        allEndpoints.Add(endpointName);
-                    }
-                }
-            }
-        }
-        WriteToLog(LogLevel.Warning, "Returning All Endpoints " + allEndpoints.Count);
+        WriteToLog(LogLevel.Debug, "Returning All Endpoints " + allEndpoints.Count);
         
         return allEndpoints;
     }
 
+    // From all aes67 endpoints and "show channels as xml": the free Phone_ endpoints (sorted), or
+    // { "ALREADY-IN-USE", <port> } when a Phone_ already serves 'conferenceNumber' (unless ignoreFound).
+    // Rebuilds the ConferenceToPortAudio / PortAudioToConference lookups. null if the channel list is not XML.
     private static List<string> ProcessUsedEndpoints(string endpoints, List<string> allEndpoints, int conferenceNumber, bool ignoreFound)
+    {
+        lock (StateLock) // the lookups are shared by all threads (re-entrant: FindConferencesWithPortAudio holds it too)
+        {
+            return ProcessUsedEndpointsLocked(endpoints, allEndpoints, conferenceNumber, ignoreFound);
+        }
+    }
+
+    private static List<string> ProcessUsedEndpointsLocked(string endpoints, List<string> allEndpoints, int conferenceNumber, bool ignoreFound)
     {
         try
         {
             ConferenceToPortAudio.Clear();
             PortAudioToConference.Clear();
 
-            WriteToLog(LogLevel.Notice, "CONFERENCE " + conferenceNumber);
+            WriteToLog(LogLevel.Debug, "ProcessUsedEndpoints for conference " + conferenceNumber);
             XmlDocument channelsXml = new XmlDocument();
             channelsXml.LoadXml(endpoints);
             var endpointList = new List<string>(allEndpoints);
 
-            WriteToLog(LogLevel.Notice, "ProcessUsedEndpoints, 1928");
             foreach (var currentEndpoint in allEndpoints)
             {
                 if (!currentEndpoint.Contains("Phone"))
@@ -1984,7 +1774,6 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                                     {
                                         if (!ignoreFound)
                                         {
-                                            List<string> returnList = new List<string>();
                                             return new List<string> { "ALREADY-IN-USE", currentEndpointName };
                                         }
                                     }
@@ -2038,7 +1827,7 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine(ex.Message);
+            WriteToLog(LogLevel.Warning, "ProcessUsedEndpoints: " + ex.Message); // (went to Debug.WriteLine = nowhere)
         }
 
         return null;
@@ -2046,8 +1835,15 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
 
     internal string KillActiveCall(string callUUID, string reason)
     {
-        WriteToLog(LogLevel.Notice, string.Format("In KillActiveCall - Hanging up active call {0} because {1}. Protected count {2}.", callUUID, reason, ProtectedGUIDs.Count));
-        if (ProtectedGUIDs.Contains(callUUID))
+        bool isProtected;
+        int protectedCount;
+        lock (StateLock)
+        {
+            isProtected = ProtectedGUIDs.Contains(callUUID);
+            protectedCount = ProtectedGUIDs.Count;
+        }
+        WriteToLog(LogLevel.Notice, string.Format("In KillActiveCall - Hanging up active call {0} because {1}. Protected count {2}.", callUUID, reason, protectedCount));
+        if (isProtected)
         {
             WriteToLog(LogLevel.Notice, "Not killing " + callUUID + " as it was protected");
             return "Not killing " + callUUID + " as it was protected.";
@@ -2057,8 +1853,12 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
             string result = fsApi.ExecuteString("eval uuid:" + callUUID + " ${channel-state}");
             WriteToLog(LogLevel.Notice, "STATE OF GUID TO BE KILLED = " + result);
 
-            result = fsApi.ExecuteString("uuid_dump " + callUUID);
-            WriteToLog(LogLevel.Notice, "STATE OF GUID TO BE KILLED = " + result);
+            // full channel dump only with "setdebug true" (it was written at Notice for every hang-up)
+            if (debugMode)
+            {
+                result = fsApi.ExecuteString("uuid_dump " + callUUID);
+                WriteToLog(LogLevel.Debug, "CHANNEL DUMP OF GUID TO BE KILLED = " + result);
+            }
 
             string killString = "uuid_kill " + callUUID;
             var apiResult = fsApi.ExecuteString(killString);
