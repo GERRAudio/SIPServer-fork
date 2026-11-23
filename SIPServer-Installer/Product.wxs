@@ -49,7 +49,6 @@
 			<ComponentRef Id="CreateEnSoundsFolder"/>
 			<ComponentRef Id="CreateMusicSoundsFolder"/>
 
-			<ComponentGroupRef Id="VoskASREngine"/>
 			<ComponentRef Id="CreateConfFolder"/>
 
 			<!-- Explicit Dialplan Deployment -->
@@ -57,6 +56,14 @@
 
 			<ComponentGroupRef Id="ConfDefaultsComponents"/>
 			<ComponentRef Id="CreateLogFolder"/>
+		</Feature>
+
+		<!-- Bundled Vosk ASR engine (small en-us model + VoskASR service). Optional, OFF by default:
+		     Level 2 is above INSTALLLEVEL (1), so it is only installed when INSTALL_VOSK=1
+		     (the checkbox on ConfigOptionsDlg, or INSTALL_VOSK=1 on the msiexec command line). -->
+		<Feature Id="VoskASR" Title="Vosk ASR engine (bundled)" Level="2" AllowAdvertise="no">
+			<Level Value="1" Condition="INSTALL_VOSK = 1" />
+			<ComponentGroupRef Id="VoskASREngine"/>
 		</Feature>
 
 		<Feature Id="ProductFeature" Title="Main Product" Level="1">
@@ -86,8 +93,10 @@
 				<Control Id="OverwriteAsrDialplanCheckbox" Type="CheckBox" X="25" Y="54" Width="320" Height="17" Property="OVERWRITE_ASRDIALPLAN" CheckBoxValue="1" Text="Overwrite dialplan\00_asr.xml with this version's default" />
 				<Control Id="OverwriteVoskCheckbox" Type="CheckBox" X="25" Y="74" Width="320" Height="17" Property="OVERWRITE_VOSKCONF" CheckBoxValue="1" Text="Overwrite autoload_configs\vosk.conf.xml with this version's default" />
 				<Control Id="OverwriteNote" Type="Text" X="25" Y="94" Width="320" Height="20" NoPrefix="yes" Text="Unticked = the site's file is kept. A replaced file is saved first in [AppRoot]SIPServerConfigBackup." />
-				<Control Id="ManualTitle" Type="Text" X="25" Y="120" Width="320" Height="12" NoPrefix="yes" Text="Check by hand after setup (shown again in the summary):" />
-				<Control Id="ManualText" Type="Text" X="25" Y="134" Width="320" Height="94" NoPrefix="yes" Text="- conf\vars.xml: setIPv4 (admin / SIP) and multicastIP (AES67) - set from the addresses on the IP page.&#13;&#10;- conf\autoload_configs\event_socket.conf.xml: apply-inbound-acl names the list in acl.conf.xml.&#13;&#10;- conf\autoload_configs\acl.conf.xml: that list must allow every server that uses the event socket (e.g. the dashboard) as plain IPv4 /32 entries. Restart SIPServer after editing." />
+				<Control Id="InstallVoskCheckbox" Type="CheckBox" X="25" Y="116" Width="320" Height="17" Property="INSTALL_VOSK" CheckBoxValue="1" Text="Install the bundled Vosk ASR engine (small en-us model, VoskASR service)" />
+				<Control Id="InstallVoskNote" Type="Text" X="37" Y="132" Width="308" Height="20" NoPrefix="yes" Text="Note: the Vosk engine service is required for ASR to function. Untick only if a Vosk server runs elsewhere (unticked on upgrade removes a local Vosk)." />
+				<Control Id="ManualTitle" Type="Text" X="25" Y="155" Width="320" Height="12" NoPrefix="yes" Text="Check by hand after setup (shown again in the summary):" />
+				<Control Id="ManualText" Type="Text" X="25" Y="167" Width="320" Height="64" NoPrefix="yes" Text="- conf\vars.xml: setIPv4 (admin / SIP) and multicastIP (AES67) - set from the addresses on the IP page.&#13;&#10;- conf\autoload_configs\event_socket.conf.xml: apply-inbound-acl names the list in acl.conf.xml.&#13;&#10;- conf\autoload_configs\acl.conf.xml: that list must allow every server that uses the event socket (e.g. the dashboard) as plain IPv4 /32 entries. Restart SIPServer after editing." />
 				<Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
 				<Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="Next" />
 				<Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="Back" />
@@ -97,7 +106,10 @@
 			</Dialog>
 
 			<Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="ConfigOptionsDlg" Order="3" Condition="LicenseAccepted = &quot;1&quot;" />
-			<Publish Dialog="ConfigOptionsDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" />
+			<!-- Feature conditions are evaluated before the UI, so the checkbox selects the VoskASR feature directly -->
+			<Publish Dialog="ConfigOptionsDlg" Control="Next" Event="AddLocal" Value="VoskASR" Condition="INSTALL_VOSK = 1" Order="1" />
+			<Publish Dialog="ConfigOptionsDlg" Control="Next" Event="Remove" Value="VoskASR" Condition="NOT INSTALL_VOSK = 1" Order="2" />
+			<Publish Dialog="ConfigOptionsDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="3" />
 			<Publish Dialog="ConfigOptionsDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" />
 			<Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="ConfigOptionsDlg" Order="3" />
 			<Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchReadme" Condition="(WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1) and NOT Installed"/>
@@ -146,6 +158,8 @@
 		     ============================================================ -->
 		<Property Id="OVERWRITE_ASRDIALPLAN" Secure="yes" />
 		<Property Id="OVERWRITE_VOSKCONF" Secure="yes" />
+		<!-- INSTALL_VOSK 1 = install the bundled Vosk engine + VoskASR service (VoskASR feature); empty (default) = not installed -->
+		<Property Id="INSTALL_VOSK" Secure="yes" />
 
 		<SetProperty Id="WixQuietExecCmdLine"
 					 Value='"[System64Folder]cmd.exe" /c (if exist "[TempFolder]SIPS_ConfigBackup" rmdir /s /q "[TempFolder]SIPS_ConfigBackup") &amp; mkdir "[TempFolder]SIPS_ConfigBackup" &amp; (if exist "[MyAppFolder]conf\dialplan\00_asr.xml" copy /y "[MyAppFolder]conf\dialplan\00_asr.xml" "[TempFolder]SIPS_ConfigBackup\") &amp; (if exist "[MyAppFolder]conf\autoload_configs\vosk.conf.xml" copy /y "[MyAppFolder]conf\autoload_configs\vosk.conf.xml" "[TempFolder]SIPS_ConfigBackup\") &amp; (if exist "[AppRoot]SIPServerConfigBackup\InstallSummary.txt" del /q "[AppRoot]SIPServerConfigBackup\InstallSummary.txt") &amp; exit /b 0'
@@ -189,15 +203,17 @@
 			<Custom Action="ConfigSvcStartup" After="InstallService" Condition='NOT REMOVE="ALL"' />
 			<Custom Action="ConfigSvcSetup" After="ConfigSvcStartup" Condition='NOT REMOVE="ALL"' />
 
-			<!-- VoskASR Service Sequence -->
-			<Custom Action="InstallVoskService" Before="InstallFinalize" Condition='NOT REMOVE="ALL"' />
-			<Custom Action="SetDirVoskService" After="InstallVoskService" Condition='NOT REMOVE="ALL"' />
-			<Custom Action="SetArgsVoskService" After="SetDirVoskService" Condition='NOT REMOVE="ALL"' />
-			<Custom Action="SetThrottleVoskService" After="SetArgsVoskService" Condition='NOT REMOVE="ALL"' />
-			<Custom Action="SetLogVoskService" After="SetThrottleVoskService" Condition='NOT REMOVE="ALL"' />
-			<Custom Action="SetDelayVoskService" After="SetLogVoskService" Condition='NOT REMOVE="ALL"' />
-			<Custom Action="ConfigVoskSvcSetup" After="SetDelayVoskService" Condition='NOT REMOVE="ALL"' />
-			<Custom Action="StartVoskSvc" After="ConfigVoskSvcSetup" Condition='NOT REMOVE="ALL"' />
+			<!-- VoskASR Service Sequence: only when the VoskASR feature is being installed (&VoskASR=3)
+			     or is already installed and not being removed (repair / reinstall). The old service is always
+			     stopped and deleted above (StopVoskSvc / DeleteVoskSvc). -->
+			<Custom Action="InstallVoskService" Before="InstallFinalize" Condition='NOT REMOVE="ALL" AND ((&amp;VoskASR=3) OR (!VoskASR=3 AND NOT &amp;VoskASR=2))' />
+			<Custom Action="SetDirVoskService" After="InstallVoskService" Condition='NOT REMOVE="ALL" AND ((&amp;VoskASR=3) OR (!VoskASR=3 AND NOT &amp;VoskASR=2))' />
+			<Custom Action="SetArgsVoskService" After="SetDirVoskService" Condition='NOT REMOVE="ALL" AND ((&amp;VoskASR=3) OR (!VoskASR=3 AND NOT &amp;VoskASR=2))' />
+			<Custom Action="SetThrottleVoskService" After="SetArgsVoskService" Condition='NOT REMOVE="ALL" AND ((&amp;VoskASR=3) OR (!VoskASR=3 AND NOT &amp;VoskASR=2))' />
+			<Custom Action="SetLogVoskService" After="SetThrottleVoskService" Condition='NOT REMOVE="ALL" AND ((&amp;VoskASR=3) OR (!VoskASR=3 AND NOT &amp;VoskASR=2))' />
+			<Custom Action="SetDelayVoskService" After="SetLogVoskService" Condition='NOT REMOVE="ALL" AND ((&amp;VoskASR=3) OR (!VoskASR=3 AND NOT &amp;VoskASR=2))' />
+			<Custom Action="ConfigVoskSvcSetup" After="SetDelayVoskService" Condition='NOT REMOVE="ALL" AND ((&amp;VoskASR=3) OR (!VoskASR=3 AND NOT &amp;VoskASR=2))' />
+			<Custom Action="StartVoskSvc" After="ConfigVoskSvcSetup" Condition='NOT REMOVE="ALL" AND ((&amp;VoskASR=3) OR (!VoskASR=3 AND NOT &amp;VoskASR=2))' />
 			
 			<Custom Action="LaunchReadme" After ="InstallFinalize" Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT Installed'/>
 		</InstallExecuteSequence>

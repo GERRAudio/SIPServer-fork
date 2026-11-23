@@ -3,7 +3,7 @@
 
 #include <gst/gst.h>
 #include <switch.h>
-#define MOD_AES_VERSION_DATE "2026-11-19"
+#define MOD_AES_VERSION_DATE "2026-11-22"
 #define DIRECTION_TX 1 << 0
 #define DIRECTION_RX 1 << 1
 
@@ -56,14 +56,21 @@ typedef struct {
 	char *ts_context_name;
 	gboolean is_backup_sender;
 	int backup_sender_idle_wait_ms;
+	gboolean rx_click_repair; // repair isolated single-sample spikes on RX (aes67.conf rx-click-repair, default on)
 } pipeline_data_t;
+
+// RX click repair: Dante delivers isolated single-sample spikes with the top bits set
+// (seen as -32768 and -16384/-17409 on otherwise silent channels). A sample that deviates from the
+// average of its two neighbours by more than RX_CLICK_DEV, while those neighbours agree with each
+// other, is a single-sample impulse (energy at ~Nyquist) that mic/intercom audio does not contain.
+// On the last frame of a buffer (no lookahead) it must also be at least RX_CLICK_EDGE_MIN in size.
+#define RX_CLICK_DEV 8192
+#define RX_CLICK_EDGE_MIN 16000
 
 struct g_stream {
 	GstPipeline *pipeline;
 	GMainLoop *mainloop;
 	GThread *thread;
-	unsigned char leftover[MAX_IO_CHANNELS][SWITCH_RECOMMENDED_BUFFER_SIZE];
-	size_t leftover_bytes[MAX_IO_CHANNELS];
 	event_callback_t *error_cb;
 	guint cb_rx_stats_id;
 	volatile gint clock_sync;
@@ -80,6 +87,11 @@ struct g_stream {
 	guint jitterbuf_signal_id;
 	GRecMutex appsrc_mutexes[MAX_IO_CHANNELS]; // One per channel added - self init
 	volatile gint pipeline_elements_count;	   // Track elements added to pipeline
+	// RX click repair state (written only by the RX streaming thread)
+	gboolean rx_click_repair;
+	gint rx_channels;
+	gint16 rx_click_prev[MAX_IO_CHANNELS]; // last sample of previous buffer, per channel
+	volatile guint64 rx_clicks_repaired;
 };
 
 g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb);

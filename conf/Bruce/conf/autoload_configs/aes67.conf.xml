@@ -27,6 +27,8 @@
 		<param name="rtp-iface" value="$${mcastIP_Name}"/>
 		<param name="rtp-payload-type" value="98"/>
 		<param name="rtp-jitbuf-latency" value="20"/>
+		<!-- repair isolated full-scale single-sample spikes (clicks) arriving from Dante on RX, before any endpoint; default true -->
+		<param name="rx-click-repair" value="true"/>
 	</settings>
 
 	<streams>

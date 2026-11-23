@@ -142,6 +142,66 @@ static void destroy_caps(void *data, GClosure G_GNUC_UNUSED *closure)
 }
 #endif
 
+/*
+  RX click repair probe, on the rx capsfilter src pad (interleaved S16LE, rx_channels wide),
+  i.e. before deinterleave so one pass covers every endpoint on the stream (operators, phones,
+  ASR). Replaces an isolated single-sample impulse (see RX_CLICK_DEV in aes67_api.h) with the
+  average of its neighbours, or with the previous sample on the last frame of the buffer (no
+  lookahead across buffers). Normal audio, including genuinely clipped audio, changes smoothly
+  between samples and is left untouched.
+*/
+static GstPadProbeReturn rx_click_repair_probe(GstPad *pad, GstPadProbeInfo *info, gpointer userdata)
+{
+	g_stream_t *stream = (g_stream_t *)userdata;
+	GstBuffer *buf;
+	GstMapInfo map;
+	gint nch;
+
+	if (!stream || !stream->rx_click_repair || !(GST_PAD_PROBE_INFO_TYPE(info) & GST_PAD_PROBE_TYPE_BUFFER))
+		return GST_PAD_PROBE_OK;
+
+	nch = stream->rx_channels;
+	if (nch <= 0 || nch > MAX_IO_CHANNELS) return GST_PAD_PROBE_OK;
+
+	buf = GST_PAD_PROBE_INFO_BUFFER(info);
+	if (!buf) return GST_PAD_PROBE_OK;
+
+	buf = gst_buffer_make_writable(buf);
+	GST_PAD_PROBE_INFO_DATA(info) = buf;
+
+	if (!gst_buffer_map(buf, &map, GST_MAP_READWRITE)) return GST_PAD_PROBE_OK;
+	{
+		gint16 *pcm = (gint16 *)map.data;
+		gsize frames = map.size / (sizeof(gint16) * (gsize)nch);
+		guint64 repaired = 0;
+
+		for (gint c = 0; c < nch; c++) {
+			gint16 prev = stream->rx_click_prev[c];
+			for (gsize f = 0; f < frames; f++) {
+				gint16 *p = &pcm[f * nch + c];
+				gint v = *p;
+				if (f + 1 < frames) {
+					gint next = pcm[(f + 1) * nch + c];
+					gint avg = ((gint)prev + next) / 2;
+					gint dev = ABS(v - avg);
+					if (dev > RX_CLICK_DEV && ABS((gint)prev - next) < dev / 2) {
+						*p = (gint16)avg;
+						repaired++;
+					}
+				} else if (ABS(v - (gint)prev) > RX_CLICK_DEV && ABS(v) >= RX_CLICK_EDGE_MIN) {
+					*p = prev;
+					repaired++;
+				}
+				prev = *p;
+			}
+			stream->rx_click_prev[c] = prev;
+		}
+		if (repaired) stream->rx_clicks_repaired += repaired;
+	}
+	gst_buffer_unmap(buf, &map);
+	return GST_PAD_PROBE_OK;
+}
+
 static void deinterleave_pad_added(GstElement *deinterleave, GstPad *pad, gpointer userdata)
 {
 	g_stream_t *stream = (g_stream_t *)userdata;
@@ -902,6 +962,19 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			goto ddirRX_error;
 		}
 
+		// RX click repair on the interleaved S16LE output (probe lives as long as the pad/pipeline)
+		stream->rx_click_repair = data->rx_click_repair;
+		stream->rx_channels = data->channels;
+		{
+			GstPad *caps_src = gst_element_get_static_pad(capsfilter, "src");
+			if (caps_src) {
+				gst_pad_add_probe(caps_src, GST_PAD_PROBE_TYPE_BUFFER, rx_click_repair_probe, stream, NULL);
+				gst_object_unref(caps_src);
+			}
+		}
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "rx stream %s: click repair %s\n",
+						  data->name ? data->name : "?", data->rx_click_repair ? "on" : "off");
+
 
 		goto ddirRX_exit;
 
@@ -1285,8 +1358,7 @@ bksnd_continue:
 		g_atomic_int_set(&stream->clock_sync, 1);
 	}
 
-	for (guint ch = 0; ch < MAX_IO_CHANNELS; ch++) 
-		stream->leftover_bytes[ch] = 0;
+	// RX leftover now lives on each appsink (see rx_leftover_get), nothing to reset here
 	goto exit;
 
 error:
@@ -1753,6 +1825,26 @@ error:
 	return 0;
 }
 
+// Per-appsink partial-buffer carry-over for pull_buffers(). Attached to the appsink as GObject
+// data so it is created lazily and freed automatically when the appsink is destroyed
+// (remove_appsink / pipeline teardown) - no stale bytes survive into a new session.
+typedef struct {
+	gsize len;
+	unsigned char data[SWITCH_RECOMMENDED_BUFFER_SIZE];
+} rx_leftover_t;
+
+#define RX_LEFTOVER_KEY "aes67-rx-leftover"
+
+static rx_leftover_t *rx_leftover_get(GstElement *appsink)
+{
+	rx_leftover_t *lo = (rx_leftover_t *)g_object_get_data(G_OBJECT(appsink), RX_LEFTOVER_KEY);
+	if (!lo) {
+		lo = g_new0(rx_leftover_t, 1);
+		g_object_set_data_full(G_OBJECT(appsink), RX_LEFTOVER_KEY, lo, g_free);
+	}
+	return lo;
+}
+
 //
 // critical to manage threads properly here
 //
@@ -1763,6 +1855,7 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 	GstBuffer *buf = NULL;
 	GstSample *sample = NULL;
 	GstElement *appsink = NULL;
+	rx_leftover_t *lo = NULL;
 
 	gsize total_bytes = 0;
 	if (!stream || ch_idx >= MAX_IO_CHANNELS 
@@ -1808,11 +1901,19 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 	// likely true (packet is limited to MTU, while buflen is 8192)
 	// FIXME: revisit this to check whether we need this anymore
 
-	if (stream->leftover_bytes[ch_idx]) {
-		size_t copy = stream->leftover_bytes[ch_idx] <= needed_bytes ? stream->leftover_bytes[ch_idx] : needed_bytes;
-		memcpy(payload, stream->leftover[ch_idx], copy); // check
+	// Leftover is kept on the appsink itself (one appsink per session per channel), NOT per
+	// stream channel: several sessions can listen on the same RX channel through their own
+	// tee->queue->appsink branch, and a shared per-channel leftover spliced one session's tail
+	// bytes into another session's frame (a hard discontinuity = click).
+	lo = rx_leftover_get(appsink);
+	if (lo && lo->len) {
+		gsize copy = lo->len <= needed_bytes ? lo->len : needed_bytes;
+		memcpy(payload, lo->data, copy);
 		total_bytes += copy;
-		stream->leftover_bytes[ch_idx] -= copy;
+		lo->len -= copy;
+		// Shift any unconsumed remainder to the front; previously the next call re-read the
+		// already-consumed bytes from offset 0 (replayed stale audio).
+		if (lo->len) memmove(lo->data, lo->data + copy, lo->len);
 	}
 
 
@@ -1864,18 +1965,27 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 
 		gboolean r = gst_buffer_map(buf, &info, GST_MAP_READ);
 
-		if (r) {			
-			if (total_bytes + info.size > needed_bytes) {
+		if (r) {
+			gsize take = info.size;
+			if (total_bytes + take > needed_bytes) {
 				gsize want = needed_bytes - total_bytes;
-				stream->leftover_bytes[ch_idx] = info.size - want;
-				memcpy(stream->leftover[ch_idx], info.data + want, stream->leftover_bytes[ch_idx]);
-				info.size = want;
+				gsize extra = take - want;
+				if (lo) {
+					if (extra > sizeof(lo->data)) {
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+										  "pull_buffers: %s leftover %u bytes exceeds %u, truncated\n", name,
+										  (unsigned)extra, (unsigned)sizeof(lo->data));
+						extra = sizeof(lo->data);
+					}
+					memcpy(lo->data, info.data + want, extra);
+					lo->len = extra;
+				}
+				take = want;
 			}
-			memcpy(payload + total_bytes, info.data, info.size); // check
-			total_bytes += info.size;
+			memcpy(payload + total_bytes, info.data, take);
+			total_bytes += take;
+			gst_buffer_unmap(buf, &info); // only unmap a successful map
 		}
-
-		gst_buffer_unmap(buf, &info); //check
 		DA_gst_sample_unref(sample);
 		sample = NULL;
 	}
@@ -1963,7 +2073,11 @@ gchar *get_rtp_stats(g_stream_t *stream)
 	if (rtpjitbuf) {
 		GstStructure *stats = NULL;
 		g_object_get(G_OBJECT(rtpjitbuf), "stats", &stats, NULL);
-		stats_str = gst_structure_to_string(stats);	
+		gchar *jb_str = gst_structure_to_string(stats);
+		stats_str = g_strdup_printf("%s rx-click-repair=%s, clicks-repaired=%" G_GUINT64_FORMAT,
+									jb_str ? jb_str : "", stream->rx_click_repair ? "on" : "off",
+									(guint64)stream->rx_clicks_repaired);
+		g_free(jb_str);
 		DA_gst_structure_free(stats); // added
 
 		stats = NULL;

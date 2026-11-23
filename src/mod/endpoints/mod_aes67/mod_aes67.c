@@ -300,6 +300,7 @@ static struct {
 	char rtp_iface[NW_IFACE_LEN];
 	int rtp_payload_type;
 	int rtp_jitbuf_latency;
+	gboolean rx_click_repair; /* aes67.conf rx-click-repair, default on */
 	switch_bool_t enable_ptp_stats;
 	long long int ptp_stats_cb_id;
 	int level_report;
@@ -2646,6 +2647,8 @@ static switch_status_t load_globals(switch_xml_t cfg)
 				aes67_globals.rtp_payload_type = atoi(val);
 			} else if (!strcasecmp(var, "rtp-jitbuf-latency")) {
 				aes67_globals.rtp_jitbuf_latency = atoi(val);
+			} else if (!strcasecmp(var, "rx-click-repair")) {
+				aes67_globals.rx_click_repair = switch_true(val) ? TRUE : FALSE;
 			} else if (!strcmp(var, "level-report")) {
 				aes67_globals.level_report = switch_true(val);
 			}
@@ -2693,6 +2696,7 @@ static switch_status_t load_config(void)
 	aes67_globals.rtp_payload_type = 96; /* gstreamer default value*/
 	aes67_globals.ptp_stats_cb_id = -1;  /* default to -1 */
 	aes67_globals.rtp_jitbuf_latency = 10;
+	aes67_globals.rx_click_repair = TRUE;
 	memset(aes67_globals.ptp_iface, 0, NW_IFACE_LEN);
 
 	if (SWITCH_STATUS_SUCCESS != (status = load_globals(cfg))) { return status; }
@@ -2931,6 +2935,7 @@ int open_audio_stream(g_stream_t **stream, udp_sock_t *indev, udp_sock_t *outdev
 	data.rtp_iface = aes67_globals.rtp_iface;
 	data.rtp_payload_type = aes67_globals.rtp_payload_type;
 	data.rtp_jitbuf_latency = aes67_globals.rtp_jitbuf_latency;
+	data.rx_click_repair = aes67_globals.rx_click_repair;
 
 	*stream = create_pipeline(&data, error_callback);
 
@@ -2978,6 +2983,7 @@ int open_shared_audio_stream(shared_audio_stream_t *shstream)
 	data.rtp_iface = shstream->rtp_iface;
 	data.rtp_payload_type = shstream->rtp_payload_type;
 	data.rtp_jitbuf_latency = shstream->rtp_jitbuf_latency;
+	data.rx_click_repair = aes67_globals.rx_click_repair;
 	data.txdrop = !shstream->txflow;
 	data.ts_context_name = shstream->ts_context_name;
 	data.is_backup_sender = shstream->is_backup_sender;

@@ -99,6 +99,17 @@ try {
         }
     } catch { S "  vosk.conf.xml: ERROR $($_.Exception.Message)"; Write-Log "ERROR vosk.conf.xml: $($_.Exception.Message)" }
     S "  Other configuration files: kept; any missing file was provided from conf_defaults."
+
+    # --- Bundled Vosk engine (optional VoskASR feature, "Install the bundled Vosk ASR engine" checkbox) -----
+    S ""
+    S "ASR ENGINE (VoskASR service)"
+    if (Test-Path -LiteralPath (Join-Path $AppDir 'Vosk\Vosk_server.exe')) {
+        S "  Bundled Vosk engine: INSTALLED - VoskASR service (small en-us model) is set up and started."
+    } else {
+        S "  Bundled Vosk engine: NOT installed (checkbox left unticked)."
+        S "  NOTE: a running Vosk engine service is REQUIRED for ASR to function. Either re-run setup and tick"
+        S "  'Install the bundled Vosk ASR engine', or point conf\autoload_configs\vosk.conf.xml at a Vosk server elsewhere."
+    }
     if (Test-Path -LiteralPath $history) { S "  Replaced/previous files saved to: $history" }
 
     # --- vars.xml addresses (set from the IP page by SetIP.bat) ----------------------------------------------
