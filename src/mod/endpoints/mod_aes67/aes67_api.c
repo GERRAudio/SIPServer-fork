@@ -128,7 +128,7 @@ static GstCaps *request_pt_map(GstElement *jitterbuffer, guint pt, gpointer user
 	GstCaps *caps = GST_CAPS(user_data);
 	GstCaps *ret = NULL;
 
-	ret = AL_gst_caps_copy(caps);
+	ret = gst_caps_copy(caps); // ownership passes to rtpjitterbuffer, which frees it: not counted
 	gst_caps_set_simple(ret, "payload", G_TYPE_INT, pt, NULL);
 
 	return ret;
@@ -137,18 +137,31 @@ static GstCaps *request_pt_map(GstElement *jitterbuffer, guint pt, gpointer user
 static void destroy_caps(void *data, GClosure G_GNUC_UNUSED *closure)
 {
 	if (data != NULL) {
-		DA_gst_caps_unref(GST_CAPS(data));
+		gst_caps_unref(GST_CAPS(data)); // the closure's ref, handed over uncounted
 	}
 }
 #endif
+
+// Module-wide switch read by the probe on every buffer, so `aes67 reloadconf` takes effect on
+// running streams without rebuilding pipelines. Default on.
+static volatile gint rx_click_repair_on = 1;
+
+void set_rx_click_repair(gboolean on) { g_atomic_int_set(&rx_click_repair_on, on ? 1 : 0); }
+
+gboolean get_rx_click_repair(void) { return g_atomic_int_get(&rx_click_repair_on) ? TRUE : FALSE; }
 
 /*
   RX click repair probe, on the rx capsfilter src pad (interleaved S16LE, rx_channels wide),
   i.e. before deinterleave so one pass covers every endpoint on the stream (operators, phones,
   ASR). Replaces an isolated single-sample impulse (see RX_CLICK_DEV in aes67_api.h) with the
-  average of its neighbours, or with the previous sample on the last frame of the buffer (no
-  lookahead across buffers). Normal audio, including genuinely clipped audio, changes smoothly
+  average of its neighbours. Normal audio, including genuinely clipped audio, changes smoothly
   between samples and is left untouched.
+
+  One-sample delay line per channel: each buffer's last input sample is held back and decided
+  when the next buffer supplies its right-hand neighbour, so buffer edges get the same test as
+  every other sample (no edge special case). Done in place: output[f] = decide(prev_out,
+  input[f-1], input[f]), with input[-1] = the held sample; input[f] is read before it is
+  overwritten. Buffer size and timestamps are unchanged; the audio is 1 sample later.
 */
 static GstPadProbeReturn rx_click_repair_probe(GstPad *pad, GstPadProbeInfo *info, gpointer userdata)
 {
@@ -157,8 +170,13 @@ static GstPadProbeReturn rx_click_repair_probe(GstPad *pad, GstPadProbeInfo *inf
 	GstMapInfo map;
 	gint nch;
 
-	if (!stream || !stream->rx_click_repair || !(GST_PAD_PROBE_INFO_TYPE(info) & GST_PAD_PROBE_TYPE_BUFFER))
+	if (!stream || !(GST_PAD_PROBE_INFO_TYPE(info) & GST_PAD_PROBE_TYPE_BUFFER)) return GST_PAD_PROBE_OK;
+
+	if (!g_atomic_int_get(&rx_click_repair_on)) {
+		// pass-through (no delay); re-prime the delay line when switched back on
+		stream->rx_click_primed = FALSE;
 		return GST_PAD_PROBE_OK;
+	}
 
 	nch = stream->rx_channels;
 	if (nch <= 0 || nch > MAX_IO_CHANNELS) return GST_PAD_PROBE_OK;
@@ -175,26 +193,32 @@ static GstPadProbeReturn rx_click_repair_probe(GstPad *pad, GstPadProbeInfo *inf
 		gsize frames = map.size / (sizeof(gint16) * (gsize)nch);
 		guint64 repaired = 0;
 
-		for (gint c = 0; c < nch; c++) {
-			gint16 prev = stream->rx_click_prev[c];
+		if (frames > 0 && !stream->rx_click_primed) {
+			// first buffer (or repair just switched on): seed the delay line with the first sample,
+			// which therefore appears twice - a 1-sample repeat, inaudible
+			for (gint c = 0; c < nch; c++) stream->rx_click_prev[c] = stream->rx_click_held[c] = pcm[c];
+			stream->rx_click_primed = TRUE;
+		}
+
+		for (gint c = 0; c < nch && frames > 0; c++) {
+			gint prev = stream->rx_click_prev[c]; // last output sample
+			gint cur = stream->rx_click_held[c];  // sample being decided (1 behind the input)
 			for (gsize f = 0; f < frames; f++) {
 				gint16 *p = &pcm[f * nch + c];
-				gint v = *p;
-				if (f + 1 < frames) {
-					gint next = pcm[(f + 1) * nch + c];
-					gint avg = ((gint)prev + next) / 2;
-					gint dev = ABS(v - avg);
-					if (dev > RX_CLICK_DEV && ABS((gint)prev - next) < dev / 2) {
-						*p = (gint16)avg;
-						repaired++;
-					}
-				} else if (ABS(v - (gint)prev) > RX_CLICK_DEV && ABS(v) >= RX_CLICK_EDGE_MIN) {
-					*p = prev;
+				gint next = *p; // read input before overwriting it with the delayed output
+				gint avg = (prev + next) / 2;
+				gint dev = ABS(cur - avg);
+				gint out = cur;
+				if (dev > RX_CLICK_DEV && ABS(prev - next) < dev / 2) {
+					out = avg;
 					repaired++;
 				}
-				prev = *p;
+				*p = (gint16)out;
+				prev = out;
+				cur = next;
 			}
-			stream->rx_click_prev[c] = prev;
+			stream->rx_click_prev[c] = (gint16)prev;
+			stream->rx_click_held[c] = (gint16)cur;
 		}
 		if (repaired) stream->rx_clicks_repaired += repaired;
 	}
@@ -275,6 +299,7 @@ gboolean update_clock(gpointer userdata)			//is this a (critical) section?
 	}
 
 	g_object_get(G_OBJECT(rtpdepay), "stats", &stats, NULL);		//allocates
+	if (stats) AL_cnt_structs(stats); // accounting: freed with DA_gst_structure_free
 
 	if (gst_structure_get_uint(stats, "timestamp", &rtp_timestamp)) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "rtp timestamp in rtpdepay %u\n", rtp_timestamp);
@@ -602,7 +627,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 
 	g_rec_mutex_lock(ch_mutex);
 	NAME_SESSION_ELEMENT(name, "appsink", ch_idx, session);
-	appsink_element = gst_bin_get_by_name(GST_BIN(stream->pipeline), name);
+	appsink_element = AL_gst_bin_get_by_name(GST_BIN(stream->pipeline), name); // released with DA_ below
 
 
 	if (appsink_element) {
@@ -611,6 +636,7 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session)
 		while (!gst_app_sink_is_eos(GST_APP_SINK(appsink_element))) {
 			sample = gst_app_sink_try_pull_sample(GST_APP_SINK(appsink_element), timeout);
 			if (sample) {
+				AL_cnt_samples(sample); // accounting: freed with DA_ below
 				DA_gst_sample_unref(sample);
 				sample = NULL;
 			} else {
@@ -819,7 +845,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		ts_ctx = data->ts_context_name;
 
 	stream->ts_ctx = ts_ctx;
-	pipeline = gst_pipeline_new(pipeline_name);		// allocates memory!
+	pipeline = AL_gst_pipeline_new(pipeline_name); // counted; handed to the stream at exit:		// allocates memory!
 	if (!pipeline) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to create the pipeline\n");
 		goto error;
@@ -855,7 +881,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		if (data->rx_codec == L16) {
 			rtpdepay = AL_gst_element_factory_make("rtpL16depay", RTP_DEPAY);
-			udp_caps = gst_caps_new_simple("application/x-rtp", 
+			udp_caps = AL_gst_caps_new_simple("application/x-rtp", 
 					"clock-rate", G_TYPE_INT, data->sample_rate, 
 					"channels",	G_TYPE_INT, data->channels, 
 					"channel-order", G_TYPE_STRING, "unpositioned",
@@ -866,7 +892,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			}
 		} else {
 			rtpdepay = AL_gst_element_factory_make("rtpL24depay", RTP_DEPAY);
-			udp_caps =	gst_caps_new_simple("application/x-rtp", 
+			udp_caps =	AL_gst_caps_new_simple("application/x-rtp", 
 			"clock-rate", G_TYPE_INT, data->sample_rate, 
 			"channels",	G_TYPE_INT, data->channels, 
 			"channel-order", G_TYPE_STRING, "unpositioned",
@@ -896,7 +922,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		capsfilter = AL_gst_element_factory_make("capsfilter", "rx-caps");
 
 		/*Always feed S16LE to the FS*/
-		rx_caps = gst_caps_new_simple("audio/x-raw", 
+		rx_caps = AL_gst_caps_new_simple("audio/x-raw", 
 			"channels", G_TYPE_INT, data->channels, 
 			"format", G_TYPE_STRING, "S16LE",
 			"layout", G_TYPE_STRING, "interleaved",
@@ -963,7 +989,6 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		}
 
 		// RX click repair on the interleaved S16LE output (probe lives as long as the pad/pipeline)
-		stream->rx_click_repair = data->rx_click_repair;
 		stream->rx_channels = data->channels;
 		{
 			GstPad *caps_src = gst_element_get_static_pad(capsfilter, "src");
@@ -973,7 +998,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			}
 		}
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "rx stream %s: click repair %s\n",
-						  data->name ? data->name : "?", data->rx_click_repair ? "on" : "off");
+						  data->name ? data->name : "?", get_rx_click_repair() ? "on" : "off");
 
 
 		goto ddirRX_exit;
@@ -1078,7 +1103,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 			}
 
 			/*Always accept S16LE from the FS*/
-			caps = gst_caps_new_simple("audio/x-raw", 
+			caps = AL_gst_caps_new_simple("audio/x-raw", 
 				"rate", G_TYPE_INT, data->sample_rate, 
 				"channels", G_TYPE_INT, 1,
 				"format", G_TYPE_STRING, "S16LE", 
@@ -1114,7 +1139,7 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 
 		udpsink = AL_gst_element_factory_make("udpsink", "tx-sink");
 
-		caps = gst_caps_new_simple("audio/x-raw", 
+		caps = AL_gst_caps_new_simple("audio/x-raw", 
 			"rate", G_TYPE_INT, data->sample_rate, 
 			"channels", G_TYPE_INT,  data->channels, 
 			"format", G_TYPE_STRING, "S16LE", 
@@ -1226,14 +1251,14 @@ g_stream_t *create_pipeline(pipeline_data_t *data, event_callback_t *error_cb)
 		fakesink = AL_gst_element_factory_make("fakesink", "tx-monitor-fakesink");
 
 		if (data->tx_codec == L16) {
-				caps =	gst_caps_new_simple("application/x-rtp", 
+				caps =	AL_gst_caps_new_simple("application/x-rtp", 
 				"clock-rate", G_TYPE_INT, data->sample_rate, 
 				"channels",	G_TYPE_INT, data->channels, 
 				"channel-order", G_TYPE_STRING, "unpositioned",
 				"encoding-name", G_TYPE_STRING, "L16", 
 				"media", G_TYPE_STRING, "audio", NULL);
 		} else {
-				caps = gst_caps_new_simple("application/x-rtp", 
+				caps = AL_gst_caps_new_simple("application/x-rtp", 
 				"clock-rate", G_TYPE_INT, data->sample_rate, 
 				"channels",	G_TYPE_INT, data->channels, 
 				"channel-order", G_TYPE_STRING, "unpositioned",
@@ -1424,11 +1449,9 @@ void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock)		//locked by caller
 		stream->cb_rx_stats_id = 0;
 	}
 
-	if (stream->clock) {
-		DA_gst_object_unref(GST_OBJECT(stream->clock)); // added check
+	if (stream->clock) { // not counted: already uncounted at create_pipeline exit
+		gst_object_unref(GST_OBJECT(stream->clock));
 		stream->clock = NULL;
-	} else {
-		DA_NoNulling_dec_objs(GST_OBJECT(stream->clock)); // accounting
 	}
  
 	gst_pipeline_use_clock(GST_PIPELINE(stream->pipeline), ptp_clock);		
@@ -1626,6 +1649,7 @@ void stop_pipeline(g_stream_t *stream)
 
 			// Aggressive drain with timeout
 			while ((sample = gst_app_sink_try_pull_sample(GST_APP_SINK(element), 50 * GST_MSECOND))) {
+				AL_cnt_samples(sample); // accounting: freed with DA_ below
 				DA_gst_sample_unref(sample);
 				drained++;
 				if (drained > 1000) 
@@ -1656,16 +1680,14 @@ void stop_pipeline(g_stream_t *stream)
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Unable to stop pipeline ..\n");
 	}
 
-	// UNREF PIPELINE (frees everything)
-	DA_gst_object_unref(GST_OBJECT(stream->pipeline));
+	// UNREF PIPELINE (frees everything) - not counted: already uncounted at create_pipeline exit
+	gst_object_unref(GST_OBJECT(stream->pipeline));
 	stream->pipeline = NULL;
 
-	// CLEANUP CLOCK
+	// CLEANUP CLOCK - not counted: already uncounted at create_pipeline exit
 	if (stream->clock) {
-		DA_gst_object_unref(GST_OBJECT(stream->clock));
+		gst_object_unref(GST_OBJECT(stream->clock));
 		stream->clock = NULL;
-	} else {
-		DA_NoNulling_dec_objs(GST_OBJECT(stream->clock)); // accounting
 	}
 
 	// MAINLOOP + THREADS
@@ -1898,8 +1920,8 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 	}
 
 	// Note: assumes leftover_bytes will never be more than buflen, which is
-	// likely true (packet is limited to MTU, while buflen is 8192)
-	// FIXME: revisit this to check whether we need this anymore
+	// likely true (packet is limited to MTU, while buflen is 8192); guarded below - an oversize
+	// remainder is truncated and logged
 
 	// Leftover is kept on the appsink itself (one appsink per session per channel), NOT per
 	// stream channel: several sessions can listen on the same RX channel through their own
@@ -1936,13 +1958,14 @@ int pull_buffers(g_stream_t *stream, unsigned char *payload,
 			break;
 		}
 
+		AL_cnt_samples(sample); // count the successful allocation BEFORE any DA_ unref below
+
 		if (!g_atomic_int_get(&stream->pipeline_active)) {
 			DA_gst_sample_unref(sample); 
 			sample = NULL;
 			break;
 		}
 
-		AL_cnt_samples(sample);					// count the successful allocation
 		buf = gst_sample_get_buffer(sample);	 // no alloc no count
 												
 		if (!g_atomic_int_get(&stream->pipeline_active)) {
@@ -2073,9 +2096,10 @@ gchar *get_rtp_stats(g_stream_t *stream)
 	if (rtpjitbuf) {
 		GstStructure *stats = NULL;
 		g_object_get(G_OBJECT(rtpjitbuf), "stats", &stats, NULL);
+		if (stats) AL_cnt_structs(stats); // accounting: freed with DA_gst_structure_free
 		gchar *jb_str = gst_structure_to_string(stats);
 		stats_str = g_strdup_printf("%s rx-click-repair=%s, clicks-repaired=%" G_GUINT64_FORMAT,
-									jb_str ? jb_str : "", stream->rx_click_repair ? "on" : "off",
+									jb_str ? jb_str : "", get_rx_click_repair() ? "on" : "off",
 									(guint64)stream->rx_clicks_repaired);
 		g_free(jb_str);
 		DA_gst_structure_free(stats); // added

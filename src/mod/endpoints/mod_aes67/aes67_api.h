@@ -56,16 +56,15 @@ typedef struct {
 	char *ts_context_name;
 	gboolean is_backup_sender;
 	int backup_sender_idle_wait_ms;
-	gboolean rx_click_repair; // repair isolated single-sample spikes on RX (aes67.conf rx-click-repair, default on)
 } pipeline_data_t;
 
 // RX click repair: Dante delivers isolated single-sample spikes with the top bits set
 // (seen as -32768 and -16384/-17409 on otherwise silent channels). A sample that deviates from the
 // average of its two neighbours by more than RX_CLICK_DEV, while those neighbours agree with each
 // other, is a single-sample impulse (energy at ~Nyquist) that mic/intercom audio does not contain.
-// On the last frame of a buffer (no lookahead) it must also be at least RX_CLICK_EDGE_MIN in size.
+// The stream is delayed by ONE sample per channel so every sample, including the last one of each
+// buffer, is judged with both real neighbours (+20.8 us latency at 48 kHz).
 #define RX_CLICK_DEV 8192
-#define RX_CLICK_EDGE_MIN 16000
 
 struct g_stream {
 	GstPipeline *pipeline;
@@ -88,9 +87,10 @@ struct g_stream {
 	GRecMutex appsrc_mutexes[MAX_IO_CHANNELS]; // One per channel added - self init
 	volatile gint pipeline_elements_count;	   // Track elements added to pipeline
 	// RX click repair state (written only by the RX streaming thread)
-	gboolean rx_click_repair;
 	gint rx_channels;
-	gint16 rx_click_prev[MAX_IO_CHANNELS]; // last sample of previous buffer, per channel
+	gboolean rx_click_primed;			   // delay line valid (reset while repair is switched off)
+	gint16 rx_click_prev[MAX_IO_CHANNELS]; // last OUTPUT sample, per channel
+	gint16 rx_click_held[MAX_IO_CHANNELS]; // last INPUT sample, not yet output (1-sample delay)
 	volatile guint64 rx_clicks_repaired;
 };
 
@@ -111,6 +111,10 @@ gboolean remove_appsink(g_stream_t *stream, guint ch_idx, gchar *session);
 void use_ptp_clock(g_stream_t *stream, GstClock *ptp_clock);
 void dump_pipeline(GstPipeline *pipe, const char *name);
 // void account_pipeline_children(g_stream_t *stream);
+// RX click repair on/off for ALL rx streams, applied live (aes67.conf rx-click-repair, default on)
+void set_rx_click_repair(gboolean on);
+gboolean get_rx_click_repair(void);
+
 void CompactHeaps(void);
 void TrimCurrentProcessWorkingSet(void);
 

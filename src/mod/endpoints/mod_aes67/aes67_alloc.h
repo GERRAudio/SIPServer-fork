@@ -165,7 +165,7 @@ inline void g_atomic_int_dec(int *i) { g_atomic_int_add(i, -1); }
 #define COUNT_OBJS 1
 #ifdef COUNT_OBJS
 #define G_WRAP_DECNN(counter, name, t, p)                                                                              \
-	inline void DA_NoNulling_##name(t p) { accounting_decr(g_alloc_counts.counter); }
+	inline void DA_NoNulling_##name(t p) { if (p) accounting_decr(g_alloc_counts.counter); /* NULL was never counted */ }
 #else
 #define G_WRAP_DECNN(counter, name, t, p)                                                                              \
 	inline void DA_NoNulling_##name(t p) { ; }
@@ -339,7 +339,7 @@ inline GstStructure *AL_gst_structure_new(const gchar *name, const gchar *first,
 	va_start(args, first);
 	GstStructure *s = gst_structure_new_valist(name, first, args);
 	va_end(args);
-	if (s) g_alloc_counts.structs++;
+	if (s) accounting_incr(g_alloc_counts.structs);
 	return s;
 }
 
@@ -355,7 +355,7 @@ G_WRAP_DEC(caps, dec_caps, GstCaps *, p)
 G_WRAP_DEC(samples, dec_samples, GstSample *, p)
 
 // G_WRAP_INC(objs, cnt_objs, GstObject *, p)
-G_WRAP_INC(objs, cnt_caps, GstCaps *, p)
+G_WRAP_INC(caps, cnt_caps, GstCaps *, p) // was counting into objs
 
 G_WRAP_ALLOC(GstBus *, gst_pipeline_get_bus, objs, GstPipeline *, b)
 G_WRAP_ALLOC2(GstElement *, gst_bin_get_by_name, objs, GstBin *, bin, const gchar *, n)
@@ -397,6 +397,20 @@ G_WRAP_FREE(gst_sample_unref, samples, GstSample *)
 G_WRAP_FREE(gst_caps_unref, caps, GstCaps *)
 G_WRAP_ALLOC(GstCaps *, gst_caps_copy, caps, GstCaps *, c)
 
+// gst_caps_new_simple() is variadic: same construction as GStreamer's own implementation
+inline GstCaps *AL_gst_caps_new_simple(const char *media_type, const char *fieldname, ...)
+{
+	va_list args;
+	GstStructure *st;
+	GstCaps *c;
+	va_start(args, fieldname);
+	st = gst_structure_new_valist(media_type, fieldname, args);
+	va_end(args);
+	c = st ? gst_caps_new_full(st, NULL) : NULL; // takes ownership of st
+	if (c) accounting_incr(g_alloc_counts.caps);
+	return c;
+}
+
 // --- buffer wrapper ---
 G_WRAP_FREE(gst_buffer_unref, bufs, GstBuffer *)
 // G_WRAP_ALLOC(GstBuffer *, gst_sample_get_buffer, bufs, GstBuffer *, b)
@@ -417,7 +431,7 @@ inline GstClock *AL_g_object_new_clock(GType object_type, const gchar *first_pro
 	va_start(args, first_prop);
 	GstClock *clock = (GstClock *)g_object_new_valist(object_type, first_prop, args);
 	va_end(args);
-	if (clock) g_alloc_counts.objs++;
+	if (clock) accounting_incr(g_alloc_counts.objs);
 	return clock;
 }
 #endif

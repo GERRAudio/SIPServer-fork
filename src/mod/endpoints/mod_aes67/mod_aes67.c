@@ -2053,13 +2053,9 @@ void clock_synced_cb(GstClock *ptp_clock, gboolean synced, void *data)
 	if (!synced) return;
 
 	if (aes67_globals.clock != ptp_clock) {
-		if (aes67_globals.clock) {
-			DA_gst_object_unref(GST_OBJECT(aes67_globals.clock));
+		if (aes67_globals.clock) { // not counted: load_config already handed it over
+			gst_object_unref(GST_OBJECT(aes67_globals.clock));
 			aes67_globals.clock = NULL;
-		} 
-		else {
-			// accounting
-			DA_NoNulling_dec_objs(aes67_globals.clock);
 		}
 		// No ref needed, we are taking over the reference from init_ptp()
 		aes67_globals.clock = ptp_clock;
@@ -2700,6 +2696,7 @@ static switch_status_t load_config(void)
 	memset(aes67_globals.ptp_iface, 0, NW_IFACE_LEN);
 
 	if (SWITCH_STATUS_SUCCESS != (status = load_globals(cfg))) { return status; }
+	set_rx_click_repair(aes67_globals.rx_click_repair); // before streams are created
 
 	if (aes67_globals.ptp_domain >= 0) {
 		void *ptp_clock = init_ptp(aes67_globals.ptp_domain, aes67_globals.ptp_iface);
@@ -2774,12 +2771,9 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_aes67_shutdown)
 	destroy_codecs();
 	gst_ptp_deinit();
 
-	if (aes67_globals.clock) {
-		DA_gst_object_unref(GST_OBJECT(aes67_globals.clock));
+	if (aes67_globals.clock) { // not counted: load_config already handed it over
+		gst_object_unref(GST_OBJECT(aes67_globals.clock));
 		aes67_globals.clock = NULL;
-	} else {
-		// accounting
-		DA_NoNulling_dec_objs(aes67_globals.clock);
 	}
 
 	switch_core_hash_destroy(&aes67_globals.call_hash);
@@ -2935,7 +2929,6 @@ int open_audio_stream(g_stream_t **stream, udp_sock_t *indev, udp_sock_t *outdev
 	data.rtp_iface = aes67_globals.rtp_iface;
 	data.rtp_payload_type = aes67_globals.rtp_payload_type;
 	data.rtp_jitbuf_latency = aes67_globals.rtp_jitbuf_latency;
-	data.rx_click_repair = aes67_globals.rx_click_repair;
 
 	*stream = create_pipeline(&data, error_callback);
 
@@ -2983,7 +2976,6 @@ int open_shared_audio_stream(shared_audio_stream_t *shstream)
 	data.rtp_iface = shstream->rtp_iface;
 	data.rtp_payload_type = shstream->rtp_payload_type;
 	data.rtp_jitbuf_latency = shstream->rtp_jitbuf_latency;
-	data.rx_click_repair = aes67_globals.rx_click_repair;
 	data.txdrop = !shstream->txflow;
 	data.ts_context_name = shstream->ts_context_name;
 	data.is_backup_sender = shstream->is_backup_sender;
@@ -3384,7 +3376,12 @@ static switch_status_t reload_config()
 	}
 
 	// Not setting default values here they will be set already in load_config
+	// ...except rx-click-repair: a param removed from the file must fall back to the default (on),
+	// and the result is applied live to running streams
+	aes67_globals.rx_click_repair = TRUE;
 	if (SWITCH_STATUS_SUCCESS != (status = load_globals(cfg))) { return status; }
+	set_rx_click_repair(aes67_globals.rx_click_repair);
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "rx click repair %s\n", aes67_globals.rx_click_repair ? "on" : "off");
 
 	if ((streams = switch_xml_child(cfg, "streams"))) { load_streams(streams, TRUE); }
 
