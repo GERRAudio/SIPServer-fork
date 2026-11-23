@@ -1,4 +1,4 @@
-// Version Date: 2026-11-19
+// Version Date: 2026-11-22
 //
 // Compiled at load by mod_managed with the .NET Framework C# compiler (CodeDom "v4.0"): C# 5 syntax only
 // (no $"" strings, ?. , => members, tuples or nameof).
@@ -61,6 +61,33 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
     // 1 while a PeriodicCheck tick is running: an overlapping tick is skipped (same 10 s cadence, no overlap).
     private int periodicCheckRunning = 0;
 
+    // NOTE: mod_managed creates a NEW instance of this class for every API/dialplan call; only the instance
+    // that ran Load() owns the timers. State that must survive between calls is therefore static.
+
+    // Startup clean-up of phone bridges in Communicator (TryStartupCleanup): retried from PeriodicCheck
+    // until IIS answers, because SIPServer and IIS start in no guaranteed order.
+    private static volatile bool startupCleanupDone = false;
+    private static int startupCleanupAttempts = 0;
+
+    // BeltpackMessages (the A-button beep) restart gate, shared by the PeriodicCheck poll and the hang-up hook
+    private static int beltpackRestarting = 0;
+    private static DateTime lastBeltpackHookRestart = DateTime.MinValue;
+    private const string BeltpackMessagesLostCommand = "beltpackmessageslost";
+
+    // Every HTTP call to Communicator uses this timeout (WebClient's default is 100 s, which blocked the calling
+    // FreeSWITCH API/dialplan thread while IIS was starting or hung).
+    internal const int CommunicatorHttpTimeoutMs = 8000;
+
+    internal class CommunicatorWebClient : WebClient
+    {
+        protected override WebRequest GetWebRequest(Uri address)
+        {
+            WebRequest request = base.GetWebRequest(address);
+            if (request != null) request.Timeout = CommunicatorHttpTimeoutMs;
+            return request;
+        }
+    }
+
     public bool Load()
     {
         WriteToLog(LogLevel.Info, "Loading CommunicatorConnector.");
@@ -69,9 +96,9 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         var firstdigit = fsApi.ExecuteString("eval ${FirstNumber}");
         WriteToLog(LogLevel.Info, "Valid first conference numbers are: " + firstdigit);
         
-        CleanOutPhoneConferences();
-        WriteToLog(LogLevel.Info, "Cleaned out phone conferences");
-        
+        // Fire and forget: the first attempt must not delay Load(); PeriodicCheck retries until IIS answers
+        Task.Run(() => TryStartupCleanup());
+
         DelayExecutionUntilAfterLoad.Elapsed += this.StartScheduledTasks;
         DelayExecutionUntilAfterLoad.Start();
         
@@ -88,7 +115,8 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         try
         {
             CheckChannelListSyncsWithConferenceList();
-            EnsureBeltpackMessagesAlive(); //the beep generator
+            EnsureBeltpackMessagesAlive("periodic check"); //the beep generator (fallback; the hang-up hook is immediate)
+            if (!startupCleanupDone) TryStartupCleanup();
         }
         finally
         {
@@ -96,38 +124,70 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         }
     }
 
-    private volatile bool _beltpackMessagesRestarting = false;
-    private void EnsureBeltpackMessagesAlive()
+    private bool BeltpackMessagesAlive()
     {
-        if (_beltpackMessagesRestarting) return;
+        var channels = fsApi.ExecuteString("show channels as xml");
+        return channels != null &&
+            channels.IndexOf(moduleName + "/endpoint-BeltpackMessages", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    // (Re)starts the BeltpackMessages beep call if it is not running. One restart at a time (static gate shared by
+    // the 10 s poll and the hang-up hook), and the gate is held until the new channel shows up (max 3 s), so the
+    // two paths cannot start two beep calls.
+    private void EnsureBeltpackMessagesAlive(string why)
+    {
+        if (System.Threading.Interlocked.CompareExchange(ref beltpackRestarting, 1, 0) != 0) return;
         try
         {
-            var channels = fsApi.ExecuteString("show channels as xml");
-            bool alive = channels != null &&
-                channels.IndexOf(moduleName + "/endpoint-BeltpackMessages", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (BeltpackMessagesAlive()) return;
 
-            if (!alive)
-            {
-                _beltpackMessagesRestarting = true;
-                //WriteToLog(LogLevel.Warning, "BeltpackMessages channel missing - re-originating.");
-                MakeCall("BeltpackMessages", "&endless_playback(single_beep_silence.wav)").Wait();
-            }
+            WriteToLog(LogLevel.Warning, "BeltpackMessages channel missing (" + why + ") - re-originating.");
+            // The hang-up hook restarts the beep immediately if the call drops (the poll is only the fallback)
+            MakeCall("BeltpackMessages", "&endless_playback(single_beep_silence.wav)",
+                     "api_hangup_hook='managed CommunicatorConnector " + BeltpackMessagesLostCommand + "'").Wait();
+
+            for (int i = 0; i < 15 && !BeltpackMessagesAlive(); i++) System.Threading.Thread.Sleep(200);
+            if (!BeltpackMessagesAlive())
+                WriteToLog(LogLevel.Warning, "BeltpackMessages channel did not come up within 3 s (" + why + ").");
         }
         catch (Exception ex) { WriteToLog(LogLevel.Error, "EnsureBeltpackMessagesAlive failed: " + ex.Message); }
-        finally { _beltpackMessagesRestarting = false; }
+        finally { System.Threading.Interlocked.Exchange(ref beltpackRestarting, 0); }
+    }
+
+    // Hang-up hook of the BeltpackMessages call ("managed CommunicatorConnector beltpackmessageslost"). Restarts the
+    // beep at once instead of waiting up to 10 s for the poll. Rate-limited to one restart per 2 s so a call that
+    // cannot stay up (e.g. missing wav, aes67 not ready) does not loop; the 10 s poll keeps trying after that.
+    private string OnBeltpackMessagesLost()
+    {
+        bool tooSoon;
+        lock (StateLock)
+        {
+            tooSoon = (DateTime.UtcNow - lastBeltpackHookRestart).TotalMilliseconds < 2000;
+            if (!tooSoon) lastBeltpackHookRestart = DateTime.UtcNow;
+        }
+        if (tooSoon)
+        {
+            WriteToLog(LogLevel.Warning, "BeltpackMessages hung up again within 2 s - leaving the restart to the 10 s check.");
+            return "rate limited";
+        }
+
+        // Not on the hook's thread: let the hang-up finish first (the channel is still listed while it runs)
+        Task.Delay(300).ContinueWith(t => EnsureBeltpackMessagesAlive("hang-up hook"));
+        return "restart scheduled";
     }
 
 
 
-    // ---- Permanent calls --------------------------------------------------------------------------------------
-    // Two calls must run all the time (essential - do not change their timing):
-    //   Announce         aes67/endpoints/Announce -> 99991: the broadcast/all-call stream. Started once 5 s after
-    //                    load (DelayExecutionUntilAfterLoad). "reloadallcall" (RefreshPortAudioAllCall) replaces it
-    //                    with a new Announce -> 99996 call, bridging the gap with a temporary call on a free Phone_.
-    //                    Nothing restarts it if it drops (the dialplan's LostBroadcastAnnounce hook has no handler).
+    // ---- Startup calls ----------------------------------------------------------------------------------------
     //   BeltpackMessages aes67/endpoints/BeltpackMessages -> endless_playback(single_beep_silence.wav): the beep
-    //                    a beltpack hears when its button is pressed. Started 5 s after load and re-originated by
-    //                    the 10 s PeriodicCheck whenever its channel is missing (EnsureBeltpackMessagesAlive).
+    //                    a beltpack hears when its button is pressed (must always run). Started 5 s after load;
+    //                    restarted immediately by its hang-up hook (beltpackmessageslost) and, as a fallback, by
+    //                    the 10 s PeriodicCheck whenever its channel is missing.
+    //   Announce         aes67/endpoints/Announce -> 99991: the old broadcast/all-call stream (Icecast). Its dialplan
+    //                    extension (Broadcast_Announce, default.xml) is commented out, so this call currently goes
+    //                    to NO_ROUTE and hangs up at once; the same applies to 99996 used by "reloadallcall".
+    //                    Per-conference Announce ("conference N dial aes67/endpoints/Announce") is not affected.
+    //                    The result is now verified and logged truthfully. (Pending decision: remove or re-route.)
     public void StartScheduledTasks(object sender, ElapsedEventArgs e)
     {
         DelayExecutionUntilAfterLoad.Stop();
@@ -138,7 +198,16 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
             id = MakeCall("Announce", "99991").Result;
             if (!id.Equals(Guid.Empty))
             {
-                WriteToLog(LogLevel.Info, "Successfully made Announce call - ID is " + id);
+                // bgapi only queues the originate: check after 2 s whether the call actually stayed up
+                Guid announceId = id;
+                Task.Delay(2000).ContinueWith(t =>
+                {
+                    string exists = fsApi.ExecuteString("uuid_exists " + announceId);
+                    if (exists != null && exists.Trim() == "true")
+                        WriteToLog(LogLevel.Info, "Announce call is up - ID is " + announceId);
+                    else
+                        WriteToLog(LogLevel.Warning, "Announce call " + announceId + " to 99991 did not stay up (no dialplan route for 99991?).");
+                });
             }
         }
         catch (Exception ex)
@@ -146,27 +215,22 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
             WriteToLog(LogLevel.Error, "Failed to add announce call - error was " + ex.Message);
         }
 
-        try
-        {
-            // this is why pressing the A button beeps immediately
-            id = MakeCall("BeltpackMessages", "&endless_playback(single_beep_silence.wav)").Result;
-            if (!id.Equals(Guid.Empty))
-            {
-                WriteToLog(LogLevel.Info, "Successfully made BeltpackMessages call - ID is " + id);
-            }
-        }
-        catch (Exception ex)
-        {
-            WriteToLog(LogLevel.Error, "Failed to add beltpack message call - error was " + ex.Message);
-        }
+        // this is why pressing the A button beeps immediately
+        EnsureBeltpackMessagesAlive("startup");
     }
 
     internal async Task<Guid> MakeCall(string portAudioInterface, string destination)
     {
-        return MakeCall(portAudioInterface, destination, 0).Result;
+        return MakeCall(portAudioInterface, destination, null, 0).Result;
     }
 
-    internal async Task<Guid> MakeCall(string portAudioInterface, string destination, int attempts)
+    // extraVars: optional originate channel variables, e.g. "api_hangup_hook='managed ...'" (no braces)
+    internal async Task<Guid> MakeCall(string portAudioInterface, string destination, string extraVars)
+    {
+        return MakeCall(portAudioInterface, destination, extraVars, 0).Result;
+    }
+
+    internal async Task<Guid> MakeCall(string portAudioInterface, string destination, string extraVars, int attempts)
     {
         if (attempts > 5)
         {
@@ -176,8 +240,10 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
 
         var newID = fsApi.ExecuteString("create_uuid");
         WriteToLog(LogLevel.Info, "Spawning snappy background origination link for UUID: " + newID);
-        
-        string allCallAttempt1Result = fsApi.Execute("bgapi", "originate {origination_uuid=" + newID + "}" + moduleName + "/endpoints/" + portAudioInterface + " " + destination);
+
+        string vars = "origination_uuid=" + newID;
+        if (!String.IsNullOrEmpty(extraVars)) vars += "," + extraVars;
+        string allCallAttempt1Result = fsApi.Execute("bgapi", "originate {" + vars + "}" + moduleName + "/endpoints/" + portAudioInterface + " " + destination);
         WriteToLog(LogLevel.Info, "Background call launched: " + allCallAttempt1Result);
 
         Guid uuid = Guid.Empty;
@@ -186,26 +252,42 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
             return uuid;
         }
         
-        return MakeCall(portAudioInterface, destination, ++attempts).Result;
+        return MakeCall(portAudioInterface, destination, extraVars, ++attempts).Result;
     }
 
-    // Requires IIS/Communicator to be up and running. If IIS is restarted, there is no need to clean out phone bridges.
-    // Made Async 3.28.26 so it's fire and forget - if IIS isn't running, we don't care if it succeeds
-    internal void CleanOutPhoneConferences()
+    // Startup clean-up: asks Communicator to take every Phone (Dante/AES67) port out of the matrix conferences
+    // (CleanUpAllPhoneBridges - unconditional on the Communicator side), because a SIPServer restart dropped all
+    // the calls those routes belonged to. Needs IIS: SIPServer and IIS start in no guaranteed order, so the first
+    // attempt runs at load and PeriodicCheck retries every 10 s until IIS answers.
+    // It is only sent while SIPServer has NO Phone_ channels: once a Phone_ call exists, Communicator may already
+    // have routed it, and the clean-up would cut it. In that case it is abandoned (Communicator's own orphan
+    // handling covers stale routes). If IIS is restarted on its own, there is no need to clean out phone bridges.
+    internal void TryStartupCleanup()
     {
-        string apiUrl = String.Format(apiServer + "phone/CleanUpAllPhoneBridges/on/Start-Up");
-        WriteToLog(LogLevel.Warning, apiUrl);
-            
+        if (startupCleanupDone) return;
+        int attempt = System.Threading.Interlocked.Increment(ref startupCleanupAttempts);
+        string apiUrl = apiServer + "phone/CleanUpAllPhoneBridges/on/Start-Up";
+
         try
         {
-            using (WebClient client = new WebClient())
+            var channels = fsApi.ExecuteString("show channels as xml");
+            if (channels != null && channels.IndexOf(moduleName + "/endpoint-Phone_", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                client.DownloadStringAsync(new Uri(apiUrl));
+                startupCleanupDone = true;
+                WriteToLog(LogLevel.Warning, "Startup phone-bridge clean-up abandoned after " + attempt +
+                    " attempt(s): Phone_ calls already exist, so Communicator may have routed them.");
+                return;
             }
-        } 
+
+            string response = HttpGet(apiUrl);
+            startupCleanupDone = true;
+            WriteToLog(LogLevel.Notice, "Startup phone-bridge clean-up done on attempt " + attempt + ": " + apiUrl + " -> " + response);
+        }
         catch (Exception ex)
         {
-            WriteToLog(LogLevel.Warning, ex.Message);
+            // first failure, then once a minute (every 6th 10 s tick)
+            if (attempt == 1 || attempt % 6 == 0)
+                WriteToLog(LogLevel.Warning, "Startup phone-bridge clean-up attempt " + attempt + " failed (IIS not up yet?): " + ex.Message + " - retrying every 10 s.");
         }
     }
 
@@ -443,40 +525,36 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         WriteToLog(LogLevel.Warning, apiUrl);
 
         var response = "FAILURE";
-        
+
+        // SIPServer side first and unconditionally: before, the Phone_ channel was only hung up after Communicator
+        // answered, so with IIS down/restarting the channel stayed in the conference and kept its port.
+        HangUpChannel(interfaceName);
+
         try
         {
-            using (WebClient client = new WebClient())
-            {
-                response = client.DownloadString(apiUrl);
-                WriteToLog(LogLevel.Warning, response);
-
-                HangUpChannel(interfaceName);
-
-                // Fire and forget (Communicator may be down): 500 ms later, send the forced hang-up twice.
-                // Uses its own WebClient: 'client' is disposed when this using block ends, before the delay is over.
-                Task.Delay(500).ContinueWith(t =>
-                {
-                    try
-                    {
-                        using (WebClient forceClient = new WebClient())
-                        {
-                            string forced = forceClient.DownloadString(apiUrl + "?force=" + conferenceName);
-                            forced = forceClient.DownloadString(apiUrl + "?force=" + conferenceName);
-                            WriteToLog(LogLevel.Info, "Second attempt: " + apiUrl + " = " + forced);
-                        }
-                    }
-                    catch (Exception forceEx)
-                    {
-                        WriteToLog(LogLevel.Warning, "Second attempt failed: " + apiUrl + " - " + forceEx.Message);
-                    }
-                });
-            }
+            response = HttpGet(apiUrl);
+            WriteToLog(LogLevel.Warning, response);
         }
         catch (Exception ex)
         {
             WriteToLog(LogLevel.Warning, "RemoveFromPartyline: " + apiUrl + " failed - " + ex.Message);
         }
+
+        // Fire and forget (Communicator may be down): 500 ms later, send the forced hang-up twice (as before; now
+        // also when the first request failed, so a Communicator that was just restarting still gets it).
+        Task.Delay(500).ContinueWith(t =>
+        {
+            try
+            {
+                string forced = HttpGet(apiUrl + "?force=" + conferenceName);
+                forced = HttpGet(apiUrl + "?force=" + conferenceName);
+                WriteToLog(LogLevel.Info, "Second attempt: " + apiUrl + " = " + forced);
+            }
+            catch (Exception forceEx)
+            {
+                WriteToLog(LogLevel.Warning, "Second attempt failed: " + apiUrl + " - " + forceEx.Message);
+            }
+        });
         
         if (conferenceName.Trim().Length == 4)
         {
@@ -1162,6 +1240,14 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
                 break;
             case "getpins":
                 return GetCurrentPINs().Replace("\"", "");
+            case BeltpackMessagesLostCommand: // hang-up hook of the BeltpackMessages beep call
+                returnString = OnBeltpackMessagesLost();
+                break;
+            case "lostbroadcastannounce":
+            case "losttonestreamforbeltpacks":
+                // hang-up hooks of dialplan extensions that are commented out today; nothing to do
+                returnString = "ignored";
+                break;
             case "setdebug":
                 if (!HasArgs(arguments, 1, out returnString)) break;
                 returnString = "No result received.";
@@ -1254,11 +1340,12 @@ public class CommunicatorConnector : IApiPlugin, IAppPlugin, ILoadNotificationPl
         }
     }
 
-    // Synchronous GET to Communicator, exactly as before (WebClient, default timeout). Exceptions propagate to the
-    // caller, which decides - as before - whether a failure stops its processing.
+    // Synchronous GET to Communicator with an 8 s timeout (CommunicatorHttpTimeoutMs; WebClient's default of 100 s
+    // blocked the calling FreeSWITCH thread while IIS was starting). Exceptions propagate to the caller, which
+    // decides - as before - whether a failure stops its processing.
     internal static string HttpGet(string url)
     {
-        using (WebClient client = new WebClient())
+        using (WebClient client = new CommunicatorWebClient())
         {
             return client.DownloadString(url);
         }
