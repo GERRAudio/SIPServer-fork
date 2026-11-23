@@ -25,6 +25,10 @@
     <param name="auto-reload" value="1"/>
     <param name="debug-pcm" value="0"/>
     <param name="endpoint-silence-ms" value="700"/>
+    <!-- Forced-final timeout while the phrase is clearly unfinished: it ends with a tens word ("thirty"), a digit right after
+         a lead word ("conference two"), or a lead word itself. Stops "conference thirty ... six" being cut at "thirty". -->
+    <param name="endpoint-incomplete-ms" value="1800"/>
+    <param name="endpoint-incomplete-words" value="conference channel connect join switch go to with in set volume mic mike ear current"/>
   </settings>
 
   <!-- CDATA lets us use real double quotes, spaces, and newlines safely -->

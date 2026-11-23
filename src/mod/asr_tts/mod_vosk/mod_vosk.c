@@ -6,7 +6,7 @@
  Threaded version - 2026-11-05 - eliminates clicks - but uses a bigger buffer  not deployed
  */
 
-static char *version_date = "2026-11-17";
+static char *version_date = "2026-11-23";
 
 #define __PRETTY_FUNCTION__ __func__
 #include <switch.h>
@@ -45,6 +45,9 @@ static struct {
 	int return_json;
 	int auto_reload;
 	int endpoint_silence_ms;
+	/* Longer forced-final timeout while the phrase is clearly unfinished (see vosk_phrase_incomplete) */
+	int endpoint_incomplete_ms;
+	char *endpoint_incomplete_words; /* " w1 w2 ... " (padded with spaces, lower case) */
 	int speech_complete_timeout;
 	char *recognition_words;
 	float min_confidence;
@@ -888,6 +891,52 @@ static switch_status_t vosk_asr_unload_grammar(switch_asr_handle_t *ah, const ch
  * vosk_asr_check_results
  * ---------------------------------------------------------------------- */
 
+/* -------------------------------------------------------------------------
+ * Context-aware endpoint: a partial that obviously continues gets more time
+ * ---------------------------------------------------------------------- */
+static const char *VOSK_TENS[] = {"twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", NULL};
+static const char *VOSK_UNITS[] = {"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", NULL};
+
+static int vosk_word_in(const char *w, const char *const *list)
+{
+	for (; *list; list++)
+		if (!strcasecmp(w, *list)) return 1;
+	return 0;
+}
+
+static int vosk_word_in_config(const char *w)
+{
+	char key[64];
+	if (!globals.endpoint_incomplete_words || !*w || strlen(w) > sizeof(key) - 3) return 0;
+	switch_snprintf(key, sizeof(key), " %s ", w);
+	return strstr(globals.endpoint_incomplete_words, key) != NULL;
+}
+
+/* 1 when the phrase cannot be finished yet, so a short pause must not end it:
+ *   - it ends with a tens word ("conference thirty" -> "six" may follow; conferences are 26-99),
+ *   - it ends with a units word straight after a lead word ("conference two" -> "seven" may follow;
+ *     single-digit conferences do not exist),
+ *   - it ends with a lead/command word ("conference", "join", "set volume" ...: endpoint-incomplete-words). */
+static int vosk_phrase_incomplete(const char *phrase)
+{
+	char buf[512], *tok, *save = NULL;
+	char last[64] = "", prev[64] = "";
+
+	if (zstr(phrase)) return 0;
+	switch_copy_string(buf, phrase, sizeof(buf));
+	for (tok = strtok_s(buf, " \t", &save); tok; tok = strtok_s(NULL, " \t", &save)) {
+		if (!strcmp(tok, "[unk]")) continue;
+		switch_copy_string(prev, last, sizeof(prev));
+		switch_copy_string(last, tok, sizeof(last));
+	}
+	if (!*last) return 0;
+
+	if (vosk_word_in(last, VOSK_TENS)) return 1;
+	if (vosk_word_in(last, VOSK_UNITS) && *prev && vosk_word_in_config(prev)) return 1;
+	if (vosk_word_in_config(last)) return 1;
+	return 0;
+}
+
 static switch_status_t vosk_check_results_locked(vosk_t *vosk)
 {
 	if (!vosk->result) return SWITCH_STATUS_FALSE;
@@ -895,35 +944,36 @@ static switch_status_t vosk_check_results_locked(vosk_t *vosk)
 
 	if (!strstr(vosk->result, "\"partial\"")) { return SWITCH_STATUS_SUCCESS; }
 
-	if (strstr(vosk->result, "\"partial\"")) {
-		if (strstr(vosk->result, "\"partial\":\"\"")) { return SWITCH_STATUS_FALSE; }
+	if (strstr(vosk->result, "\"partial\":\"\"")) { return SWITCH_STATUS_FALSE; }
 
-		if (vosk->last_partial_time > 0) {
-			switch_time_t now = switch_micro_time_now();
+	if (vosk->last_partial_time > 0) {
+		switch_time_t now = switch_micro_time_now();
+		cJSON *root = cJSON_Parse(vosk->result);
+		const char *partial_phrase =
+			(root && cJSON_HasObjectItem(root, "partial")) ? cJSON_GetObjectCstr(root, "partial") : NULL;
 
-			switch_time_t silence_threshold_us = (switch_time_t)(globals.endpoint_silence_ms * 1000);
+		/* Short timeout for a complete phrase; longer while the phrase obviously continues
+		 * ("conference thirty" ... "six"), so a natural pause no longer cuts the number short.
+		 * A real final from the Vosk server (with word confidences) still wins whenever it comes first. */
+		int incomplete = partial_phrase && globals.endpoint_incomplete_ms > globals.endpoint_silence_ms &&
+						 vosk_phrase_incomplete(partial_phrase);
+		int wait_ms = incomplete ? globals.endpoint_incomplete_ms : globals.endpoint_silence_ms;
 
-			if ((now - vosk->last_partial_time) > silence_threshold_us) {
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-								  "mod_vosk: Dynamic %dms endpoint triggered via XML config.\n",
-								  globals.endpoint_silence_ms);
-
-				cJSON *root = cJSON_Parse(vosk->result);
-				if (root && cJSON_HasObjectItem(root, "partial")) {
-					const char *partial_phrase = cJSON_GetObjectCstr(root, "partial");
-
-					char *forced_final = switch_mprintf("{\"text\":\"%s\"}", partial_phrase ? partial_phrase : "");
-
-					if (forced_final) {
-						switch_safe_free(vosk->result);
-						vosk->result = forced_final;
-						cJSON_Delete(root);
-						return SWITCH_STATUS_SUCCESS;
-					}
+		if ((now - vosk->last_partial_time) > (switch_time_t)wait_ms * 1000) {
+			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+							  "mod_vosk: %dms endpoint (%s phrase) forced final: '%s'\n", wait_ms,
+							  incomplete ? "unfinished" : "complete", partial_phrase ? partial_phrase : "");
+			if (partial_phrase) {
+				char *forced_final = switch_mprintf("{\"text\":\"%s\"}", partial_phrase);
+				if (forced_final) {
+					switch_safe_free(vosk->result);
+					vosk->result = forced_final;
+					cJSON_Delete(root);
+					return SWITCH_STATUS_SUCCESS;
 				}
-				if (root) cJSON_Delete(root);
 			}
 		}
+		if (root) cJSON_Delete(root);
 	}
 
 	return SWITCH_STATUS_FALSE;
@@ -1015,6 +1065,14 @@ static switch_status_t load_config(void)
 			if (!strcasecmp(var, "return-json")) globals.return_json = atoi(val);
 			if (!strcasecmp(var, "auto-reload")) globals.auto_reload = atoi(val);
 			if (!strcasecmp(var, "endpoint-silence-ms")) globals.endpoint_silence_ms = atoi(val);
+			if (!strcasecmp(var, "endpoint-incomplete-ms")) globals.endpoint_incomplete_ms = atoi(val);
+			if (!strcasecmp(var, "endpoint-incomplete-words")) {
+				char *padded = switch_mprintf(" %s ", val);
+				char *c;
+				for (c = padded; c && *c; c++) *c = (*c == ',') ? ' ' : (char)tolower((unsigned char)*c);
+				set_global_str(&globals.endpoint_incomplete_words, padded);
+				switch_safe_free(padded);
+			}
 			if (!strcasecmp(var, "speech-complete-timeout")) globals.speech_complete_timeout = atoi(val);
 			if (!strcasecmp(var, "min-confidence")) globals.min_confidence = (float)atof(val);
 			if (!strcasecmp(var, "vad-mode")) globals.vad_mode = atoi(val);
@@ -1028,6 +1086,14 @@ static switch_status_t load_config(void)
 done:
 	if (!globals.server_url) set_global_str(&globals.server_url, "ws://127.0.0.1:2700");
 	if (globals.endpoint_silence_ms <= 0) { globals.endpoint_silence_ms = 400; }
+	if (globals.endpoint_incomplete_ms <= 0) { globals.endpoint_incomplete_ms = 1800; }
+	if (!globals.endpoint_incomplete_words) {
+		set_global_str(&globals.endpoint_incomplete_words,
+					   " conference channel connect join switch go to with in set volume mic mike ear current ");
+	}
+	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+					  "mod_vosk: endpoint %dms, %dms while unfinished (lead words:%s)\n", globals.endpoint_silence_ms,
+					  globals.endpoint_incomplete_ms, globals.endpoint_incomplete_words);
 	if (!globals.recognition_words) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
 						  "mod_vosk: 'grammar' missing from XML. Using hardcoded production defaults.\n");
@@ -1116,6 +1182,7 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_vosk_shutdown)
 	switch_mutex_lock(MUTEX);
 	switch_safe_free(globals.server_url);
 	switch_safe_free(globals.recognition_words);
+	switch_safe_free(globals.endpoint_incomplete_words);
 	switch_mutex_unlock(MUTEX);
 
 	return SWITCH_STATUS_UNLOAD;
