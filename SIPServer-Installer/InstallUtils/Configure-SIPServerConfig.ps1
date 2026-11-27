@@ -104,7 +104,7 @@ try {
     S ""
     S "ASR ENGINE (VoskASR service)"
     if (Test-Path -LiteralPath (Join-Path $AppDir 'Vosk\Vosk_server.exe')) {
-        S "  Bundled Vosk engine: INSTALLED - VoskASR service (small en-us model) is set up and started."
+        S "  Bundled Vosk engine: INSTALLED - model and VoskASR service status: see VOSK ASR MODEL AND SERVICE below."
     } else {
         S "  Bundled Vosk engine: NOT installed (checkbox left unticked)."
         S "  NOTE: a running Vosk engine service is REQUIRED for ASR to function. Either re-run setup and tick"

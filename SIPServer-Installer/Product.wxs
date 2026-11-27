@@ -162,7 +162,7 @@
 		<Property Id="INSTALL_VOSK" Secure="yes" />
 
 		<SetProperty Id="WixQuietExecCmdLine"
-					 Value='"[System64Folder]cmd.exe" /c (if exist "[TempFolder]SIPS_ConfigBackup" rmdir /s /q "[TempFolder]SIPS_ConfigBackup") &amp; mkdir "[TempFolder]SIPS_ConfigBackup" &amp; (if exist "[MyAppFolder]conf\dialplan\00_asr.xml" copy /y "[MyAppFolder]conf\dialplan\00_asr.xml" "[TempFolder]SIPS_ConfigBackup\") &amp; (if exist "[MyAppFolder]conf\autoload_configs\vosk.conf.xml" copy /y "[MyAppFolder]conf\autoload_configs\vosk.conf.xml" "[TempFolder]SIPS_ConfigBackup\") &amp; (if exist "[AppRoot]SIPServerConfigBackup\InstallSummary.txt" del /q "[AppRoot]SIPServerConfigBackup\InstallSummary.txt") &amp; exit /b 0'
+					 Value='"[System64Folder]cmd.exe" /c (if exist "[TempFolder]SIPS_ConfigBackup" rmdir /s /q "[TempFolder]SIPS_ConfigBackup") &amp; mkdir "[TempFolder]SIPS_ConfigBackup" &amp; (if exist "[MyAppFolder]conf\dialplan\00_asr.xml" copy /y "[MyAppFolder]conf\dialplan\00_asr.xml" "[TempFolder]SIPS_ConfigBackup\") &amp; (if exist "[MyAppFolder]conf\autoload_configs\vosk.conf.xml" copy /y "[MyAppFolder]conf\autoload_configs\vosk.conf.xml" "[TempFolder]SIPS_ConfigBackup\") &amp; (if exist "[AppRoot]SIPServerConfigBackup\InstallSummary.txt" del /q "[AppRoot]SIPServerConfigBackup\InstallSummary.txt") &amp; (if exist "[TempFolder]SIPS_VoskPrev.txt" del /q "[TempFolder]SIPS_VoskPrev.txt") &amp; (reg query "HKLM\SYSTEM\CurrentControlSet\Services\VoskASR\Parameters" /v AppParameters 1>"[TempFolder]SIPS_VoskPrev.txt" 2>NUL) &amp; exit /b 0'
 					 Before="BackupSIPServerConfig"
 					 Sequence="execute" />
 		<CustomAction Id="BackupSIPServerConfig" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec" Execute="immediate" Return="ignore" />
@@ -172,6 +172,15 @@
 					 Before="ConfigureSIPServerConfig"
 					 Sequence="execute" />
 		<CustomAction Id="ConfigureSIPServerConfig" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec" Execute="deferred" Impersonate="no" Return="ignore" />
+
+		<!-- Bundled Vosk model: install / check / replace from Vosk\model_package, choose the service's model, start the
+		     service, check it listens, and append the result to InstallSummary.txt (InstallUtils\Setup-VoskModel.ps1).
+		     The previous service's model (saved by BackupSIPServerConfig to SIPS_VoskPrev.txt) is kept if still complete. -->
+		<SetProperty Id="SetupVoskModel"
+					 Value='"[System64Folder]WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "[MyAppFolder]Setup-VoskModel.ps1" -AppDir "[MyAppFolder]." -PrevParamsFile "[TempFolder]SIPS_VoskPrev.txt" -HistoryRoot "[AppRoot]SIPServerConfigBackup" -SummaryPath "[AppRoot]SIPServerConfigBackup\InstallSummary.txt"'
+					 Before="SetupVoskModel"
+					 Sequence="execute" />
+		<CustomAction Id="SetupVoskModel" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixQuietExec" Execute="deferred" Impersonate="no" Return="ignore" />
 
 		<CustomAction Id="LoadInstallSummary" Script="jscript" ScriptSourceFile="$(IconsEtcHarvestDir)\LoadInstallSummary.js" Execute="immediate" Return="ignore" />
 		<AdminUISequence>
@@ -213,7 +222,8 @@
 			<Custom Action="SetLogVoskService" After="SetThrottleVoskService" Condition='NOT REMOVE="ALL" AND ((&amp;VoskASR=3) OR (!VoskASR=3 AND NOT &amp;VoskASR=2))' />
 			<Custom Action="SetDelayVoskService" After="SetLogVoskService" Condition='NOT REMOVE="ALL" AND ((&amp;VoskASR=3) OR (!VoskASR=3 AND NOT &amp;VoskASR=2))' />
 			<Custom Action="ConfigVoskSvcSetup" After="SetDelayVoskService" Condition='NOT REMOVE="ALL" AND ((&amp;VoskASR=3) OR (!VoskASR=3 AND NOT &amp;VoskASR=2))' />
-			<Custom Action="StartVoskSvc" After="ConfigVoskSvcSetup" Condition='NOT REMOVE="ALL" AND ((&amp;VoskASR=3) OR (!VoskASR=3 AND NOT &amp;VoskASR=2))' />
+			<!-- Installs/checks the model, sets the service's model, starts the service and reports (replaces StartVoskSvc) -->
+			<Custom Action="SetupVoskModel" After="ConfigVoskSvcSetup" Condition='NOT REMOVE="ALL" AND ((&amp;VoskASR=3) OR (!VoskASR=3 AND NOT &amp;VoskASR=2))' />
 			
 			<Custom Action="LaunchReadme" After ="InstallFinalize" Condition='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1  and NOT Installed'/>
 		</InstallExecuteSequence>
@@ -268,7 +278,9 @@
 					</Directory>
 
 					<Directory Id="Asr_Queue" Name="asr-queue"/>
-					<Directory Id="VoskDir" Name="Vosk"/>
+					<Directory Id="VoskDir" Name="Vosk">
+						<Directory Id="VoskModelPackageDir" Name="model_package"/>
+					</Directory>
 
 					<Directory Id="Sounds_Dir" Name="sounds">
 						<Directory Id="Custom_Sounds_Dir" Name="custom">
@@ -316,11 +328,16 @@
 		</ComponentGroup>
 
 		<ComponentGroup Id="VoskASREngine" Directory="VoskDir">
-			<!-- Only the small model is bundled (the VoskASR service runs models\vosk-model-small-en-us-0.15, see
-			     SetArgsVoskService). The large en-us-0.22 model (2.7 GB) pushed the MSI over the 2 GB Windows Installer limit. -->
-			<Files Include="$(var.VoskASRHarvestDir)\**\*">
-				<Exclude Files="$(var.VoskASRHarvestDir)\models\vosk-model-en-us-0.22\**" />
-			</Files>
+			<!-- Runtime only: the engine and its DLLs, the other executables and the .bat utilities
+			     (VOSKModelChangeTOBIGONE / TOsmall). Not the repo's .git, sources, headers, libs, symbols or zips. -->
+			<Files Include="$(var.VoskASRHarvestDir)\*.exe" />
+			<Files Include="$(var.VoskASRHarvestDir)\*.dll" />
+			<Files Include="$(var.VoskASRHarvestDir)\*.bat" />
+			<!-- The small model ships as its zip, NOT as installed files: Setup-VoskModel.ps1 extracts it to
+			     Vosk\models\vosk-model-small-en-us-0.15 only when that folder is missing or differs, so an upgrade or
+			     uninstall never deletes a working model. The large en-us-0.22 model (2.7 GB) is not bundled
+			     (over the 2 GB Windows Installer limit); install it by hand and switch with VOSKModelChangeTOBIGONE.bat. -->
+			<Files Include="$(var.VoskASRHarvestDir)\models\vosk-model-small-en-us-0.15.zip" Directory="VoskModelPackageDir" />
 		</ComponentGroup>
 
 		<DirectoryRef Id="DesktopFolder">
@@ -402,6 +419,9 @@
 			</Component>
 			<Component Id="ConfigureSIPServerConfigScript" Guid="6B1E9F42-7C3A-4D58-9E21-A4F0C83D5B17">
 				<File Id="ConfigureSIPServerConfigPs1" Source="$(var.IconsEtcHarvestDir)\Configure-SIPServerConfig.ps1" KeyPath="yes" />
+			</Component>
+			<Component Id="SetupVoskModelScript" Guid="0C7E2B91-5F4A-4E3D-9B6C-8A1D2E3F4B60">
+				<File Id="SetupVoskModelPs1" Source="$(var.IconsEtcHarvestDir)\Setup-VoskModel.ps1" KeyPath="yes" />
 			</Component>
 			<Component Id="readme.txt" Guid="2A142FE7-4D4D-43F8-AD24-A8144543933B">
 				<File Id="readme.txt" Source="$(var.IconsEtcHarvestDir)\readme.txt" KeyPath="yes" />
@@ -501,7 +521,6 @@
 		<CustomAction Id="SetThrottleVoskService" ExeCommand='[MyAppFolder]nssm.exe set VoskASR AppThrottle 10000' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
 		<CustomAction Id="SetLogVoskService" ExeCommand='cmd.exe /c "[MyAppFolder]nssm.exe" set VoskASR AppStdout "[MyAppFolder]Vosk\vosk_server.log" &amp;&amp; "[MyAppFolder]nssm.exe" set VoskASR AppStderr "[MyAppFolder]Vosk\vosk_server.log" &amp;&amp; "[MyAppFolder]nssm.exe" set VoskASR AppRotateFiles 1 &amp;&amp; "[MyAppFolder]nssm.exe" set VoskASR AppRotateBytes 5242880' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
 		<CustomAction Id="ConfigVoskSvcSetup" ExeCommand='cmd.exe /c echo Configuring service... please do not close window &amp;&amp; sc failure VoskASR reset=259100 actions=restart/10000 2>NUL >NUL' Directory="MyAppFolder" Execute="deferred" Return="ignore" Impersonate="no" />
-		<CustomAction Id="StartVoskSvc" ExeCommand='cmd.exe /c echo Starting ASR service... please do not close window &amp;&amp; sc start VoskASR 2>NUL >NUL' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
 		<CustomAction Id="SetDelayVoskService" ExeCommand='[MyAppFolder]nssm.exe set VoskASR Start SERVICE_DELAYED_AUTO_START' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />
 		
 		<CustomAction Id="DeployMissingConfigs" ExeCommand='cmd.exe /c robocopy "[MyAppFolder]conf_defaults" "[MyAppFolder]conf" /E /XC /XN /XO 2&gt;NUL &gt;NUL' Directory="MyAppFolder" Execute="deferred" Impersonate="no" Return="ignore" />

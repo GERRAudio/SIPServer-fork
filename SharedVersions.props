@@ -5,6 +5,6 @@
     <SIPServerAppVersion>1.10.17</SIPServerAppVersion>
     
     <!-- SIPServer Installer Version -->
-    <SIPServerInstallerVersion>1.13</SIPServerInstallerVersion>
+    <SIPServerInstallerVersion>1.14</SIPServerInstallerVersion>
   </PropertyGroup>
 </Project>

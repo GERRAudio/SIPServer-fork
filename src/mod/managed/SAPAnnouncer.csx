@@ -1,4 +1,18 @@
-// Version Date: 2026-09-12
+// Version Date: 2026-11-26
+//
+// Compiled at load by mod_managed with the .NET Framework C# compiler (CodeDom "v4.0"): C# 5 syntax only
+// (no $"" strings, ?. , => members, out-variable declarations, tuples or nameof).
+//
+// 2026-11-26 fixes:
+//  - SAP message ID hash is fixed per stream (was a counter bumped on every packet, so receivers such as the
+//    GADREC recorder saw every announcement as a new session and listed duplicate streams).
+//  - Streams without a tx-address (receive-only, e.g. AnnounceLine) are not announced (was "c=IN IP4 /32").
+//  - RTP payload type comes from aes67.conf rtp-payload-type (SDP said 96 while mod_aes67 sends 98).
+//  - a=ts-refclk names the real PTP grandmaster (vars.xml aes67_ptp_gmid, else DefaultPtpGmid) and the
+//    ptp-domain from aes67.conf (was 00-00-00-00-00-00-00-00 and a fixed domain 0).
+//  - Per-stream tx-port / channels / tx-codec / ptime-ms / sample-rate overrides are really used.
+//  - a=framecount:N uses the SDP attribute syntax (was "framecount=48") and is computed from ptime/rate.
+//  - Announcement logging is debug-only, so the log is not filled every 20 s.
 
 using System;
 using System.Collections.Generic;
@@ -6,19 +20,17 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Xml;
 using FreeSWITCH;
 using FreeSWITCH.Native;
 
 /// <summary>
-/// SAPAnnouncer — FreeSWITCH managed module plugin.
+/// SAPAnnouncer - FreeSWITCH managed module plugin.
 ///
-/// Reads AES67 stream definitions from aes67.conf (via the FreeSWITCH XML
-/// configuration API), builds RFC 2974 Session Announcement Protocol (SAP)
-/// packets containing SDP stream descriptions, and broadcasts them via UDP
-/// to the standard SAP multicast groups every 20 seconds.
-///
-/// This allows AES67-capable receivers (Dante Controller, etc.) to discover
-/// the FreeSWITCH AES67 streams automatically without manual SDP import.
+/// Reads the AES67 stream definitions from aes67.conf (via the FreeSWITCH XML configuration API), builds an
+/// RFC 4566 SDP per transmitted stream and announces it with RFC 2974 SAP to 239.255.255.255 and
+/// 224.2.127.254 (port 9875) every 20 seconds, so AES67 receivers (Dante Controller, the recorder, etc.)
+/// can discover the streams.
 /// </summary>
 public class SAPAnnouncer : IApiPlugin, IAppPlugin, ILoadNotificationPlugin
 {
@@ -26,17 +38,21 @@ public class SAPAnnouncer : IApiPlugin, IAppPlugin, ILoadNotificationPlugin
     // Configuration
     // -------------------------------------------------------------------------
 
-    // Multicast IP used for AES67 RTP streams — overridden from vars.xml on load.
-    string multicastIP = "10.8.90.10";
+    // PTP grandmaster clock identity used in a=ts-refclk when vars.xml does not set aes67_ptp_gmid.
+    // Site value (Bruce, 26 Nov 2026): the Cisco boundary clock 10.8.90.1.
+    const string DefaultPtpGmid = "3C-8B-7F-FF-FE-D4-1F-00";
 
-    // Enable verbose debug logging.
-    const bool debugMode = true;
+    // Verbose logging of every announcement.
+    const bool debugMode = false;
 
     // SAP announcement interval in milliseconds.
     const int AnnounceIntervalMs = 20000;
 
-    // SAP port (RFC 2974 §3).
+    // SAP port (RFC 2974).
     const int SapPort = 9875;
+
+    // AES67 NIC address - read from vars.xml ${multicastIP} on load.
+    string multicastIP = "10.8.90.10";
 
 
     // -------------------------------------------------------------------------
@@ -45,24 +61,22 @@ public class SAPAnnouncer : IApiPlugin, IAppPlugin, ILoadNotificationPlugin
 
     static Api fsApi = new Api(null);
 
-    // Timer that fires SendAnnouncements periodically.
+    // Kept in a static so the timer is not garbage collected.
     static Timer AnnounceTimer;
 
-    // UDP socket bound to the AES67 NIC, used for SAP multicast sends.
     UdpClient udpClient;
 
-    // SDP strings built from aes67.conf, one per stream.
-    List<string> SDPs = new List<string>();
+    // One SAP packet per announced stream (header + SDP), built once at load.
+    static List<byte[]> Packets = new List<byte[]>();
 
-    // SAP message ID counter. Wraps at 32766 per RFC 2974.
-    int sapCounter = 0;
-
-    // Guards against double-initialisation if both Load() and Execute() are called.
-    bool initialised = false;
+    // Guards against double initialisation: mod_managed creates one instance for the App interface and one for
+    // the API interface (and Execute() may also call Initialise), but only one may announce. Static = per load.
+    static readonly object InitLock = new object();
+    static bool initialised = false;
 
 
     // =========================================================================
-    // ILoadNotificationPlugin — called once when the module is loaded
+    // Entry points
     // =========================================================================
 
     public bool Load()
@@ -72,40 +86,23 @@ public class SAPAnnouncer : IApiPlugin, IAppPlugin, ILoadNotificationPlugin
         return true;
     }
 
-
-    // =========================================================================
-    // IApiPlugin / IAppPlugin entry points
-    // =========================================================================
-
-    /// <summary>
-    /// Handles synchronous API calls. Initialises if not already done
-    /// (e.g. when invoked directly rather than via Load).
-    /// </summary>
     public void Execute(ApiContext context)
     {
-        WriteToLog(LogLevel.Info,
-            $"SAPAnnouncer Execute: args='{context.Arguments}' event={context.Event?.GetEventType() ?? "<none>"}");
+        WriteToLog(LogLevel.Info, "SAPAnnouncer Execute: args='" + context.Arguments + "'");
         Initialise();
         context.Stream.Write(Process(context.Arguments.Split(' ')));
     }
 
-    /// <summary>Handles background API calls — no action required.</summary>
     public void ExecuteBackground(ApiBackgroundContext context)
     {
-        WriteToLog(LogLevel.Info,
-            $"SAPAnnouncer ExecuteBackground: thread #{Thread.CurrentThread.ManagedThreadId} args='{context.Arguments}'");
+        WriteToLog(LogLevel.Debug, "SAPAnnouncer ExecuteBackground: args='" + context.Arguments + "'");
     }
 
-    /// <summary>Handles dialplan application calls — no action required.</summary>
     public void Run(FreeSWITCH.AppContext context)
     {
-        WriteToLog(LogLevel.Info, "SAPAnnouncer Run (AppPlugin).");
+        WriteToLog(LogLevel.Debug, "SAPAnnouncer Run (AppPlugin).");
     }
 
-    /// <summary>
-    /// Script entry point — used when the module is invoked as a standalone
-    /// script rather than as a loaded plugin.
-    /// </summary>
     public static void Main()
     {
         switch (FreeSWITCH.Script.ContextType)
@@ -123,70 +120,62 @@ public class SAPAnnouncer : IApiPlugin, IAppPlugin, ILoadNotificationPlugin
                 break;
 
             case ScriptContextType.None:
-                // Direct script invocation — initialise and run standalone.
                 new SAPAnnouncer().Initialise();
                 break;
         }
     }
 
-
-    // =========================================================================
-    // Command dispatcher
-    // =========================================================================
-
-    /// <summary>
-    /// Routes incoming commands. Currently a placeholder — extend as needed.
-    /// </summary>
     public string Process(string[] arguments)
     {
-        WriteToLog(LogLevel.Debug, "SAPAnnouncer Process: " + arguments[0]);
-        return "No command handled.";
+        return "SAPAnnouncer: " + Packets.Count + " stream(s) announced every " + (AnnounceIntervalMs / 1000) + " s.";
     }
 
 
     // =========================================================================
-    // Initialisation — idempotent, safe to call from both Load() and Execute()
+    // Initialisation
     // =========================================================================
 
-    /// <summary>
-    /// Reads the AES67 configuration, builds SDP strings for each stream, opens
-    /// the UDP socket, and starts the periodic SAP announcement timer.
-    /// Safe to call multiple times — only runs on the first call.
-    /// </summary>
     public void Initialise()
     {
-        if (initialised)
+        lock (InitLock)
         {
-            WriteToLog(LogLevel.Info, "SAPAnnouncer: already initialised, skipping.");
+            if (initialised)
+            {
+                WriteToLog(LogLevel.Debug, "SAPAnnouncer: already initialised, skipping.");
+                return;
+            }
+            initialised = true;
+        }
+
+        multicastIP = fsApi.ExecuteString("eval ${multicastIP}").Trim();
+        WriteToLog(LogLevel.Info, "SAPAnnouncer: AES67 interface IP = " + multicastIP);
+
+        string gmid = fsApi.ExecuteString("eval ${aes67_ptp_gmid}").Trim();
+        if (gmid.Length == 0 || gmid.Contains("$")) gmid = DefaultPtpGmid;
+
+        string confXml = fsApi.ExecuteString("xml_locate configuration configuration name aes67.conf");
+        XmlDocument conf = new XmlDocument();
+        try
+        {
+            conf.LoadXml(confXml);
+        }
+        catch (Exception ex)
+        {
+            Log.WriteLine(LogLevel.Critical, "SAPAnnouncer: cannot read aes67.conf - " + ex.Message);
             return;
         }
-        initialised = true;
 
-        // Read the multicast IP from FreeSWITCH vars.xml.
-        multicastIP = fsApi.ExecuteString("eval ${multicastIP}");
-        WriteToLog(LogLevel.Info, "SAPAnnouncer: multicast IP = " + multicastIP);
-
-        // Load aes67.conf via the FreeSWITCH XML configuration API.
-        string confXml = fsApi.ExecuteString(
-            "xml_locate configuration configuration name aes67.conf");
-        WriteToLog(LogLevel.Info, "SAPAnnouncer: aes67.conf loaded.");
-
-        var conf = new System.Xml.XmlDocument();
-        conf.LoadXml(confXml);
-
-        BuildSDPs(conf);
+        BuildPackets(conf, gmid);
         OpenUdpSocket();
 
-        if (SDPs.Count > 0)
+        if (Packets.Count > 0)
         {
-            // First announcement after 1 second, then every AnnounceIntervalMs.
             AnnounceTimer = new Timer(SendAnnouncements, null, 1000, AnnounceIntervalMs);
-            WriteToLog(LogLevel.Info,
-                $"SAPAnnouncer: timer started. {SDPs.Count} stream(s) will be announced.");
+            WriteToLog(LogLevel.Info, "SAPAnnouncer: announcing " + Packets.Count + " stream(s), PTP GM " + gmid + ".");
         }
         else
         {
-            WriteToLog(LogLevel.Warning, "SAPAnnouncer: no streams found in aes67.conf.");
+            WriteToLog(LogLevel.Warning, "SAPAnnouncer: no transmit streams found in aes67.conf.");
         }
     }
 
@@ -195,252 +184,209 @@ public class SAPAnnouncer : IApiPlugin, IAppPlugin, ILoadNotificationPlugin
     // Configuration parsing
     // =========================================================================
 
-    /// <summary>
-    /// Parses aes67.conf, reads global defaults from the &lt;settings&gt; section,
-    /// then builds one SDP string per stream in the &lt;streams&gt; section.
-    /// Per-stream values override the global defaults where present.
-    /// </summary>
-    private void BuildSDPs(System.Xml.XmlDocument conf)
+    static void ReadParam(XmlNode param, out string name, out string value)
     {
-        // Global defaults from the <settings> section.
-        string defaultPort       = "5004";
-        string defaultChannels   = "";
-        string defaultCodec      = "";
-        string defaultPtime      = "";
-        string defaultSampleRate = "";
-        string rtpNic            = multicastIP;
-
-        int sessionID = 1;
-
-        foreach (System.Xml.XmlNode section in conf.DocumentElement.ChildNodes)
+        name = "";
+        value = "";
+        if (param.Attributes == null) return;
+        foreach (XmlAttribute attr in param.Attributes)
         {
-            if (section.NodeType != System.Xml.XmlNodeType.Element) continue;
+            if (attr.Name.ToLower() == "name") name = attr.Value.ToLower();
+            if (attr.Name.ToLower() == "value") value = attr.Value;
+        }
+    }
 
-            // -----------------------------------------------------------------
-            // <settings> — global transmission defaults
-            // -----------------------------------------------------------------
-            if (section.Name.ToLower() == "settings")
+    static string Pick(string streamValue, string defaultValue)
+    {
+        return string.IsNullOrEmpty(streamValue) ? defaultValue : streamValue;
+    }
+
+    private void BuildPackets(XmlDocument conf, string gmid)
+    {
+        // Global defaults (<settings>).
+        string defaultPort = "5004";
+        string defaultChannels = "8";
+        string defaultCodec = "L24";
+        string defaultPtime = "1";
+        string defaultSampleRate = "48000";
+        string payloadType = "96";
+        string ptpDomain = "0";
+
+        foreach (XmlNode section in conf.DocumentElement.ChildNodes)
+        {
+            if (section.NodeType != XmlNodeType.Element || section.Name.ToLower() != "settings") continue;
+            foreach (XmlNode param in section.ChildNodes)
             {
-                foreach (System.Xml.XmlNode param in section.ChildNodes)
+                if (param.NodeType != XmlNodeType.Element) continue;
+                string name, value;
+                ReadParam(param, out name, out value);
+                switch (name)
                 {
-                    if (param.NodeType != System.Xml.XmlNodeType.Element) continue;
-
-                    string name = "", value = "";
-                    foreach (System.Xml.XmlAttribute attr in param.Attributes)
-                    {
-                        if (attr.Name.ToLower() == "name")  name  = attr.Value;
-                        if (attr.Name.ToLower() == "value") value = attr.Value;
-                    }
-
-                    switch (name.ToLower())
-                    {
-                        case "tx-port":        defaultPort       = value; break;
-                        case "channels":       defaultChannels   = value; break;
-                        case "tx-codec":       defaultCodec      = value; break;
-                        case "ptime-ms":       defaultPtime      = value; break;
-                        case "sample-rate":    defaultSampleRate = value; break;
-                        case "rtp-iface":
-                        case "rtp-interface":  rtpNic            = value; break;
-                    }
+                    case "tx-port": defaultPort = value; break;
+                    case "channels": defaultChannels = value; break;
+                    case "tx-codec": defaultCodec = value; break;
+                    case "ptime-ms": defaultPtime = value; break;
+                    case "sample-rate": defaultSampleRate = value; break;
+                    case "rtp-payload-type": payloadType = value; break;
+                    case "ptp-domain": ptpDomain = value; break;
                 }
             }
+        }
 
-            // -----------------------------------------------------------------
-            // <streams> — one SDP per <stream> child
-            // -----------------------------------------------------------------
-            if (section.Name.ToLower() == "streams")
+        // One SDP per <stream> that has a tx-address (receive-only streams are not announced).
+        int sessionID = 1;
+        foreach (XmlNode section in conf.DocumentElement.ChildNodes)
+        {
+            if (section.NodeType != XmlNodeType.Element || section.Name.ToLower() != "streams") continue;
+            foreach (XmlNode stream in section.ChildNodes)
             {
-                foreach (System.Xml.XmlNode stream in section.ChildNodes)
+                if (stream.NodeType != XmlNodeType.Element) continue;
+
+                XmlAttribute nameAttr = stream.Attributes == null ? null : stream.Attributes["name"];
+                string streamName = nameAttr == null ? "Unnamed" : nameAttr.Value;
+                string txAddress = "", txPort = "", txChannels = "", txCodec = "", txPtime = "", txRate = "";
+
+                foreach (XmlNode param in stream.ChildNodes)
                 {
-                    if (stream.NodeType != System.Xml.XmlNodeType.Element) continue;
-
-                    // Per-stream overrides (empty = use global default).
-                    string txAddress    = "";
-                    string txPort       = "";
-                    string txChannels   = "";
-                    string txCodec      = "";
-                    string txPtime      = "";
-                    string txSampleRate = "";
-                    string streamName   = stream.Attributes["name"]?.InnerText ?? "Unnamed";
-
-                    WriteToLog(LogLevel.Info, "SAPAnnouncer: building SDP for stream: " + streamName);
-
-                    foreach (System.Xml.XmlNode param in stream.ChildNodes)
+                    if (param.NodeType != XmlNodeType.Element) continue;
+                    string name, value;
+                    ReadParam(param, out name, out value);
+                    switch (name)
                     {
-                        if (param.NodeType != System.Xml.XmlNodeType.Element) continue;
-
-                        string name = "", value = "";
-                        foreach (System.Xml.XmlAttribute attr in param.Attributes)
-                        {
-                            if (attr.Name.ToLower() == "name")  name  = attr.Value;
-                            if (attr.Name.ToLower() == "value") value = attr.Value;
-                        }
-
-                        switch (name.ToLower())
-                        {
-                            case "tx-address":   txAddress    = value; break;
-                            case "tx-port":      txPort       = value; break;
-                            case "channels":     txChannels   = value; break;
-                            case "tx-codec":     txCodec      = value; break;
-                            case "ptime-ms":     txPtime      = value; break;
-                            case "sample-rate":  txSampleRate = value; break;
-                        }
+                        case "tx-address": txAddress = value.Trim(); break;
+                        case "tx-port": txPort = value; break;
+                        case "channels": txChannels = value; break;
+                        case "tx-codec": txCodec = value; break;
+                        case "ptime-ms": txPtime = value; break;
+                        case "sample-rate": txRate = value; break;
                     }
-
-                    // Fall back to global defaults for any unset per-stream values.
-                    string sdpPort       = string.IsNullOrEmpty(txPort)       ? defaultPort       : txPort;
-                    string sdpChannels   = string.IsNullOrEmpty(txChannels)   ? defaultChannels   : txChannels;
-                    string sdpCodec      = string.IsNullOrEmpty(txCodec)      ? defaultCodec      : txCodec;
-                    string sdpPtime      = string.IsNullOrEmpty(txPtime)      ? defaultPtime      : txPtime;
-                    string sdpSampleRate = string.IsNullOrEmpty(txSampleRate) ? defaultSampleRate : txSampleRate;
-
-                    sessionID++;
-                    string sdp = BuildSDP(streamName, txAddress, sdpPort, sdpChannels,
-                                          sdpCodec, sdpPtime, sdpSampleRate, sessionID);
-
-                    WriteToLog(LogLevel.Info, "SAPAnnouncer: SDP built:\n" + sdp);
-                    SDPs.Add(sdp);
                 }
+
+                sessionID++; // numbering follows the stream order, as before, so session IDs stay the same
+
+                if (txAddress.Length == 0)
+                {
+                    WriteToLog(LogLevel.Info, "SAPAnnouncer: stream " + streamName + " has no tx-address (receive only) - not announced.");
+                    continue;
+                }
+
+                string sdp = BuildSDP(streamName, txAddress, Pick(txPort, defaultPort), Pick(txChannels, defaultChannels),
+                                      Pick(txCodec, defaultCodec), Pick(txPtime, defaultPtime), Pick(txRate, defaultSampleRate),
+                                      payloadType, ptpDomain, gmid, sessionID);
+                WriteToLog(LogLevel.Info, "SAPAnnouncer: SDP for " + streamName + ":\n" + sdp);
+                Packets.Add(BuildSapPacket(sdp, sessionID));
             }
         }
     }
 
-    /// <summary>
-    /// Constructs a single RFC 4566 SDP string for one AES67 stream.
-    /// The SDP includes AES67-mandatory PTP clock attributes.
-    /// </summary>
-    private string BuildSDP(string streamName, string txAddress, string port,
-        string channels, string codec, string ptime, string sampleRate, int sessionID)
+    private string BuildSDP(string streamName, string txAddress, string port, string channels, string codec,
+        string ptime, string sampleRate, string payloadType, string ptpDomain, string gmid, int sessionID)
     {
-        var sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder();
+        sb.Append("v=0\r\n");
+        sb.Append("o=- " + sessionID + " " + sessionID + " IN IP4 " + multicastIP + "\r\n");
+        sb.Append("s=" + streamName + "\r\n");
+        sb.Append("c=IN IP4 " + txAddress + "/32\r\n");
+        sb.Append("t=0 0\r\n");
+        sb.Append("m=audio " + port + " RTP/AVP " + payloadType + "\r\n");
 
-        sb.AppendLine("v=0");
-        // o= origin: username sessionID version network-type addr-type address
-        sb.AppendLine($"o=- {sessionID} {sessionID} IN IP4 {multicastIP}");
-        sb.AppendLine("s=" + streamName);
-        // c= connection: network-type addr-type address/ttl
-        sb.AppendLine($"c=IN IP4 {txAddress}/32");
-        sb.AppendLine("t=0 0");
-        sb.AppendLine($"m=audio {port} RTP/AVP 96");
-
-        // Channel information line — lists each channel by index.
-        if (int.TryParse(channels, out int channelCount) && channelCount > 0)
+        int channelCount;
+        if (int.TryParse(channels, out channelCount) && channelCount > 0)
         {
-            var channelLabel = new StringBuilder("i=");
+            StringBuilder labels = new StringBuilder("i=");
             for (int i = 0; i < channelCount; i++)
             {
-                if (i > 0) channelLabel.Append(",");
-                channelLabel.Append("channel_" + i);
+                if (i > 0) labels.Append(",");
+                labels.Append("channel_" + i);
             }
-            sb.AppendLine(channelLabel.ToString());
+            sb.Append(labels.ToString() + "\r\n");
         }
 
-        // AES67-mandatory PTP clock domain and reference clock attributes.
-        sb.AppendLine("a=clock-domain:PTPv2 0");
-        sb.AppendLine("a=ts-refclk:ptp=IEEE1588-2008:00-00-00-00-00-00-00-00:0");
-        sb.AppendLine("a=mediaclk:direct=0");
-        // Source filter — restricts reception to the declared source address.
-        sb.AppendLine($"a=source-filter: incl IN IP4 {txAddress} {multicastIP}");
-        // RTP payload type 96 dynamic mapping.
-        sb.AppendLine($"a=rtpmap:96 {codec}/{sampleRate}/{channels}");
-        // AES67 standard frame count for 1ms ptime at 48kHz.
-        sb.AppendLine("a=framecount=48");
-        sb.AppendLine("a=ptime:" + ptime);
+        sb.Append("a=clock-domain:PTPv2 " + ptpDomain + "\r\n");
+        sb.Append("a=ts-refclk:ptp=IEEE1588-2008:" + gmid + ":" + ptpDomain + "\r\n");
+        sb.Append("a=mediaclk:direct=0\r\n");
+        sb.Append("a=source-filter: incl IN IP4 " + txAddress + " " + multicastIP + "\r\n");
+        sb.Append("a=rtpmap:" + payloadType + " " + codec + "/" + sampleRate + "/" + channels + "\r\n");
 
+        double ptimeMs, rate;
+        if (double.TryParse(ptime, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out ptimeMs) &&
+            double.TryParse(sampleRate, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out rate))
+        {
+            sb.Append("a=framecount:" + (int)Math.Round(ptimeMs * rate / 1000.0) + "\r\n");
+        }
+        sb.Append("a=ptime:" + ptime + "\r\n");
         return sb.ToString();
     }
 
-
-    // =========================================================================
-    // UDP socket
-    // =========================================================================
-
-    /// <summary>
-    /// Opens and binds the UDP socket to the AES67 network interface.
-    /// Logs a critical error and leaves udpClient null if binding fails
-    /// (e.g. port already taken by Rav2SAP or another SAP announcer).
-    /// </summary>
-    private void OpenUdpSocket()
+    // SAP header (RFC 2974): flags 0x20 (v1, announce, IPv4, no auth/encryption/compression), auth length 0,
+    // 16-bit message ID hash, originating source, then "application/sdp\0" and the SDP.
+    // The hash must stay the same for as long as the SDP does, so it is the stream's (unique) session ID.
+    private byte[] BuildSapPacket(string sdp, int sessionID)
     {
-        try
-        {
-            udpClient = new UdpClient();
-            udpClient.ExclusiveAddressUse = false;
-            udpClient.Client.Bind(new IPEndPoint(IPAddress.Parse(multicastIP), SapPort));
-            WriteToLog(LogLevel.Info,
-                $"SAPAnnouncer: UDP socket bound to {multicastIP}:{SapPort}");
-        }
-        catch (Exception ex)
-        {
-            string msg = $"SAPAnnouncer: cannot bind to {multicastIP}:{SapPort}. " +
-                         $"Is Rav2SAP running? {ex.Message}";
-            Log.WriteLine(LogLevel.Critical, msg);
-            udpClient = null;
-        }
+        List<byte> packet = new List<byte>();
+        packet.Add(0x20);
+        packet.Add(0x00);
+        packet.Add((byte)((sessionID >> 8) & 0xFF));
+        packet.Add((byte)(sessionID & 0xFF));
+        packet.AddRange(IPAddress.Parse(multicastIP).GetAddressBytes());
+        packet.AddRange(Encoding.ASCII.GetBytes("application/sdp"));
+        packet.Add(0x00);
+        packet.AddRange(Encoding.UTF8.GetBytes(sdp));
+        return packet.ToArray();
     }
 
 
     // =========================================================================
-    // SAP announcement broadcast
+    // UDP socket and sending
     // =========================================================================
 
-    /// <summary>
-    /// Timer callback — broadcasts a SAP/SDP packet for each configured stream
-    /// to the two standard SAP multicast groups:
-    ///   239.255.255.255 (local SAP group, RFC 2974 §4)
-    ///   224.2.127.254   (global SAP group, RFC 2974 §4)
-    ///
-    /// SAP packet structure (RFC 2974 §5):
-    ///   Byte 0:    flags = 0x20 (SAP v1, announce, no encryption, no compression)
-    ///   Byte 1:    auth length = 0
-    ///   Bytes 2-3: message ID hash (little-endian 16-bit counter)
-    ///   Bytes 4-7: originating source IPv4 address
-    ///   Bytes 8+:  MIME type ("application/sdp") + NUL + SDP payload
-    /// </summary>
+    // Bind failures are retried on every announcement cycle: when mod_managed reloads this file it loads the
+    // new copy before the old one is unloaded, so the old copy can still hold the port for a moment.
+    int bindFailures = 0;
+
+    private void OpenUdpSocket()
+    {
+        UdpClient client = null;
+        try
+        {
+            client = new UdpClient();
+            client.ExclusiveAddressUse = false;
+            client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            client.Client.Bind(new IPEndPoint(IPAddress.Parse(multicastIP), SapPort));
+            udpClient = client;
+            WriteToLog(LogLevel.Info, "SAPAnnouncer: UDP socket bound to " + multicastIP + ":" + SapPort +
+                       (bindFailures > 0 ? " (after " + bindFailures + " retries)" : ""));
+            bindFailures = 0;
+        }
+        catch (Exception ex)
+        {
+            if (client != null) client.Close();
+            udpClient = null;
+            bindFailures++;
+            if (bindFailures == 1 || bindFailures % 15 == 0)
+                WriteToLog(LogLevel.Warning, "SAPAnnouncer: cannot bind to " + multicastIP + ":" + SapPort +
+                           " yet (attempt " + bindFailures + ", retrying every " + (AnnounceIntervalMs / 1000) + " s). Is Rav2SAP running? " + ex.Message);
+        }
+    }
+
     internal void SendAnnouncements(object timerState)
     {
-        if (udpClient == null)
+        if (udpClient == null) OpenUdpSocket();
+        if (udpClient == null) return;
+
+        foreach (byte[] data in Packets)
         {
-            WriteToLog(LogLevel.Warning, "SAPAnnouncer: UDP socket not available — skipping announcement.");
-            return;
-        }
-
-        byte[] originAddress = IPAddress.Parse(multicastIP).GetAddressBytes();
-        byte[] mimeType      = Encoding.UTF8.GetBytes("application/sdp");
-
-        foreach (string sdp in SDPs)
-        {
-            // Build SAP header.
-            var packet = new List<byte>
-            {
-                0x20,                          // flags: SAP v1 announce
-                0x00,                          // auth length: none
-                (byte)(sapCounter & 0xFF),     // message ID low byte
-                (byte)((sapCounter >> 8) & 0xFF) // message ID high byte
-            };
-
-            // Wrap counter at 32766 per RFC 2974.
-            if (sapCounter >= 32766) sapCounter = 0;
-            else sapCounter++;
-
-            packet.AddRange(originAddress);    // source IPv4 (4 bytes)
-            packet.AddRange(mimeType);         // MIME type string
-            packet.Add(0x00);                  // NUL terminator after MIME type
-            packet.AddRange(Encoding.UTF8.GetBytes(sdp)); // SDP payload
-
-            byte[] data = packet.ToArray();
-
             try
             {
                 udpClient.Send(data, data.Length, "239.255.255.255", SapPort);
-                udpClient.Send(data, data.Length, "224.2.127.254",   SapPort);
-                WriteToLog(LogLevel.Info, "SAPAnnouncer: announced — " + sdp);
+                udpClient.Send(data, data.Length, "224.2.127.254", SapPort);
             }
             catch (Exception ex)
             {
-                WriteToLog(LogLevel.Error, "SAPAnnouncer: send failed — " + ex.Message);
+                WriteToLog(LogLevel.Error, "SAPAnnouncer: send failed - " + ex.Message);
             }
         }
+        WriteToLog(LogLevel.Debug, "SAPAnnouncer: announced " + Packets.Count + " stream(s).");
     }
 
 
@@ -448,11 +394,6 @@ public class SAPAnnouncer : IApiPlugin, IAppPlugin, ILoadNotificationPlugin
     // Logging
     // =========================================================================
 
-    /// <summary>
-    /// Writes to the FreeSWITCH log, or falls back to the console if the API
-    /// handle is not yet available (e.g. during standalone script execution).
-    /// Debug-level entries are suppressed unless debugMode is true.
-    /// </summary>
     public static void WriteToLog(LogLevel logLevel, string logEntry)
     {
         if (logLevel == LogLevel.Debug && !debugMode) return;

@@ -84,4 +84,13 @@
       <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
     </PropertyGroup>
   </Target>
+  <!-- The installer ships the Vosk small model as ..\..\Vosk\models\vosk-model-small-en-us-0.15.zip (extracted on the
+       target by Setup-VoskModel.ps1). The Vosk repo git-ignores models\, so the zip is a local, untracked build input:
+       fail the build if it is missing or incomplete (v1.13 shipped a model without am\final.mdl, graph\*.fst, ivector\final.ie). -->
+  <PropertyGroup>
+    <VoskSmallModelZip>$(MSBuildProjectDirectory)\..\..\Vosk\models\vosk-model-small-en-us-0.15.zip</VoskSmallModelZip>
+  </PropertyGroup>
+  <Target Name="CheckVoskSmallModel" BeforeTargets="PrepareForBuild">
+    <Exec Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\BuildTools\Check-VoskModelZip.ps1&quot; -Zip &quot;$(VoskSmallModelZip)&quot;" />
+  </Target>
 </Project>
